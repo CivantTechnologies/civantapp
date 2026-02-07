@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from './utils';
-import { useAuth } from '@/lib/AuthContext';
+import { useAuth } from '@/lib/AuthProvider';
 import { 
     LayoutDashboard, 
     Search, 
