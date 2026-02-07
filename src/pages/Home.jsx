@@ -14,9 +14,7 @@ import {
     Calendar,
     Building2
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Page, PageHeader, PageTitle, PageDescription, PageBody, Card, CardContent, CardHeader, CardTitle, Button, Badge } from '@/components/ui';
 import { format, formatDistanceToNow, subDays, isAfter } from 'date-fns';
 
 export default function Home() {
@@ -83,15 +81,15 @@ export default function Home() {
     };
     
     const StatCard = ({ title, value, icon: Icon, color, subtext }) => (
-        <Card className="border-0 shadow-sm hover:shadow-md transition-shadow">
+        <Card className="hover:border-primary/30 transition-colors">
             <CardContent className="p-6">
                 <div className="flex items-start justify-between">
                     <div>
-                        <p className="text-sm font-medium text-slate-500">{title}</p>
+                        <p className="text-sm font-medium text-muted-foreground">{title}</p>
                         <p className={`text-3xl font-bold mt-2 ${color}`}>{value}</p>
-                        {subtext && <p className="text-xs text-slate-400 mt-1">{subtext}</p>}
+                        {subtext && <p className="text-xs text-muted-foreground mt-1">{subtext}</p>}
                     </div>
-                    <div className={`p-3 rounded-xl ${color.replace('text-', 'bg-').replace('-600', '-50')}`}>
+                    <div className="p-3 rounded-xl bg-primary/15 border border-primary/25">
                         <Icon className={`h-5 w-5 ${color}`} />
                     </div>
                 </div>
@@ -101,11 +99,11 @@ export default function Home() {
     
     const getSourceBadge = (source) => {
         const colors = {
-            'BOAMP_FR': 'bg-blue-50 text-blue-700 border-blue-200',
-            'TED': 'bg-purple-50 text-purple-700 border-purple-200',
-            'ETENDERS_IE': 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            'BOAMP_FR': 'bg-secondary text-secondary-foreground border-border',
+            'TED': 'bg-primary/20 text-primary border-primary/30',
+            'ETENDERS_IE': 'bg-primary/15 text-card-foreground border-border'
         };
-        return colors[source] || 'bg-slate-50 text-slate-700 border-slate-200';
+        return colors[source] || 'bg-secondary text-secondary-foreground border-border';
     };
     
     const getCountryFlag = (country) => {
@@ -121,64 +119,85 @@ export default function Home() {
     }
     
     return (
-        <div className="space-y-8">
-            {/* Header */}
-            <div>
-                <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-                <p className="text-slate-500 mt-1">Predict future tenders using AI-powered analysis of historical contract awards</p>
-            </div>
-            
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard 
-                    title="New Tenders (24h)" 
-                    value={stats?.newTenders24h || 0}
-                    icon={FileText}
-                    color="text-indigo-600"
-                    subtext="Just published"
-                />
-                <StatCard 
-                    title="Deadlines (7 days)" 
-                    value={stats?.deadlinesIn7Days || 0}
-                    icon={Clock}
-                    color="text-amber-600"
-                    subtext="Closing soon"
-                />
-                <StatCard 
-                    title="Alerts Triggered" 
-                    value={stats?.alertsTriggered || 0}
-                    icon={Bell}
-                    color="text-emerald-600"
-                    subtext="Last 24 hours"
-                />
-                <StatCard 
-                    title="Total Tenders" 
-                    value={stats?.totalTenders || 0}
-                    icon={TrendingUp}
-                    color="text-slate-600"
-                    subtext="In database"
-                />
-            </div>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Page className="space-y-8">
+            <PageHeader className="gap-4">
+                <span className="inline-flex w-fit rounded-full border border-primary/30 bg-primary/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
+                    Civant Radar
+                </span>
+                <div className="space-y-3">
+                    <PageTitle className="max-w-3xl text-3xl md:text-4xl">
+                        Track public procurement shifts before your competitors do
+                    </PageTitle>
+                    <PageDescription className="max-w-2xl">
+                        AI-assisted monitoring for Irish and French tender markets, with alerts and predictive signals from live procurement activity.
+                    </PageDescription>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    <Button asChild variant="primary">
+                        <Link to={createPageUrl('Search')}>
+                            Explore tenders
+                            <ArrowRight className="h-4 w-4 ml-1" />
+                        </Link>
+                    </Button>
+                    <Button asChild variant="secondary">
+                        <Link to={createPageUrl('Predictions')}>
+                            View predictions
+                        </Link>
+                    </Button>
+                </div>
+            </PageHeader>
+
+            <PageBody>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <StatCard 
+                        title="New Tenders (24h)" 
+                        value={stats?.newTenders24h || 0}
+                        icon={FileText}
+                        color="text-primary"
+                        subtext="Just published"
+                    />
+                    <StatCard 
+                        title="Deadlines (7 days)" 
+                        value={stats?.deadlinesIn7Days || 0}
+                        icon={Clock}
+                        color="text-card-foreground"
+                        subtext="Closing soon"
+                    />
+                    <StatCard 
+                        title="Alerts Triggered" 
+                        value={stats?.alertsTriggered || 0}
+                        icon={Bell}
+                        color="text-primary"
+                        subtext="Last 24 hours"
+                    />
+                    <StatCard 
+                        title="Total Tenders" 
+                        value={stats?.totalTenders || 0}
+                        icon={TrendingUp}
+                        color="text-card-foreground"
+                        subtext="In database"
+                    />
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Latest Tenders */}
                 <div className="lg:col-span-2">
-                    <Card className="border-0 shadow-sm">
+                    <Card>
                         <CardHeader className="pb-3">
                             <div className="flex items-center justify-between">
                                 <CardTitle className="text-lg font-semibold">Latest Tenders</CardTitle>
                                 <Link to={createPageUrl('Search')}>
-                                    <Button variant="ghost" size="sm" className="text-indigo-600 hover:text-indigo-700">
+                                    <Button variant="ghost" size="sm">
                                         View all <ArrowRight className="h-4 w-4 ml-1" />
                                     </Button>
                                 </Link>
                             </div>
                         </CardHeader>
                         <CardContent className="p-0">
-                            <div className="divide-y divide-slate-100">
+                            <div className="divide-y divide-border/80">
                                 {latestTenders.length === 0 ? (
-                                    <div className="p-8 text-center text-slate-500">
-                                        <FileText className="h-8 w-8 mx-auto mb-2 text-slate-300" />
+                                    <div className="p-8 text-center text-muted-foreground">
+                                        <FileText className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
                                         <p>No tenders yet. Run a connector to fetch data.</p>
                                     </div>
                                 ) : (
@@ -191,27 +210,27 @@ export default function Home() {
                                             <Link
                                                 key={tender.id}
                                                 to={createPageUrl(`TenderDetail?id=${tender.id}`)}
-                                                className="block p-4 hover:bg-slate-50 transition-colors"
+                                                className="block p-4 hover:bg-muted/40 transition-colors"
                                             >
                                                 <div className="flex items-start gap-3">
                                                     <div className="text-lg">{getCountryFlag(tender.country)}</div>
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-center gap-2 flex-wrap">
-                                                            <h3 className="font-medium text-slate-900 truncate">
+                                                            <h3 className="font-medium text-card-foreground truncate">
                                                                 {tender.title}
                                                             </h3>
                                                             {isNew && (
-                                                                <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">
+                                                                <Badge className="text-xs" variant="primary">
                                                                     New
                                                                 </Badge>
                                                             )}
                                                             {isUpdated && (
-                                                                <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-xs">
+                                                                <Badge className="text-xs" variant="secondary">
                                                                     Updated
                                                                 </Badge>
                                                             )}
                                                         </div>
-                                                        <div className="flex items-center gap-3 mt-1.5 text-sm text-slate-500">
+                                                        <div className="flex items-center gap-3 mt-1.5 text-sm text-muted-foreground">
                                                             <span className="flex items-center gap-1">
                                                                 <Building2 className="h-3.5 w-3.5" />
                                                                 {tender.buyer_name || 'Unknown buyer'}
@@ -239,7 +258,7 @@ export default function Home() {
                 
                 {/* Connector Health */}
                 <div>
-                    <Card className="border-0 shadow-sm">
+                    <Card>
                         <CardHeader className="pb-3">
                             <CardTitle className="text-lg font-semibold">Connector Health</CardTitle>
                         </CardHeader>
@@ -251,33 +270,33 @@ export default function Home() {
                                 return (
                                     <div 
                                         key={source}
-                                        className="flex items-center justify-between p-3 rounded-xl bg-slate-50"
+                                        className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/30"
                                     >
                                         <div className="flex items-center gap-3">
                                             {status === 'success' ? (
-                                                <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                                                <CheckCircle2 className="h-5 w-5 text-primary" />
                                             ) : status === 'fail' ? (
-                                                <AlertCircle className="h-5 w-5 text-red-500" />
+                                                <AlertCircle className="h-5 w-5 text-destructive" />
                                             ) : status === 'partial' ? (
-                                                <AlertCircle className="h-5 w-5 text-amber-500" />
+                                                <AlertCircle className="h-5 w-5 text-card-foreground" />
                                             ) : (
-                                                <div className="h-5 w-5 rounded-full bg-slate-200" />
+                                                <div className="h-5 w-5 rounded-full bg-secondary" />
                                             )}
                                             <div>
-                                                <p className="font-medium text-sm text-slate-900">{source}</p>
+                                                <p className="font-medium text-sm text-card-foreground">{source}</p>
                                                 {run ? (
-                                                    <p className="text-xs text-slate-500">
+                                                    <p className="text-xs text-muted-foreground">
                                                         {formatDistanceToNow(new Date(run.started_at), { addSuffix: true })}
                                                     </p>
                                                 ) : (
-                                                    <p className="text-xs text-slate-400">Never run</p>
+                                                    <p className="text-xs text-muted-foreground">Never run</p>
                                                 )}
                                             </div>
                                         </div>
                                         {run && (
                                             <div className="text-right">
-                                                <p className="text-sm font-medium text-slate-900">{run.fetched_count || 0}</p>
-                                                <p className="text-xs text-slate-500">fetched</p>
+                                                <p className="text-sm font-medium text-card-foreground">{run.fetched_count || 0}</p>
+                                                <p className="text-xs text-muted-foreground">fetched</p>
                                             </div>
                                         )}
                                     </div>
@@ -286,7 +305,8 @@ export default function Home() {
                         </CardContent>
                     </Card>
                 </div>
-            </div>
-        </div>
+                </div>
+            </PageBody>
+        </Page>
     );
 }

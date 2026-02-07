@@ -22,6 +22,7 @@ import EnrichmentPanel from '../components/tender/EnrichmentPanel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { format, formatDistanceToNow } from 'date-fns';
 
 export default function TenderDetail() {
@@ -70,11 +71,11 @@ export default function TenderDetail() {
     
     const getSourceBadge = (source) => {
         const colors = {
-            'BOAMP_FR': 'bg-blue-50 text-blue-700 border-blue-200',
-            'TED': 'bg-purple-50 text-purple-700 border-purple-200',
-            'ETENDERS_IE': 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            'BOAMP_FR': 'bg-secondary text-secondary-foreground border-border',
+            'TED': 'bg-primary/20 text-primary border-primary/30',
+            'ETENDERS_IE': 'bg-primary/15 text-card-foreground border-border'
         };
-        return colors[source] || 'bg-slate-50 text-slate-700 border-slate-200';
+        return colors[source] || 'bg-secondary text-secondary-foreground border-border';
     };
     
     const getCountryFlag = (country) => {
@@ -83,10 +84,10 @@ export default function TenderDetail() {
     
     const getNoticeTypeBadge = (type) => {
         const colors = {
-            'tender': 'bg-indigo-50 text-indigo-700 border-indigo-200',
-            'award': 'bg-emerald-50 text-emerald-700 border-emerald-200',
-            'corrigendum': 'bg-amber-50 text-amber-700 border-amber-200',
-            'unknown': 'bg-slate-50 text-slate-700 border-slate-200'
+            'tender': 'bg-primary/20 text-primary border-primary/30',
+            'award': 'bg-primary/15 text-card-foreground border-border',
+            'corrigendum': 'bg-secondary text-secondary-foreground border-border',
+            'unknown': 'bg-secondary text-secondary-foreground border-border'
         };
         return colors[type] || colors.unknown;
     };
@@ -148,12 +149,12 @@ export default function TenderDetail() {
     
     const getChangeTypeBadge = (type) => {
         const labels = {
-            'new_notice': { label: 'New Notice', color: 'bg-emerald-50 text-emerald-700' },
-            'field_changed': { label: 'Fields Changed', color: 'bg-blue-50 text-blue-700' },
-            'deadline_changed': { label: 'Deadline Changed', color: 'bg-amber-50 text-amber-700' },
-            'corrected': { label: 'Correction', color: 'bg-purple-50 text-purple-700' },
-            'award_published': { label: 'Award Published', color: 'bg-emerald-50 text-emerald-700' },
-            'unknown': { label: 'Unknown', color: 'bg-slate-50 text-slate-700' }
+            'new_notice': { label: 'New Notice', color: 'bg-primary/20 text-primary border-primary/30' },
+            'field_changed': { label: 'Fields Changed', color: 'bg-secondary text-secondary-foreground border-border' },
+            'deadline_changed': { label: 'Deadline Changed', color: 'bg-primary/15 text-card-foreground border-border' },
+            'corrected': { label: 'Correction', color: 'bg-secondary text-secondary-foreground border-border' },
+            'award_published': { label: 'Award Published', color: 'bg-primary/20 text-primary border-primary/30' },
+            'unknown': { label: 'Unknown', color: 'bg-secondary text-secondary-foreground border-border' }
         };
         return labels[type] || labels.unknown;
     };
@@ -170,8 +171,8 @@ export default function TenderDetail() {
         return (
             <div className="text-center py-12">
                 <FileText className="h-12 w-12 mx-auto text-slate-300 mb-4" />
-                <h2 className="text-xl font-semibold text-slate-900">Tender not found</h2>
-                <p className="text-slate-500 mt-2">The requested tender could not be found.</p>
+                <h2 className="text-xl font-semibold text-card-foreground">Tender not found</h2>
+                <p className="text-muted-foreground mt-2">The requested tender could not be found.</p>
                 <Link to={createPageUrl('Search')}>
                     <Button className="mt-4">
                         <ArrowLeft className="h-4 w-4 mr-2" />
@@ -186,7 +187,7 @@ export default function TenderDetail() {
         <div className="space-y-6 max-w-4xl mx-auto">
             {/* Back button */}
             <Link to={createPageUrl('Search')}>
-                <Button variant="ghost" size="sm" className="text-slate-600 hover:text-slate-900">
+                <Button variant="ghost" size="sm">
                     <ArrowLeft className="h-4 w-4 mr-2" />
                     Back to Search
                 </Button>
@@ -204,12 +205,17 @@ export default function TenderDetail() {
                             {tender.notice_type}
                         </Badge>
                         {tender.version_count > 1 && (
-                            <Badge className="bg-amber-50 text-amber-700 border-amber-200">
+                            <Badge variant="secondary">
                                 {tender.version_count} versions
                             </Badge>
                         )}
+                        {enrichment?.confidence_score != null && (
+                            <Badge variant="primary">
+                                AI confidence {Math.round(Number(enrichment.confidence_score) * 100)}%
+                            </Badge>
+                        )}
                     </div>
-                    <h1 className="text-2xl font-bold text-slate-900">{tender.title}</h1>
+                    <h1 className="text-2xl font-bold text-card-foreground">{tender.title}</h1>
                 </div>
                 
                 <div className="flex flex-wrap gap-2">
@@ -260,7 +266,7 @@ export default function TenderDetail() {
                         Send to Slack
                     </Button>
                     <Link to={createPageUrl(`Alerts?buyer=${encodeURIComponent(tender.buyer_name || '')}&keyword=${encodeURIComponent(tender.title?.split(' ').slice(0, 3).join(' ') || '')}`)}>
-                        <Button className="bg-indigo-600 hover:bg-indigo-700">
+                        <Button variant="primary">
                             <Bell className="h-4 w-4 mr-2" />
                             Create Alert
                         </Button>
@@ -270,7 +276,7 @@ export default function TenderDetail() {
             
             {/* AI Enrichment Panel */}
             {enrichment && (
-                <Card className="border-0 shadow-sm">
+                <Card>
                     <CardContent className="p-6">
                         <EnrichmentPanel enrichment={enrichment} />
                     </CardContent>
@@ -280,24 +286,24 @@ export default function TenderDetail() {
             {/* Main Info Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Details Card */}
-                <Card className="border-0 shadow-sm">
+                <Card>
                     <CardHeader className="pb-3">
                         <CardTitle className="text-lg font-semibold">Details</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <div className="flex items-start gap-3">
-                            <Building2 className="h-5 w-5 text-slate-400 mt-0.5" />
+                            <Building2 className="h-5 w-5 text-muted-foreground mt-0.5" />
                             <div>
-                                <p className="text-xs text-slate-500 uppercase tracking-wide">Buyer</p>
-                                <p className="font-medium text-slate-900">{tender.buyer_name || 'Not specified'}</p>
+                                <p className="text-xs text-muted-foreground uppercase tracking-wide">Buyer</p>
+                                <p className="font-medium text-card-foreground">{tender.buyer_name || 'Not specified'}</p>
                             </div>
                         </div>
                         
                         <div className="flex items-start gap-3">
-                            <Calendar className="h-5 w-5 text-slate-400 mt-0.5" />
+                            <Calendar className="h-5 w-5 text-muted-foreground mt-0.5" />
                             <div>
-                                <p className="text-xs text-slate-500 uppercase tracking-wide">Publication Date</p>
-                                <p className="font-medium text-slate-900">
+                                <p className="text-xs text-muted-foreground uppercase tracking-wide">Publication Date</p>
+                                <p className="font-medium text-card-foreground">
                                     {tender.publication_date 
                                         ? format(new Date(tender.publication_date), 'MMMM d, yyyy')
                                         : 'Not specified'
@@ -307,17 +313,17 @@ export default function TenderDetail() {
                         </div>
                         
                         <div className="flex items-start gap-3">
-                            <Clock className="h-5 w-5 text-slate-400 mt-0.5" />
+                            <Clock className="h-5 w-5 text-muted-foreground mt-0.5" />
                             <div>
-                                <p className="text-xs text-slate-500 uppercase tracking-wide">Deadline</p>
-                                <p className="font-medium text-slate-900">
+                                <p className="text-xs text-muted-foreground uppercase tracking-wide">Deadline</p>
+                                <p className="font-medium text-card-foreground">
                                     {tender.deadline_date 
                                         ? format(new Date(tender.deadline_date), 'MMMM d, yyyy')
                                         : 'Not specified'
                                     }
                                 </p>
                                 {tender.deadline_date && new Date(tender.deadline_date) > new Date() && (
-                                    <p className="text-sm text-amber-600">
+                                    <p className="text-sm text-primary">
                                         {formatDistanceToNow(new Date(tender.deadline_date), { addSuffix: true })}
                                     </p>
                                 )}
@@ -326,10 +332,10 @@ export default function TenderDetail() {
                         
                         {tender.estimated_value && (
                             <div className="flex items-start gap-3">
-                                <DollarSign className="h-5 w-5 text-slate-400 mt-0.5" />
+                                <DollarSign className="h-5 w-5 text-muted-foreground mt-0.5" />
                                 <div>
-                                    <p className="text-xs text-slate-500 uppercase tracking-wide">Estimated Value</p>
-                                    <p className="font-medium text-slate-900">
+                                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Estimated Value</p>
+                                    <p className="font-medium text-card-foreground">
                                         {new Intl.NumberFormat('en', { 
                                             style: 'currency', 
                                             currency: tender.currency || 'EUR',
@@ -342,12 +348,12 @@ export default function TenderDetail() {
                         
                         {tender.cpv_codes && (
                             <div className="flex items-start gap-3">
-                                <Tag className="h-5 w-5 text-slate-400 mt-0.5" />
+                                <Tag className="h-5 w-5 text-muted-foreground mt-0.5" />
                                 <div>
-                                    <p className="text-xs text-slate-500 uppercase tracking-wide">CPV Codes</p>
+                                    <p className="text-xs text-muted-foreground uppercase tracking-wide">CPV Codes</p>
                                     <div className="flex flex-wrap gap-1 mt-1">
                                         {tender.cpv_codes.split(',').map((code, i) => (
-                                            <Badge key={i} variant="outline" className="text-xs">
+                                            <Badge key={i} variant="ghost" className="text-xs">
                                                 {code.trim()}
                                             </Badge>
                                         ))}
@@ -359,24 +365,24 @@ export default function TenderDetail() {
                 </Card>
                 
                 {/* Metadata Card */}
-                <Card className="border-0 shadow-sm">
+                <Card>
                     <CardHeader className="pb-3">
                         <CardTitle className="text-lg font-semibold">Tracking Info</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <div>
-                            <p className="text-xs text-slate-500 uppercase tracking-wide">Tender UID</p>
-                            <p className="font-mono text-sm text-slate-700 mt-1">{tender.tender_uid}</p>
+                            <p className="text-xs text-muted-foreground uppercase tracking-wide">Tender UID</p>
+                            <Input value={tender.tender_uid || ''} readOnly className="mt-1 font-mono text-xs" />
                         </div>
                         
                         <div>
-                            <p className="text-xs text-slate-500 uppercase tracking-wide">Source Notice ID</p>
-                            <p className="font-mono text-sm text-slate-700 mt-1">{tender.source_notice_id}</p>
+                            <p className="text-xs text-muted-foreground uppercase tracking-wide">Source Notice ID</p>
+                            <Input value={tender.source_notice_id || ''} readOnly className="mt-1 font-mono text-xs" />
                         </div>
                         
                         <div>
-                            <p className="text-xs text-slate-500 uppercase tracking-wide">First Seen</p>
-                            <p className="text-sm text-slate-700 mt-1">
+                            <p className="text-xs text-muted-foreground uppercase tracking-wide">First Seen</p>
+                            <p className="text-sm text-card-foreground mt-1">
                                 {tender.first_seen_at 
                                     ? format(new Date(tender.first_seen_at), 'MMM d, yyyy HH:mm')
                                     : '-'
@@ -385,8 +391,8 @@ export default function TenderDetail() {
                         </div>
                         
                         <div>
-                            <p className="text-xs text-slate-500 uppercase tracking-wide">Last Seen</p>
-                            <p className="text-sm text-slate-700 mt-1">
+                            <p className="text-xs text-muted-foreground uppercase tracking-wide">Last Seen</p>
+                            <p className="text-sm text-card-foreground mt-1">
                                 {tender.last_seen_at 
                                     ? format(new Date(tender.last_seen_at), 'MMM d, yyyy HH:mm')
                                     : '-'
@@ -395,15 +401,15 @@ export default function TenderDetail() {
                         </div>
                         
                         <div>
-                            <p className="text-xs text-slate-500 uppercase tracking-wide">Fingerprint</p>
-                            <p className="font-mono text-xs text-slate-500 mt-1 truncate">{tender.fingerprint}</p>
+                            <p className="text-xs text-muted-foreground uppercase tracking-wide">Fingerprint</p>
+                            <Input value={tender.fingerprint || ''} readOnly className="mt-1 font-mono text-xs" />
                         </div>
                     </CardContent>
                 </Card>
             </div>
             
             {/* Version History */}
-            <Card className="border-0 shadow-sm">
+            <Card>
                 <CardHeader className="pb-3">
                     <CardTitle className="text-lg font-semibold flex items-center gap-2">
                         <History className="h-5 w-5" />
@@ -412,7 +418,7 @@ export default function TenderDetail() {
                 </CardHeader>
                 <CardContent>
                     {versions.length === 0 ? (
-                        <p className="text-slate-500 text-center py-6">No version history available</p>
+                        <p className="text-muted-foreground text-center py-6">No version history available</p>
                     ) : (
                         <div className="space-y-4">
                             {versions.map((version) => {
@@ -421,18 +427,18 @@ export default function TenderDetail() {
                                 return (
                                     <div 
                                         key={version.id} 
-                                        className="relative pl-6 pb-4 border-l-2 border-slate-200 last:border-l-transparent last:pb-0"
+                                        className="relative pl-6 pb-4 border-l-2 border-border last:border-l-transparent last:pb-0"
                                     >
-                                        <div className="absolute left-0 top-0 transform -translate-x-1/2 w-3 h-3 rounded-full bg-white border-2 border-indigo-500" />
+                                        <div className="absolute left-0 top-0 transform -translate-x-1/2 w-3 h-3 rounded-full bg-background border-2 border-primary" />
                                         
                                         <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
                                             <Badge className={`${changeInfo.color} w-fit`}>
                                                 {changeInfo.label}
                                             </Badge>
-                                            <span className="text-sm text-slate-500">
+                                            <span className="text-sm text-muted-foreground">
                                                 Version {version.version_number}
                                             </span>
-                                            <span className="text-sm text-slate-400">
+                                            <span className="text-sm text-muted-foreground">
                                                 {version.change_date 
                                                     ? format(new Date(version.change_date), 'MMM d, yyyy HH:mm')
                                                     : ''
@@ -441,17 +447,17 @@ export default function TenderDetail() {
                                         </div>
                                         
                                         {version.change_type !== 'new_notice' && version.old_value && version.new_value && (
-                                            <div className="mt-2 p-3 bg-slate-50 rounded-lg text-xs">
+                                            <div className="mt-2 p-3 bg-muted/40 border border-border rounded-lg text-xs">
                                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                                     <div>
-                                                        <p className="text-slate-500 mb-1 font-medium">Before</p>
-                                                        <pre className="text-slate-600 whitespace-pre-wrap overflow-x-auto">
+                                                        <p className="text-muted-foreground mb-1 font-medium">Before</p>
+                                                        <pre className="text-card-foreground whitespace-pre-wrap overflow-x-auto">
                                                             {version.old_value}
                                                         </pre>
                                                     </div>
                                                     <div>
-                                                        <p className="text-slate-500 mb-1 font-medium">After</p>
-                                                        <pre className="text-slate-600 whitespace-pre-wrap overflow-x-auto">
+                                                        <p className="text-muted-foreground mb-1 font-medium">After</p>
+                                                        <pre className="text-card-foreground whitespace-pre-wrap overflow-x-auto">
                                                             {version.new_value}
                                                         </pre>
                                                     </div>
