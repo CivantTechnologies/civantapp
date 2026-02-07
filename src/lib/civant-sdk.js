@@ -250,6 +250,18 @@ export const createClient = ({
             },
             getConnectorStatus(tenantId) {
                 return createFunctionsApi(http, appId).invoke('getConnectorStatus', tenantId ? { tenantId } : {});
+            },
+            enableSupportAccess(payload = {}) {
+                return createFunctionsApi(http, appId).invoke('enableSupportAccess', payload);
+            },
+            revokeSupportAccess(payload = {}) {
+                return createFunctionsApi(http, appId).invoke('revokeSupportAccess', payload);
+            },
+            getSupportAccessStatus(payload = {}) {
+                return createFunctionsApi(http, appId).invoke('getSupportAccessStatus', payload);
+            },
+            listSupportAccessAudit(payload = {}) {
+                return createFunctionsApi(http, appId).invoke('listSupportAccessAudit', payload);
             }
         },
         connectors: {

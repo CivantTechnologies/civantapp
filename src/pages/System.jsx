@@ -17,6 +17,13 @@ function formatDateRelative(value) {
   }
 }
 
+function formatDateTime(value) {
+  if (!value) return 'No data yet';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'No data yet';
+  return `${date.toLocaleString()} (${formatDateRelative(value)})`;
+}
+
 function StatusBadge({ status }) {
   const normalized = String(status || 'no_data').toLowerCase();
   if (normalized === 'success') return <Badge variant="primary">Healthy</Badge>;
@@ -35,6 +42,15 @@ export default function System() {
   const [tenant, setTenant] = useState(null);
   const [tenantUsers, setTenantUsers] = useState([]);
   const [connectors, setConnectors] = useState([]);
+  const [supportStatus, setSupportStatus] = useState(null);
+  const [supportAudit, setSupportAudit] = useState([]);
+  const [supportLoading, setSupportLoading] = useState(true);
+  const [supportActionLoading, setSupportActionLoading] = useState('');
+  const [supportMessage, setSupportMessage] = useState('');
+  const [supportError, setSupportError] = useState('');
+  const [enableDurationMinutes, setEnableDurationMinutes] = useState('60');
+  const [enableReason, setEnableReason] = useState('');
+  const [revokeReason, setRevokeReason] = useState('');
 
   const loadSystemData = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -52,6 +68,7 @@ export default function System() {
 
       setTenantUsers(Array.isArray(unwrapResponse(usersPayload)) ? unwrapResponse(usersPayload) : []);
       setConnectors(Array.isArray(unwrapResponse(connectorsPayload)) ? unwrapResponse(connectorsPayload) : []);
+      await loadSupportSection(resolvedTenantId);
       setDenied(false);
     } catch (err) {
       const status = err?.status || err?.response?.status;
@@ -69,6 +86,71 @@ export default function System() {
   useEffect(() => {
     loadSystemData(false);
   }, []);
+
+  const loadSupportSection = async (tenantId) => {
+    setSupportLoading(true);
+    try {
+      const [statusPayload, auditPayload] = await Promise.all([
+        civant.system.getSupportAccessStatus({ tenantId }),
+        civant.system.listSupportAccessAudit({ tenantId, limit: 10 })
+      ]);
+      setSupportStatus(unwrapResponse(statusPayload));
+      setSupportAudit(Array.isArray(unwrapResponse(auditPayload)) ? unwrapResponse(auditPayload) : []);
+    } catch (err) {
+      setSupportError(err?.message || 'Failed to load support access');
+    } finally {
+      setSupportLoading(false);
+    }
+  };
+
+  const handleEnableSupportAccess = async () => {
+    const tenantId = tenant?.tenantId || 'civant_default';
+    if (!enableReason.trim()) {
+      setSupportError('Enable reason is required.');
+      return;
+    }
+    setSupportError('');
+    setSupportMessage('');
+    setSupportActionLoading('enable');
+    try {
+      await civant.system.enableSupportAccess({
+        tenantId,
+        durationMinutes: Number(enableDurationMinutes),
+        reason: enableReason.trim()
+      });
+      setSupportMessage('Support access enabled.');
+      setEnableReason('');
+      await loadSupportSection(tenantId);
+    } catch (err) {
+      setSupportError(err?.message || 'Failed to enable support access.');
+    } finally {
+      setSupportActionLoading('');
+    }
+  };
+
+  const handleRevokeSupportAccess = async () => {
+    const tenantId = tenant?.tenantId || 'civant_default';
+    if (!revokeReason.trim()) {
+      setSupportError('Revoke reason is required.');
+      return;
+    }
+    setSupportError('');
+    setSupportMessage('');
+    setSupportActionLoading('revoke');
+    try {
+      await civant.system.revokeSupportAccess({
+        tenantId,
+        reason: revokeReason.trim()
+      });
+      setSupportMessage('Support access revoked.');
+      setRevokeReason('');
+      await loadSupportSection(tenantId);
+    } catch (err) {
+      setSupportError(err?.message || 'Failed to revoke support access.');
+    } finally {
+      setSupportActionLoading('');
+    }
+  };
 
   const regionText = useMemo(() => {
     if (!tenant?.regions || !tenant.regions.length) return 'Not configured';
@@ -220,10 +302,111 @@ export default function System() {
 
         <Card>
           <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Shield className="h-4 w-4" /> Support Access</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Audited, consent-based support access. Support access is time-limited and logged for compliance.
+            </p>
+
+            {supportLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading support access status...
+              </div>
+            ) : (
+              <div className="rounded-xl border border-border p-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Current status:</span>
+                  <Badge variant={supportStatus?.enabled ? 'primary' : 'ghost'}>
+                    {supportStatus?.enabled ? 'Enabled' : 'Disabled'}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">Expires: {formatDateTime(supportStatus?.expiresAt)}</p>
+                <p className="text-xs text-muted-foreground">Enabled by: {supportStatus?.enabledBy || 'Not configured'}</p>
+                <p className="text-xs text-muted-foreground">Reason: {supportStatus?.reason || 'Not configured'}</p>
+                {supportStatus?.revokedAt && (
+                  <p className="text-xs text-muted-foreground">Revoked: {formatDateTime(supportStatus?.revokedAt)}</p>
+                )}
+              </div>
+            )}
+
+            {!supportStatus?.enabled ? (
+              <div className="rounded-xl border border-border p-4 space-y-3">
+                <h3 className="text-sm font-semibold text-card-foreground">Enable support access</h3>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Duration</p>
+                    <select
+                      value={enableDurationMinutes}
+                      onChange={(e) => setEnableDurationMinutes(e.target.value)}
+                      className="h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground"
+                    >
+                      <option value="15">15 minutes</option>
+                      <option value="60">60 minutes</option>
+                      <option value="240">240 minutes</option>
+                    </select>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Reason</p>
+                    <Input
+                      value={enableReason}
+                      onChange={(e) => setEnableReason(e.target.value)}
+                      placeholder="Reason for enabling support access"
+                    />
+                  </div>
+                </div>
+                <Button onClick={handleEnableSupportAccess} disabled={supportActionLoading === 'enable'}>
+                  {supportActionLoading === 'enable' ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  Enable support access
+                </Button>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-border p-4 space-y-3">
+                <h3 className="text-sm font-semibold text-card-foreground">Revoke support access</h3>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Revoke reason</p>
+                  <Input
+                    value={revokeReason}
+                    onChange={(e) => setRevokeReason(e.target.value)}
+                    placeholder="Reason for revoking support access"
+                  />
+                </div>
+                <Button variant="secondary" onClick={handleRevokeSupportAccess} disabled={supportActionLoading === 'revoke'}>
+                  {supportActionLoading === 'revoke' ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  Revoke support access
+                </Button>
+              </div>
+            )}
+
+            {supportMessage && <p className="text-sm text-primary">{supportMessage}</p>}
+            {supportError && <p className="text-sm text-destructive">{supportError}</p>}
+
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-card-foreground">Audit log</h3>
+              {supportAudit.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No data yet</p>
+              ) : (
+                supportAudit.map((row) => (
+                  <div key={row.id} className="rounded-xl border border-border p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="ghost">{row.action || 'UNKNOWN'}</Badge>
+                      <span className="text-xs text-muted-foreground">{formatDateTime(row.created_at)}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">Actor: {row.actor_email || row.actor_user_id || 'Unknown'}</p>
+                    <p className="text-xs text-muted-foreground">Reason: {row.reason || 'Not configured'}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle className="flex items-center gap-2"><Shield className="h-4 w-4" /> Security</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <p className="text-sm text-card-foreground">Support access: audited & consent-based (planned)</p>
             <p className="text-sm text-card-foreground">SSO: Enterprise (planned)</p>
           </CardContent>
         </Card>
