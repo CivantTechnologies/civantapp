@@ -67,31 +67,61 @@ function extractParsedRecord(raw: Record<string, unknown>) {
   };
 }
 
-async function upsertIngestionRun(civant: CivantClient, runId: string, payload: Record<string, unknown>) {
-  const existing = await civant.asServiceRole.entities[PIPELINE_NAMES.ingestionRuns].filter({ run_id: runId });
+async function upsertIngestionRun(
+  civant: CivantClient,
+  tenantId: string,
+  runId: string,
+  payload: Record<string, unknown>
+) {
+  const existing = await civant.asServiceRole.entities[PIPELINE_NAMES.ingestionRuns].filter({
+    tenant_id: tenantId,
+    run_id: runId
+  });
   if (existing.length > 0) {
-    return civant.asServiceRole.entities[PIPELINE_NAMES.ingestionRuns].update(existing[0].id, payload);
+    return civant.asServiceRole.entities[PIPELINE_NAMES.ingestionRuns].update(existing[0].id, {
+      tenant_id: tenantId,
+      ...payload
+    });
   }
-  return civant.asServiceRole.entities[PIPELINE_NAMES.ingestionRuns].create({ run_id: runId, ...payload });
+  return civant.asServiceRole.entities[PIPELINE_NAMES.ingestionRuns].create({
+    tenant_id: tenantId,
+    run_id: runId,
+    ...payload
+  });
 }
 
-async function getOrCreateEntity(civant: CivantClient, entityType: 'buyer' | 'supplier', name: string) {
+async function getOrCreateEntity(
+  civant: CivantClient,
+  tenantId: string,
+  entityType: 'buyer' | 'supplier',
+  name: string
+) {
   const normalized = name.trim();
   if (!normalized) return null;
 
   const exact = await civant.asServiceRole.entities[PIPELINE_NAMES.entities].filter({
+    tenant_id: tenantId,
     entity_type: entityType,
     canonical_name: normalized
   });
   if (exact.length > 0) return exact[0];
 
-  const aliasMatches = await civant.asServiceRole.entities[PIPELINE_NAMES.entityAliases].filter({ alias: normalized });
+  const aliasMatches = await civant.asServiceRole.entities[PIPELINE_NAMES.entityAliases].filter({
+    tenant_id: tenantId,
+    alias: normalized
+  });
   if (aliasMatches.length > 0) {
-    const aliasEntity = await civant.asServiceRole.entities[PIPELINE_NAMES.entities].filter({ entity_id: aliasMatches[0].entity_id });
+    const aliasEntity = await civant.asServiceRole.entities[PIPELINE_NAMES.entities].filter({
+      tenant_id: tenantId,
+      entity_id: aliasMatches[0].entity_id
+    });
     if (aliasEntity.length > 0) return aliasEntity[0];
   }
 
-  const nearby: AnyRow[] = await civant.asServiceRole.entities[PIPELINE_NAMES.entities].filter({ entity_type: entityType }, '-updated_at', 20);
+  const nearby: AnyRow[] = await civant.asServiceRole.entities[PIPELINE_NAMES.entities].filter({
+    tenant_id: tenantId,
+    entity_type: entityType
+  }, '-updated_at', 20);
 
   if (nearby.length) {
     const agent = await runReconcilerAgent({
@@ -102,6 +132,7 @@ async function getOrCreateEntity(civant: CivantClient, entityType: 'buyer' | 'su
     if (agent.confidence >= 0.85 && agent.merge_decision === 'merge') {
       await civant.asServiceRole.entities[PIPELINE_NAMES.entityAliases].create({
         id: makeId('alias'),
+        tenant_id: tenantId,
         entity_id: nearby.find((x: AnyRow) => x.canonical_name === agent.canonical_name)?.entity_id || nearby[0].entity_id,
         alias: normalized,
         source: 'ReconcilerAgent',
@@ -113,6 +144,7 @@ async function getOrCreateEntity(civant: CivantClient, entityType: 'buyer' | 'su
 
     await civant.asServiceRole.entities[PIPELINE_NAMES.reconciliationQueue].create({
       id: makeId('reconq'),
+      tenant_id: tenantId,
       candidate_json: {
         input_name: normalized,
         entity_type: entityType,
@@ -124,6 +156,7 @@ async function getOrCreateEntity(civant: CivantClient, entityType: 'buyer' | 'su
   }
 
   const entity = await civant.asServiceRole.entities[PIPELINE_NAMES.entities].create({
+    tenant_id: tenantId,
     entity_id: makeId('ent'),
     entity_type: entityType,
     canonical_name: normalized,
@@ -132,6 +165,7 @@ async function getOrCreateEntity(civant: CivantClient, entityType: 'buyer' | 'su
 
   await civant.asServiceRole.entities[PIPELINE_NAMES.entityAliases].create({
     id: makeId('alias'),
+    tenant_id: tenantId,
     entity_id: entity.entity_id,
     alias: normalized,
     source: 'deterministic',
@@ -144,6 +178,7 @@ async function getOrCreateEntity(civant: CivantClient, entityType: 'buyer' | 'su
 
 export async function ingest_raw(civant: CivantClient, params: {
   run_id: string;
+  tenant_id: string;
   source: string;
   cursor?: string;
   documents: RawInput[];
@@ -151,7 +186,7 @@ export async function ingest_raw(civant: CivantClient, params: {
   const errors: Array<{ external_id?: string; message: string }> = [];
   let inserted = 0;
 
-  await upsertIngestionRun(civant, params.run_id, {
+  await upsertIngestionRun(civant, params.tenant_id, params.run_id, {
     source: params.source,
     cursor: params.cursor || null,
     status: 'running',
@@ -164,11 +199,15 @@ export async function ingest_raw(civant: CivantClient, params: {
     try {
       const rawPayload = JSON.stringify(doc.raw_json || {}) + (doc.raw_text || '');
       const checksum = await sha256(rawPayload);
-      const existing = await civant.asServiceRole.entities[PIPELINE_NAMES.rawDocuments].filter({ checksum });
+      const existing = await civant.asServiceRole.entities[PIPELINE_NAMES.rawDocuments].filter({
+        tenant_id: params.tenant_id,
+        checksum
+      });
       if (existing.length > 0) continue;
 
       await civant.asServiceRole.entities[PIPELINE_NAMES.rawDocuments].create({
         id: makeId('raw'),
+        tenant_id: params.tenant_id,
         run_id: params.run_id,
         source: doc.source,
         source_url: doc.source_url || null,
@@ -188,7 +227,7 @@ export async function ingest_raw(civant: CivantClient, params: {
     }
   }
 
-  await upsertIngestionRun(civant, params.run_id, {
+  await upsertIngestionRun(civant, params.tenant_id, params.run_id, {
     status: errors.length ? 'partial' : 'success',
     finished_at: new Date().toISOString(),
     metrics: {
@@ -203,8 +242,11 @@ export async function ingest_raw(civant: CivantClient, params: {
   return { inserted, errors };
 }
 
-export async function parse_to_staging(civant: CivantClient, params: { run_id: string }) {
-  const docs = await civant.asServiceRole.entities[PIPELINE_NAMES.rawDocuments].filter({ run_id: params.run_id }, '-created_at', 5000);
+export async function parse_to_staging(civant: CivantClient, params: { run_id: string; tenant_id: string }) {
+  const docs = await civant.asServiceRole.entities[PIPELINE_NAMES.rawDocuments].filter({
+    tenant_id: params.tenant_id,
+    run_id: params.run_id
+  }, '-created_at', 5000);
   let valid = 0;
   let invalid = 0;
 
@@ -216,6 +258,7 @@ export async function parse_to_staging(civant: CivantClient, params: { run_id: s
 
     await civant.asServiceRole.entities[PIPELINE_NAMES.stagingRecords].create({
       id: makeId('stage'),
+      tenant_id: params.tenant_id,
       run_id: params.run_id,
       external_id: parsed.external_id || makeId('missing'),
       parsed_json: parsed,
@@ -230,8 +273,9 @@ export async function parse_to_staging(civant: CivantClient, params: { run_id: s
   return { valid, invalid };
 }
 
-export async function normalise_to_canonical(civant: CivantClient, params: { run_id: string }) {
+export async function normalise_to_canonical(civant: CivantClient, params: { run_id: string; tenant_id: string }) {
   const staging = await civant.asServiceRole.entities[PIPELINE_NAMES.stagingRecords].filter({
+    tenant_id: params.tenant_id,
     run_id: params.run_id,
     validation_status: 'valid'
   }, '-created_at', 5000);
@@ -253,6 +297,7 @@ export async function normalise_to_canonical(civant: CivantClient, params: { run
       queuedReviews += 1;
       await civant.asServiceRole.entities[PIPELINE_NAMES.reconciliationQueue].create({
         id: makeId('reconq'),
+        tenant_id: params.tenant_id,
         run_id: params.run_id,
         candidate_json: {
           type: 'classification',
@@ -265,16 +310,18 @@ export async function normalise_to_canonical(civant: CivantClient, params: { run
       continue;
     }
 
-    const buyerEntity = await getOrCreateEntity(civant, 'buyer', String(parsed.buyer_name || 'Unknown Buyer'));
+    const buyerEntity = await getOrCreateEntity(civant, params.tenant_id, 'buyer', String(parsed.buyer_name || 'Unknown Buyer'));
     const cpvCodes = Array.isArray(parsed.cpv_codes) ? parsed.cpv_codes : [];
 
     const existing = await civant.asServiceRole.entities[PIPELINE_NAMES.canonicalTenders].filter({
+      tenant_id: params.tenant_id,
       source: parsed.source || 'unknown',
       external_id: record.external_id
     });
 
     const canonicalPayload = {
       canonical_id: existing[0]?.canonical_id || makeId('ct'),
+      tenant_id: params.tenant_id,
       source: parsed.source || 'unknown',
       external_id: record.external_id,
       buyer_entity_id: buyerEntity?.entity_id || null,
@@ -308,8 +355,10 @@ export async function normalise_to_canonical(civant: CivantClient, params: { run
   return { upserts, queuedReviews };
 }
 
-export async function build_weekly_features(civant: CivantClient, params: { weeks_back?: number }) {
-  const canonical: AnyRow[] = await civant.asServiceRole.entities[PIPELINE_NAMES.canonicalTenders].list('-publication_date', 10000);
+export async function build_weekly_features(civant: CivantClient, params: { weeks_back?: number; tenant_id: string }) {
+  const canonical: AnyRow[] = await civant.asServiceRole.entities[PIPELINE_NAMES.canonicalTenders].filter({
+    tenant_id: params.tenant_id
+  }, '-publication_date', 10000);
   const weeksBack = params.weeks_back || 104;
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - weeksBack * 7);
@@ -336,6 +385,7 @@ export async function build_weekly_features(civant: CivantClient, params: { week
 
     const payload = {
       id: makeId('feat'),
+      tenant_id: params.tenant_id,
       week_start,
       buyer_entity_id: buyer_entity_id === 'unknown' ? null : buyer_entity_id,
       category,
@@ -353,8 +403,11 @@ export async function build_weekly_features(civant: CivantClient, params: { week
   return { written };
 }
 
-export async function attach_market_signals(civant: CivantClient, params: { run_id: string }) {
-  const raw = await civant.asServiceRole.entities[PIPELINE_NAMES.rawDocuments].filter({ run_id: params.run_id }, '-created_at', 2000);
+export async function attach_market_signals(civant: CivantClient, params: { run_id: string; tenant_id: string }) {
+  const raw = await civant.asServiceRole.entities[PIPELINE_NAMES.rawDocuments].filter({
+    tenant_id: params.tenant_id,
+    run_id: params.run_id
+  }, '-created_at', 2000);
   let signalsInserted = 0;
 
   for (const doc of raw) {
@@ -369,6 +422,7 @@ export async function attach_market_signals(civant: CivantClient, params: { run_
       if (signal.strength < 0.85) {
         await civant.asServiceRole.entities[PIPELINE_NAMES.reconciliationQueue].create({
           id: makeId('reconq'),
+          tenant_id: params.tenant_id,
           run_id: params.run_id,
           candidate_json: { type: 'signal', source_url: doc.source_url, signal },
           agent_output: signal,
@@ -377,9 +431,10 @@ export async function attach_market_signals(civant: CivantClient, params: { run_
         continue;
       }
 
-      const entity = await getOrCreateEntity(civant, 'buyer', signal.entity_hint || 'Unknown Entity');
+      const entity = await getOrCreateEntity(civant, params.tenant_id, 'buyer', signal.entity_hint || 'Unknown Entity');
       await civant.asServiceRole.entities[PIPELINE_NAMES.marketSignals].create({
         id: makeId('sig'),
+        tenant_id: params.tenant_id,
         signal_type: signal.signal_type,
         entity_id: entity?.entity_id || null,
         source_url: signal.source_url || doc.source_url || null,
@@ -398,11 +453,16 @@ export async function attach_market_signals(civant: CivantClient, params: { run_
 }
 
 export async function generate_predictions(civant: CivantClient, params: {
+  tenant_id: string;
   model_version?: string;
   time_window?: string;
 }) {
-  const features: AnyRow[] = await civant.asServiceRole.entities[PIPELINE_NAMES.tenderFeaturesWeekly].list('-week_start', 20000);
-  const signals: AnyRow[] = await civant.asServiceRole.entities[PIPELINE_NAMES.marketSignals].list('-created_at', 5000);
+  const features: AnyRow[] = await civant.asServiceRole.entities[PIPELINE_NAMES.tenderFeaturesWeekly].filter({
+    tenant_id: params.tenant_id
+  }, '-week_start', 20000);
+  const signals: AnyRow[] = await civant.asServiceRole.entities[PIPELINE_NAMES.marketSignals].filter({
+    tenant_id: params.tenant_id
+  }, '-created_at', 5000);
 
   const grouped: Record<string, any[]> = {};
   features.forEach((row: AnyRow) => {
@@ -449,6 +509,7 @@ export async function generate_predictions(civant: CivantClient, params: {
 
     await civant.asServiceRole.entities[PIPELINE_NAMES.predictions].create({
       id: makeId('pred'),
+      tenant_id: params.tenant_id,
       buyer_id: buyer_id === 'unknown' ? null : buyer_id,
       category,
       cpv_family,
@@ -473,24 +534,27 @@ export function compute_confidence(input: Parameters<typeof computeConfidence>[0
 
 export async function runPipeline(civant: CivantClient, params: {
   run_id: string;
+  tenant_id: string;
   source: string;
   cursor?: string;
   documents: RawInput[];
 }) {
   const ingest = await ingest_raw(civant, {
     run_id: params.run_id,
+    tenant_id: params.tenant_id,
     source: params.source,
     cursor: params.cursor,
     documents: params.documents
   });
-  const staging = await parse_to_staging(civant, { run_id: params.run_id });
-  const normalized = await normalise_to_canonical(civant, { run_id: params.run_id });
-  const features = await build_weekly_features(civant, {});
-  const signals = await attach_market_signals(civant, { run_id: params.run_id });
-  const predictions = await generate_predictions(civant, { model_version: 'agentic-v1' });
+  const staging = await parse_to_staging(civant, { run_id: params.run_id, tenant_id: params.tenant_id });
+  const normalized = await normalise_to_canonical(civant, { run_id: params.run_id, tenant_id: params.tenant_id });
+  const features = await build_weekly_features(civant, { tenant_id: params.tenant_id });
+  const signals = await attach_market_signals(civant, { run_id: params.run_id, tenant_id: params.tenant_id });
+  const predictions = await generate_predictions(civant, { tenant_id: params.tenant_id, model_version: 'agentic-v1' });
 
   return {
     run_id: params.run_id,
+    tenant_id: params.tenant_id,
     ingest,
     staging,
     normalized,

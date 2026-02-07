@@ -11,6 +11,12 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
+    const tenant_id = String(
+      body.tenant_id
+      || req.headers.get('X-Tenant-Id')
+      || Deno.env.get('DEFAULT_TENANT_ID')
+      || 'civant_default'
+    );
     const source = String(body.source || 'MANUAL');
     const documents = Array.isArray(body.documents) ? body.documents : [];
     const run_id = String(body.run_id || `run_${Date.now()}`);
@@ -21,6 +27,7 @@ Deno.serve(async (req) => {
 
     const result = await runPipeline(civant, {
       run_id,
+      tenant_id,
       source,
       cursor: body.cursor,
       documents

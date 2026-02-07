@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { createClientFromRequest } from './civantSdk.ts';
 
 // Irish procurement sources
@@ -107,6 +108,12 @@ Deno.serve(async (req) => {
         }
         
         const body = await req.json().catch(() => ({}));
+        const tenantId = String(
+            body.tenant_id
+            || req.headers.get('X-Tenant-Id')
+            || Deno.env.get('DEFAULT_TENANT_ID')
+            || 'civant_default'
+        );
         const mode = body.mode || 'incremental';
         const limit = body.limit || 100;
         
@@ -123,6 +130,7 @@ Deno.serve(async (req) => {
         
         // Create connector run log
         const runLog = await civant.asServiceRole.entities.ConnectorRuns.create({
+            tenant_id: tenantId,
             source: 'ETENDERS_IE',
             country: 'IE',
             started_at: new Date().toISOString(),
@@ -262,6 +270,7 @@ Deno.serve(async (req) => {
                     
                     // Check if tender exists
                     const existing = await civant.asServiceRole.entities.TendersCurrent.filter({
+                        tenant_id: tenantId,
                         tender_uid: normalized.tender_uid
                     });
                     
@@ -272,11 +281,13 @@ Deno.serve(async (req) => {
                         normalized.first_seen_at = now;
                         normalized.last_seen_at = now;
                         normalized.version_count = 1;
+                        normalized.tenant_id = tenantId;
                         
                         await civant.asServiceRole.entities.TendersCurrent.create(normalized);
                         
                         // Create initial version record
                         await civant.asServiceRole.entities.TenderVersions.create({
+                            tenant_id: tenantId,
                             tender_uid: normalized.tender_uid,
                             version_number: 1,
                             change_date: now,
@@ -289,7 +300,7 @@ Deno.serve(async (req) => {
                     } else {
                         // Existing tender - check for changes
                         const current = existing[0];
-                        const updateData = { last_seen_at: now };
+                        const updateData = { last_seen_at: now, tenant_id: tenantId };
                         
                         if (current.fingerprint !== fingerprint) {
                             const newVersionNum = (current.version_count || 1) + 1;
@@ -300,6 +311,7 @@ Deno.serve(async (req) => {
                             }
                             
                             await civant.asServiceRole.entities.TenderVersions.create({
+                                tenant_id: tenantId,
                                 tender_uid: normalized.tender_uid,
                                 version_number: newVersionNum,
                                 change_date: now,
@@ -342,6 +354,7 @@ Deno.serve(async (req) => {
             
             // Update run log
             await civant.asServiceRole.entities.ConnectorRuns.update(runLog.id, {
+                tenant_id: tenantId,
                 finished_at: new Date().toISOString(),
                 status: errors.length === 0 ? 'success' : 'partial',
                 fetched_count: fetchedCount,
@@ -366,6 +379,7 @@ Deno.serve(async (req) => {
             
         } catch (fetchError) {
             await civant.asServiceRole.entities.ConnectorRuns.update(runLog.id, {
+                tenant_id: tenantId,
                 finished_at: new Date().toISOString(),
                 status: 'fail',
                 error_summary: fetchError.message
