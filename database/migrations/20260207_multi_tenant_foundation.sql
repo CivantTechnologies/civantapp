@@ -48,13 +48,59 @@ create index if not exists idx_tender_features_weekly_tenant_id on tender_featur
 create index if not exists idx_market_signals_tenant_id on market_signals(tenant_id);
 create index if not exists idx_predictions_tenant_id on predictions(tenant_id);
 
--- Tenant scoping for existing connector/tender entities (if present in this project)
-alter table if exists "ConnectorRuns" add column if not exists tenant_id text not null default 'civant_default';
-alter table if exists "ConnectorConfig" add column if not exists tenant_id text not null default 'civant_default';
-alter table if exists "TendersCurrent" add column if not exists tenant_id text not null default 'civant_default';
-alter table if exists "TenderVersions" add column if not exists tenant_id text not null default 'civant_default';
+-- Tenant scoping for existing connector/tender entities (only when present)
+do $$
+begin
+  if to_regclass('public."ConnectorRuns"') is not null then
+    alter table "ConnectorRuns" add column if not exists tenant_id text not null default 'civant_default';
+  end if;
+end $$;
 
-create index if not exists idx_connectorruns_tenant_id on "ConnectorRuns"(tenant_id);
-create index if not exists idx_connectorconfig_tenant_id on "ConnectorConfig"(tenant_id);
-create index if not exists idx_tenderscurrent_tenant_id on "TendersCurrent"(tenant_id);
-create index if not exists idx_tenderversions_tenant_id on "TenderVersions"(tenant_id);
+do $$
+begin
+  if to_regclass('public."ConnectorConfig"') is not null then
+    alter table "ConnectorConfig" add column if not exists tenant_id text not null default 'civant_default';
+  end if;
+end $$;
+
+do $$
+begin
+  if to_regclass('public."TendersCurrent"') is not null then
+    alter table "TendersCurrent" add column if not exists tenant_id text not null default 'civant_default';
+  end if;
+end $$;
+
+do $$
+begin
+  if to_regclass('public."TenderVersions"') is not null then
+    alter table "TenderVersions" add column if not exists tenant_id text not null default 'civant_default';
+  end if;
+end $$;
+
+do $$
+begin
+  if to_regclass('public."ConnectorRuns"') is not null then
+    create index if not exists idx_connectorruns_tenant_id on "ConnectorRuns"(tenant_id);
+  end if;
+end $$;
+
+do $$
+begin
+  if to_regclass('public."ConnectorConfig"') is not null then
+    create index if not exists idx_connectorconfig_tenant_id on "ConnectorConfig"(tenant_id);
+  end if;
+end $$;
+
+do $$
+begin
+  if to_regclass('public."TendersCurrent"') is not null then
+    create index if not exists idx_tenderscurrent_tenant_id on "TendersCurrent"(tenant_id);
+  end if;
+end $$;
+
+do $$
+begin
+  if to_regclass('public."TenderVersions"') is not null then
+    create index if not exists idx_tenderversions_tenant_id on "TenderVersions"(tenant_id);
+  end if;
+end $$;
