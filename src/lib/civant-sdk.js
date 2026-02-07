@@ -239,6 +239,9 @@ export const createClient = ({
         functions: createFunctionsApi(http, appId),
         integrations: createIntegrationsApi(http, appId),
         system: {
+            getCapabilities(tenantId) {
+                return createFunctionsApi(http, appId).invoke('getCapabilities', tenantId ? { tenantId } : {});
+            },
             getTenant(tenantId) {
                 return createFunctionsApi(http, appId).invoke('getTenant', tenantId ? { tenantId } : {});
             },

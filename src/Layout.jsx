@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from './utils';
-import { civant } from '@/api/civantClient';
+import { useAuth } from '@/lib/AuthContext';
 import { 
     LayoutDashboard, 
     Search, 
@@ -18,21 +18,10 @@ import {
 import { Button } from '@/components/ui/button';
 
 export default function Layout({ children, currentPageName }) {
-    const [user, setUser] = useState(null);
-    const [tenantName, setTenantName] = useState('Civant');
+    const { user, capabilities, tenantInfo, isLoadingCapabilities } = useAuth();
+    const tenantName = tenantInfo?.name || 'Civant';
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    
-    useEffect(() => {
-        civant.auth.me().then(setUser).catch(() => {});
-        civant.system.getTenant().then((response) => {
-            const payload = response?.data ?? response;
-            if (payload?.name) {
-                setTenantName(payload.name);
-            }
-        }).catch(() => {});
-    }, []);
-    
-    const isAdmin = user?.role === 'admin';
+    const isAdmin = Boolean(capabilities?.isAdmin);
     
     const navItems = [
         { name: 'Home', page: 'Home', icon: LayoutDashboard },
@@ -44,7 +33,7 @@ export default function Layout({ children, currentPageName }) {
         { name: 'Integrations', page: 'Integrations', icon: Settings },
     ];
 
-    if (isAdmin) {
+    if (!isLoadingCapabilities && isAdmin) {
         navItems.push(
             { name: 'Connectors', page: 'Connectors', icon: Zap },
             { name: 'System', page: 'System', icon: Settings },

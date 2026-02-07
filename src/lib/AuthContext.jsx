@@ -3,11 +3,14 @@ import { civant } from '@/api/civantClient';
 import { appParams } from '@/lib/app-params';
 import { createAxiosClient } from '@/lib/civant-sdk';
 
-const AuthContext = createContext();
+const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [capabilities, setCapabilities] = useState({ isAdmin: false, tenantId: 'civant_default' });
+  const [tenantInfo, setTenantInfo] = useState(null);
+  const [isLoadingCapabilities, setIsLoadingCapabilities] = useState(true);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [isLoadingPublicSettings, setIsLoadingPublicSettings] = useState(true);
   const [authError, setAuthError] = useState(null);
@@ -41,6 +44,7 @@ export const AuthProvider = ({ children }) => {
         if (appParams.token) {
           await checkUserAuth();
         } else {
+          setIsLoadingCapabilities(false);
           setIsLoadingAuth(false);
           setIsAuthenticated(false);
         }
@@ -75,6 +79,7 @@ export const AuthProvider = ({ children }) => {
         }
         setIsLoadingPublicSettings(false);
         setIsLoadingAuth(false);
+        setIsLoadingCapabilities(false);
       }
     } catch (error) {
       console.error('Unexpected error:', error);
@@ -84,6 +89,29 @@ export const AuthProvider = ({ children }) => {
       });
       setIsLoadingPublicSettings(false);
       setIsLoadingAuth(false);
+      setIsLoadingCapabilities(false);
+    }
+  };
+
+  const loadCapabilitiesOnce = async () => {
+    try {
+      setIsLoadingCapabilities(true);
+      const capabilitiesResp = await civant.system.getCapabilities();
+      const capabilitiesData = capabilitiesResp?.data ?? capabilitiesResp ?? {};
+      const nextCapabilities = {
+        isAdmin: Boolean(capabilitiesData?.isAdmin),
+        tenantId: capabilitiesData?.tenantId || 'civant_default'
+      };
+      setCapabilities(nextCapabilities);
+
+      const tenantResp = await civant.system.getTenant(nextCapabilities.tenantId);
+      const tenantData = tenantResp?.data ?? tenantResp ?? null;
+      setTenantInfo(tenantData);
+    } catch {
+      setCapabilities({ isAdmin: false, tenantId: 'civant_default' });
+      setTenantInfo(null);
+    } finally {
+      setIsLoadingCapabilities(false);
     }
   };
 
@@ -94,6 +122,7 @@ export const AuthProvider = ({ children }) => {
       const currentUser = await civant.auth.me();
       setUser(currentUser);
       setIsAuthenticated(true);
+      await loadCapabilitiesOnce();
       setIsLoadingAuth(false);
     } catch (error) {
       console.error('User auth check failed:', error);
@@ -107,6 +136,7 @@ export const AuthProvider = ({ children }) => {
           message: 'Authentication required'
         });
       }
+      setIsLoadingCapabilities(false);
     }
   };
 
@@ -132,6 +162,9 @@ export const AuthProvider = ({ children }) => {
     <AuthContext.Provider value={{ 
       user, 
       isAuthenticated, 
+      capabilities,
+      tenantInfo,
+      isLoadingCapabilities,
       isLoadingAuth,
       isLoadingPublicSettings,
       authError,
