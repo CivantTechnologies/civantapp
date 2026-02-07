@@ -180,7 +180,7 @@ function createClient(
     token?: string,
     extraHeaders: Record<string, string> = {},
     includeServiceRole = true
-) {
+): any {
     const http = createHttpClient(baseUrl, appId, token, extraHeaders);
     const client = {
         auth: {
@@ -198,7 +198,7 @@ function createClient(
         }
     };
 
-    const fullClient = {
+    const fullClient: any = {
         ...client,
         asServiceRole: includeServiceRole
             ? createClient(baseUrl, appId, token, { ...extraHeaders, 'X-Service-Role': 'true' }, false)

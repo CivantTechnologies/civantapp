@@ -4,6 +4,7 @@ import { runClassifierAgent, runReconcilerAgent, runSignalsAgent } from './agent
 import { computeConfidence } from './scoring.ts';
 
 type CivantClient = ReturnType<typeof createClientFromRequest>;
+type AnyRow = Record<string, any>;
 
 type RawInput = {
   source: string;
@@ -90,24 +91,24 @@ async function getOrCreateEntity(civant: CivantClient, entityType: 'buyer' | 'su
     if (aliasEntity.length > 0) return aliasEntity[0];
   }
 
-  const nearby = await civant.asServiceRole.entities[PIPELINE_NAMES.entities].filter({ entity_type: entityType }, '-updated_at', 20);
+  const nearby: AnyRow[] = await civant.asServiceRole.entities[PIPELINE_NAMES.entities].filter({ entity_type: entityType }, '-updated_at', 20);
 
   if (nearby.length) {
     const agent = await runReconcilerAgent({
       entityA: { name: normalized, entity_type: entityType },
-      candidates: nearby.map((x) => ({ entity_id: x.entity_id, canonical_name: x.canonical_name, metadata: x.metadata }))
+      candidates: nearby.map((x: AnyRow) => ({ entity_id: x.entity_id, canonical_name: x.canonical_name, metadata: x.metadata }))
     });
 
     if (agent.confidence >= 0.85 && agent.merge_decision === 'merge') {
       await civant.asServiceRole.entities[PIPELINE_NAMES.entityAliases].create({
         id: makeId('alias'),
-        entity_id: nearby.find((x) => x.canonical_name === agent.canonical_name)?.entity_id || nearby[0].entity_id,
+        entity_id: nearby.find((x: AnyRow) => x.canonical_name === agent.canonical_name)?.entity_id || nearby[0].entity_id,
         alias: normalized,
         source: 'ReconcilerAgent',
         confidence: agent.confidence,
         evidence: agent.evidence
       });
-      return nearby.find((x) => x.canonical_name === agent.canonical_name) || nearby[0];
+      return nearby.find((x: AnyRow) => x.canonical_name === agent.canonical_name) || nearby[0];
     }
 
     await civant.asServiceRole.entities[PIPELINE_NAMES.reconciliationQueue].create({
@@ -308,13 +309,13 @@ export async function normalise_to_canonical(civant: CivantClient, params: { run
 }
 
 export async function build_weekly_features(civant: CivantClient, params: { weeks_back?: number }) {
-  const canonical = await civant.asServiceRole.entities[PIPELINE_NAMES.canonicalTenders].list('-publication_date', 10000);
+  const canonical: AnyRow[] = await civant.asServiceRole.entities[PIPELINE_NAMES.canonicalTenders].list('-publication_date', 10000);
   const weeksBack = params.weeks_back || 104;
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - weeksBack * 7);
 
   const groups: Record<string, any[]> = {};
-  canonical.forEach((tender) => {
+  canonical.forEach((tender: AnyRow) => {
     if (!tender.publication_date) return;
     const pub = new Date(tender.publication_date);
     if (pub < cutoff) return;
@@ -400,11 +401,11 @@ export async function generate_predictions(civant: CivantClient, params: {
   model_version?: string;
   time_window?: string;
 }) {
-  const features = await civant.asServiceRole.entities[PIPELINE_NAMES.tenderFeaturesWeekly].list('-week_start', 20000);
-  const signals = await civant.asServiceRole.entities[PIPELINE_NAMES.marketSignals].list('-created_at', 5000);
+  const features: AnyRow[] = await civant.asServiceRole.entities[PIPELINE_NAMES.tenderFeaturesWeekly].list('-week_start', 20000);
+  const signals: AnyRow[] = await civant.asServiceRole.entities[PIPELINE_NAMES.marketSignals].list('-created_at', 5000);
 
   const grouped: Record<string, any[]> = {};
-  features.forEach((row) => {
+  features.forEach((row: AnyRow) => {
     const key = [row.buyer_entity_id || 'unknown', row.category || 'unknown', row.cpv_family || 'unknown'].join('|');
     grouped[key] = grouped[key] || [];
     grouped[key].push(row);
@@ -416,7 +417,7 @@ export async function generate_predictions(civant: CivantClient, params: {
     const recent = rows.slice(0, 8);
     const avgVolume = recent.reduce((sum, r) => sum + Number(r.tender_count || 0), 0) / Math.max(recent.length, 1);
     const normalizedVolume = Math.min(avgVolume / 5, 1);
-    const buyerSignals = signals.filter((s) => (s.entity_id || 'unknown') === buyer_id);
+    const buyerSignals = signals.filter((s: AnyRow) => (s.entity_id || 'unknown') === buyer_id);
 
     const confidence = computeConfidence({
       data: {
@@ -426,7 +427,7 @@ export async function generate_predictions(civant: CivantClient, params: {
         dedupeQuality: 0.95
       },
       signals: {
-        signals: buyerSignals.map((s) => ({ strength: Number(s.signal_strength || 0), source_quality: Number(s.source_quality || 0) })),
+        signals: buyerSignals.map((s: AnyRow) => ({ strength: Number(s.signal_strength || 0), source_quality: Number(s.source_quality || 0) })),
         agreement: buyerSignals.length > 1 ? 0.8 : buyerSignals.length ? 0.6 : 0
       },
       model: {
@@ -444,7 +445,7 @@ export async function generate_predictions(civant: CivantClient, params: {
     const probability = Math.min(0.95, Math.max(0.05, normalizedVolume * 0.6 + (confidence.overall_confidence / 100) * 0.4));
     const evidence = buyerSignals
       .slice(0, 5)
-      .map((s) => ({ source_url: s.source_url, evidence_snippet: s.evidence_snippet, signal_type: s.signal_type }));
+      .map((s: AnyRow) => ({ source_url: s.source_url, evidence_snippet: s.evidence_snippet, signal_type: s.signal_type }));
 
     await civant.asServiceRole.entities[PIPELINE_NAMES.predictions].create({
       id: makeId('pred'),

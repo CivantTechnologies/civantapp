@@ -1,8 +1,8 @@
 // Minimal strict JSON schema validator for this pipeline's schema subset.
 type JSONSchema = {
   type?: string;
-  enum?: unknown[];
-  required?: string[];
+  enum?: readonly unknown[];
+  required?: readonly string[];
   properties?: Record<string, JSONSchema>;
   items?: JSONSchema;
   additionalProperties?: boolean;
