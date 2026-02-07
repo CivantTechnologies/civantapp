@@ -4,12 +4,22 @@ module.exports = {
     content: ["./index.html", "./src/**/*.{ts,tsx,js,jsx}"],
   theme: {
   	extend: {
+  		fontFamily: {
+  			sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif']
+  		},
   		borderRadius: {
   			lg: 'var(--radius)',
   			md: 'calc(var(--radius) - 2px)',
   			sm: 'calc(var(--radius) - 4px)'
   		},
   		colors: {
+  			civant: {
+  				navy: 'hsl(var(--civant-navy))',
+  				teal: 'hsl(var(--civant-teal))',
+  				heading: 'hsl(var(--civant-heading))',
+  				body: 'hsl(var(--civant-body))',
+  				border: 'hsl(var(--civant-border))'
+  			},
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			card: {
