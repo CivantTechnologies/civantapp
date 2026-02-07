@@ -34,6 +34,8 @@ export default function System() {
     const [testResults, setTestResults] = useState({});
     const [uploading, setUploading] = useState(false);
     const [uploadResult, setUploadResult] = useState(null);
+    const [runningPipeline, setRunningPipeline] = useState(false);
+    const [pipelineResult, setPipelineResult] = useState(null);
     
     useEffect(() => {
         checkAccess();
@@ -166,6 +168,54 @@ export default function System() {
         };
         return styles[status] || 'bg-slate-50 text-slate-700 border-slate-200';
     };
+
+    const runAgenticPipeline = async () => {
+        setRunningPipeline(true);
+        setPipelineResult(null);
+        try {
+            const sourceRows = await civant.entities.TendersCurrent.list('-publication_date', 200);
+            const documents = sourceRows.map((row) => ({
+                source: row.source || 'SYSTEM',
+                source_url: row.url || null,
+                external_id: row.source_notice_id || row.tender_uid || row.id,
+                document_type: row.notice_type || 'tender',
+                raw_text: [
+                    row.title || '',
+                    row.buyer_name || '',
+                    row.cpv_codes || '',
+                    row.publication_date || '',
+                    row.deadline_date || ''
+                ].filter(Boolean).join('\n'),
+                raw_json: {
+                    id: row.source_notice_id || row.id,
+                    title: row.title,
+                    buyer_name: row.buyer_name,
+                    cpv_codes: row.cpv_codes ? String(row.cpv_codes).split(',').map((x) => x.trim()).filter(Boolean) : [],
+                    publication_date: row.publication_date,
+                    deadline_date: row.deadline_date,
+                    estimated_value: row.estimated_value,
+                    currency: row.currency,
+                    source: row.source,
+                    url: row.url
+                },
+                fetched_at: new Date().toISOString()
+            }));
+
+            const response = await civant.functions.invoke('runAgenticPipeline', {
+                source: 'SYSTEM_MANUAL',
+                run_id: `system_${Date.now()}`,
+                documents
+            });
+            setPipelineResult(response?.data || null);
+        } catch (error) {
+            setPipelineResult({
+                success: false,
+                error: error.message || 'Pipeline run failed'
+            });
+        } finally {
+            setRunningPipeline(false);
+        }
+    };
     
     if (loading) {
         return (
@@ -208,6 +258,7 @@ export default function System() {
                 <TabsList>
                     <TabsTrigger value="connectors">Connectors</TabsTrigger>
                     <TabsTrigger value="import">Import Data</TabsTrigger>
+                    <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
                     <TabsTrigger value="testlab">Test Lab</TabsTrigger>
                     <TabsTrigger value="logs">Run Logs</TabsTrigger>
                 </TabsList>
@@ -437,6 +488,63 @@ export default function System() {
                                                 <p className="text-sm">{uploadResult.error}</p>
                                             </div>
                                         </div>
+                                    )}
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                {/* Pipeline Tab */}
+                <TabsContent value="pipeline" className="space-y-6">
+                    <Card className="border-0 shadow-sm">
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <Zap className="h-5 w-5" />
+                                Agentic Pipeline Trigger
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <p className="text-slate-500">
+                                Runs the full agentic pipeline using the latest 200 tenders as input documents.
+                            </p>
+                            <Button
+                                onClick={runAgenticPipeline}
+                                disabled={runningPipeline}
+                                className="bg-indigo-600 hover:bg-indigo-700"
+                            >
+                                {runningPipeline ? (
+                                    <>
+                                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                        Running pipeline...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Play className="h-4 w-4 mr-2" />
+                                        Run Agentic Pipeline
+                                    </>
+                                )}
+                            </Button>
+
+                            {pipelineResult && (
+                                <div className={`rounded-lg p-4 border ${
+                                    pipelineResult.success ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'
+                                }`}>
+                                    {pipelineResult.success ? (
+                                        <div className="space-y-2 text-sm">
+                                            <p className="font-semibold text-emerald-700">Pipeline completed</p>
+                                            <p>Run: {pipelineResult.run_id}</p>
+                                            <p>Inserted raw docs: {pipelineResult.ingest?.inserted ?? 0}</p>
+                                            <p>Valid staging records: {pipelineResult.staging?.valid ?? 0}</p>
+                                            <p>Canonical upserts: {pipelineResult.normalized?.upserts ?? 0}</p>
+                                            <p>Weekly features: {pipelineResult.features?.written ?? 0}</p>
+                                            <p>Signals attached: {pipelineResult.signals?.signalsInserted ?? 0}</p>
+                                            <p>Predictions generated: {pipelineResult.predictions?.created ?? 0}</p>
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-red-700 font-medium">
+                                            Pipeline failed: {pipelineResult.error || 'Unknown error'}
+                                        </p>
                                     )}
                                 </div>
                             )}
