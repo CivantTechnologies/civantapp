@@ -11,6 +11,7 @@ import Login from '@/pages/Login';
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
 const MainPage = mainPageKey ? Pages[mainPageKey] : <></>;
+const SystemPage = Pages.System;
 
 const LayoutWrapper = ({ children, currentPageName }) => Layout
   ? <Layout currentPageName={currentPageName}>{children}</Layout>
@@ -24,18 +25,33 @@ function FullscreenLoader() {
   );
 }
 
+function AccessDeniedPage() {
+  return (
+    <LayoutWrapper currentPageName="System">
+      <div className="min-h-[40vh] flex items-center justify-center">
+        <div className="max-w-md rounded-xl border border-border bg-card p-8 text-center space-y-2">
+          <h1 className="text-xl font-semibold text-card-foreground">Access denied</h1>
+          <p className="text-sm text-muted-foreground">You don’t have access to System settings.</p>
+        </div>
+      </div>
+    </LayoutWrapper>
+  );
+}
+
 function RequireAuth({ children }) {
   const { isAuthenticated, isLoadingAuth } = useAuth();
   const location = useLocation();
 
-  if (isLoadingAuth) {
-    return <FullscreenLoader />;
-  }
+  if (isLoadingAuth) return <FullscreenLoader />;
+  if (!isAuthenticated) return <Navigate to="/login" replace state={{ from: location }} />;
+  return children;
+}
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace state={{ from: location }} />;
-  }
+function RequireAdmin({ children }) {
+  const { isLoadingAuth, currentUser } = useAuth();
 
+  if (isLoadingAuth) return <FullscreenLoader />;
+  if (currentUser?.role !== 'admin') return <AccessDeniedPage />;
   return children;
 }
 
@@ -50,17 +66,42 @@ function ProtectedRoutes() {
           </LayoutWrapper>
         }
       />
-      {Object.entries(Pages).map(([path, Page]) => (
-        <Route
-          key={path}
-          path={`/${path}`}
-          element={
-            <LayoutWrapper currentPageName={path}>
-              <Page />
+
+      <Route
+        path="/System"
+        element={
+          <RequireAdmin>
+            <LayoutWrapper currentPageName="System">
+              <SystemPage />
             </LayoutWrapper>
-          }
-        />
-      ))}
+          </RequireAdmin>
+        }
+      />
+      <Route
+        path="/system"
+        element={
+          <RequireAdmin>
+            <LayoutWrapper currentPageName="System">
+              <SystemPage />
+            </LayoutWrapper>
+          </RequireAdmin>
+        }
+      />
+
+      {Object.entries(Pages)
+        .filter(([path]) => path !== 'System')
+        .map(([path, Page]) => (
+          <Route
+            key={path}
+            path={`/${path}`}
+            element={
+              <LayoutWrapper currentPageName={path}>
+                <Page />
+              </LayoutWrapper>
+            }
+          />
+        ))}
+
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );
@@ -69,9 +110,7 @@ function ProtectedRoutes() {
 function AppRoutes() {
   const { isAuthenticated, isLoadingAuth } = useAuth();
 
-  if (isLoadingAuth) {
-    return <FullscreenLoader />;
-  }
+  if (isLoadingAuth) return <FullscreenLoader />;
 
   return (
     <Routes>

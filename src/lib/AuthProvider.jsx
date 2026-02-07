@@ -14,7 +14,7 @@ function clearStoredToken() {
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [authError, setAuthError] = useState('');
@@ -22,44 +22,6 @@ export function AuthProvider({ children }) {
   const [capabilities, setCapabilities] = useState({ isAdmin: false, tenantId: 'civant_default' });
   const [tenantInfo, setTenantInfo] = useState(null);
   const [isLoadingCapabilities, setIsLoadingCapabilities] = useState(false);
-
-  const hydrateFromToken = async () => {
-    setIsLoadingAuth(true);
-    setAuthError('');
-
-    try {
-      const me = unwrapResponse(await civant.auth.getCurrentUser());
-      if (!me?.userId) {
-        throw new Error('Invalid user session');
-      }
-
-      const nextUser = {
-        id: me.userId,
-        userId: me.userId,
-        email: me.email || '',
-        role: me.role || 'user',
-        tenantId: me.tenantId || 'civant_default'
-      };
-
-      setUser(nextUser);
-      setIsAuthenticated(true);
-      await loadCapabilities(nextUser.tenantId);
-    } catch (error) {
-      setUser(null);
-      setIsAuthenticated(false);
-      setCapabilities({ isAdmin: false, tenantId: 'civant_default' });
-      setTenantInfo(null);
-      clearStoredToken();
-      civant.auth.setToken(null, false);
-
-      const status = error?.status || error?.response?.status;
-      if (status && status !== 401) {
-        setAuthError(error?.message || 'Authentication failed');
-      }
-    } finally {
-      setIsLoadingAuth(false);
-    }
-  };
 
   const loadCapabilities = async (tenantId) => {
     setIsLoadingCapabilities(true);
@@ -91,6 +53,44 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const hydrateFromToken = async () => {
+    setIsLoadingAuth(true);
+    setAuthError('');
+
+    try {
+      const me = unwrapResponse(await civant.auth.getCurrentUser());
+      if (!me?.userId) {
+        throw new Error('Invalid user session');
+      }
+
+      const nextUser = {
+        id: me.userId,
+        userId: me.userId,
+        email: me.email || '',
+        role: me.role || 'user',
+        tenantId: me.tenantId || 'civant_default'
+      };
+
+      setCurrentUser(nextUser);
+      setIsAuthenticated(true);
+      await loadCapabilities(nextUser.tenantId);
+    } catch (error) {
+      setCurrentUser(null);
+      setIsAuthenticated(false);
+      setCapabilities({ isAdmin: false, tenantId: 'civant_default' });
+      setTenantInfo(null);
+      clearStoredToken();
+      civant.auth.setToken(null, false);
+
+      const status = error?.status || error?.response?.status;
+      if (status && status !== 401) {
+        setAuthError(error?.message || 'Authentication failed');
+      }
+    } finally {
+      setIsLoadingAuth(false);
+    }
+  };
+
   useEffect(() => {
     hydrateFromToken();
   }, []);
@@ -118,7 +118,7 @@ export function AuthProvider({ children }) {
   const logout = () => {
     clearStoredToken();
     civant.auth.setToken(null, false);
-    setUser(null);
+    setCurrentUser(null);
     setIsAuthenticated(false);
     setCapabilities({ isAdmin: false, tenantId: 'civant_default' });
     setTenantInfo(null);
@@ -126,7 +126,8 @@ export function AuthProvider({ children }) {
   };
 
   const value = useMemo(() => ({
-    user,
+    currentUser,
+    user: currentUser,
     isAuthenticated,
     isLoadingAuth,
     authError,
@@ -136,7 +137,7 @@ export function AuthProvider({ children }) {
     loginWithEmail,
     logout,
     refreshAuth: hydrateFromToken
-  }), [user, isAuthenticated, isLoadingAuth, authError, capabilities, tenantInfo, isLoadingCapabilities]);
+  }), [currentUser, isAuthenticated, isLoadingAuth, authError, capabilities, tenantInfo, isLoadingCapabilities]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
