@@ -216,6 +216,9 @@ export const createClient = ({
         getCurrentUser() {
             return createFunctionsApi(http, appId).invoke("getCurrentUser", {});
         },
+        getMyProfile() {
+            return createFunctionsApi(http, appId).invoke("getMyProfile", {});
+        },
         setToken,
         redirectToLogin(fromUrl) {
             if (typeof window === 'undefined') return;

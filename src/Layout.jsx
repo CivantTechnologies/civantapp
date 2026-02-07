@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from './utils';
-import { useAuth } from '@/lib/AuthProvider';
+import { useAuth } from '@/lib/auth';
 import {
   LayoutDashboard,
   Search,
@@ -13,15 +13,16 @@ import {
   Radar,
   ChevronRight,
   Zap,
-  Network
+  Network,
+  LogOut
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function Layout({ children, currentPageName }) {
-  const { currentUser, tenantInfo } = useAuth();
-  const tenantName = tenantInfo?.name || 'Civant';
+  const { currentUser, roles, logout } = useAuth();
+  const tenantName = 'Civant';
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const isAdmin = currentUser?.role === 'admin';
+  const canAccessSystem = Array.isArray(roles) && (roles.includes('admin') || roles.includes('creator'));
 
   const navItems = [
     { name: 'Home', page: 'Home', icon: LayoutDashboard },
@@ -36,7 +37,7 @@ export default function Layout({ children, currentPageName }) {
     { name: 'Architecture', page: 'Architecture', icon: Network }
   ];
 
-  if (isAdmin) {
+  if (canAccessSystem) {
     navItems.push({ name: 'System', page: 'System', icon: Settings });
   }
 
@@ -105,21 +106,20 @@ export default function Layout({ children, currentPageName }) {
         </nav>
 
         {currentUser && (
-          <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-border">
+          <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-border space-y-3">
             <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-border bg-muted/40">
               <div className="w-8 h-8 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-primary text-sm font-medium">
                 {currentUser.email?.charAt(0) || 'U'}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-card-foreground truncate">User</p>
-                <p className="text-xs text-muted-foreground truncate">{currentUser.email}</p>
+                <p className="text-sm font-medium text-card-foreground truncate">{currentUser.email || 'User'}</p>
+                <p className="text-xs text-muted-foreground truncate">{roles.join(', ') || 'user'}</p>
               </div>
-              {isAdmin && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary font-semibold border border-primary/30">
-                  Admin
-                </span>
-              )}
             </div>
+            <Button type="button" variant="ghost" className="w-full justify-start" onClick={logout}>
+              <LogOut className="h-4 w-4 mr-2" />
+              Sign out
+            </Button>
           </div>
         )}
       </aside>

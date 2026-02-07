@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { civant } from '@/api/civantClient';
-import { useAuth } from '@/lib/AuthProvider';
+import { useAuth } from '@/lib/auth';
 import { AlertCircle, Loader2, RefreshCw, Shield, Building2, Users, PlugZap } from 'lucide-react';
 import {
   Page,
@@ -48,8 +48,8 @@ function StatusBadge({ status }) {
 }
 
 export default function System() {
-  const { currentUser, capabilities, tenantInfo } = useAuth();
-  const resolvedTenantId = currentUser?.tenantId || tenantInfo?.tenantId || capabilities?.tenantId || '';
+  const { roles, tenantId } = useAuth();
+  const isSystemAllowed = Array.isArray(roles) && (roles.includes('admin') || roles.includes('creator'));
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -69,13 +69,13 @@ export default function System() {
   const [enableReason, setEnableReason] = useState('');
   const [revokeReason, setRevokeReason] = useState('');
 
-  const loadSupportSection = async (tenantId) => {
+  const loadSupportSection = async (resolvedTenantId) => {
     setSupportLoading(true);
     setSupportError('');
     try {
       const [statusPayload, auditPayload] = await Promise.all([
-        civant.system.getSupportAccessStatus({ tenantId }),
-        civant.system.listSupportAccessAudit({ tenantId, limit: 10 })
+        civant.system.getSupportAccessStatus({ tenantId: resolvedTenantId }),
+        civant.system.listSupportAccessAudit({ tenantId: resolvedTenantId, limit: 10 })
       ]);
       setSupportStatus(unwrapResponse(statusPayload));
       setSupportAudit(Array.isArray(unwrapResponse(auditPayload)) ? unwrapResponse(auditPayload) : []);
@@ -91,21 +91,21 @@ export default function System() {
     setError('');
 
     try {
-      if (!resolvedTenantId) {
+      if (!tenantId) {
         throw new Error('Tenant is not configured for the current user session.');
       }
 
-      const tenantPayload = unwrapResponse(await civant.system.getTenant(resolvedTenantId));
+      const tenantPayload = unwrapResponse(await civant.system.getTenant(tenantId));
       setTenant(tenantPayload || null);
 
       const [usersPayload, connectorsPayload] = await Promise.all([
-        civant.system.listTenantUsers(resolvedTenantId),
-        civant.system.getConnectorStatus(resolvedTenantId)
+        civant.system.listTenantUsers(tenantId),
+        civant.system.getConnectorStatus(tenantId)
       ]);
 
       setTenantUsers(Array.isArray(unwrapResponse(usersPayload)) ? unwrapResponse(usersPayload) : []);
       setConnectors(Array.isArray(unwrapResponse(connectorsPayload)) ? unwrapResponse(connectorsPayload) : []);
-      await loadSupportSection(resolvedTenantId);
+      await loadSupportSection(tenantId);
       setDenied(false);
     } catch (err) {
       const status = err?.status || err?.response?.status;
@@ -121,15 +121,19 @@ export default function System() {
   };
 
   useEffect(() => {
+    if (!isSystemAllowed) {
+      setLoading(false);
+      return;
+    }
     loadSystemData(false);
-  }, [resolvedTenantId]);
+  }, [tenantId, isSystemAllowed]);
 
   const handleEnableSupportAccess = async () => {
     if (!enableReason.trim()) {
       setSupportError('Enable reason is required.');
       return;
     }
-    if (!resolvedTenantId) {
+    if (!tenantId) {
       setSupportError('Tenant is not configured.');
       return;
     }
@@ -139,13 +143,13 @@ export default function System() {
     setSupportActionLoading('enable');
     try {
       await civant.system.enableSupportAccess({
-        tenantId: resolvedTenantId,
+        tenantId,
         durationMinutes: Number(enableDurationMinutes),
         reason: enableReason.trim()
       });
       setSupportMessage('Support access enabled.');
       setEnableReason('');
-      await loadSupportSection(resolvedTenantId);
+      await loadSupportSection(tenantId);
     } catch (err) {
       setSupportError(err?.message || 'Failed to enable support access.');
     } finally {
@@ -158,7 +162,7 @@ export default function System() {
       setSupportError('Revoke reason is required.');
       return;
     }
-    if (!resolvedTenantId) {
+    if (!tenantId) {
       setSupportError('Tenant is not configured.');
       return;
     }
@@ -168,12 +172,12 @@ export default function System() {
     setSupportActionLoading('revoke');
     try {
       await civant.system.revokeSupportAccess({
-        tenantId: resolvedTenantId,
+        tenantId,
         reason: revokeReason.trim()
       });
       setSupportMessage('Support access revoked.');
       setRevokeReason('');
-      await loadSupportSection(resolvedTenantId);
+      await loadSupportSection(tenantId);
     } catch (err) {
       setSupportError(err?.message || 'Failed to revoke support access.');
     } finally {
@@ -185,6 +189,20 @@ export default function System() {
     if (!tenant?.regions || !tenant.regions.length) return 'Not configured';
     return tenant.regions.join(', ');
   }, [tenant]);
+
+  if (!isSystemAllowed) {
+    return (
+      <Page>
+        <Card>
+          <CardContent className="p-8 text-center space-y-3">
+            <AlertCircle className="h-10 w-10 mx-auto text-destructive" />
+            <h2 className="text-xl font-semibold text-card-foreground">Not authorised</h2>
+            <p className="text-muted-foreground">You do not have permission to access System settings.</p>
+          </CardContent>
+        </Card>
+      </Page>
+    );
+  }
 
   if (loading) {
     return (
@@ -243,7 +261,7 @@ export default function System() {
             </div>
             <div>
               <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Tenant ID</p>
-              <Input readOnly value={tenant?.tenantId || resolvedTenantId || 'Not configured'} />
+              <Input readOnly value={tenant?.tenantId || tenantId || 'Not configured'} />
             </div>
             <div>
               <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Regions</p>

@@ -5,7 +5,7 @@ import NavigationTracker from '@/lib/NavigationTracker';
 import { pagesConfig } from './pages.config';
 import { BrowserRouter as Router, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
-import { AuthProvider, useAuth } from '@/lib/AuthProvider';
+import { AuthProvider, useAuth } from '@/lib/auth';
 import Login from '@/pages/Login';
 
 const { Pages, Layout, mainPage } = pagesConfig;
@@ -30,8 +30,8 @@ function AccessDeniedPage() {
     <LayoutWrapper currentPageName="System">
       <div className="min-h-[40vh] flex items-center justify-center">
         <div className="max-w-md rounded-xl border border-border bg-card p-8 text-center space-y-2">
-          <h1 className="text-xl font-semibold text-card-foreground">Access denied</h1>
-          <p className="text-sm text-muted-foreground">You don’t have access to System settings.</p>
+          <h1 className="text-xl font-semibold text-card-foreground">Not authorised</h1>
+          <p className="text-sm text-muted-foreground">You do not have permission to access System settings.</p>
         </div>
       </div>
     </LayoutWrapper>
@@ -47,11 +47,12 @@ function RequireAuth({ children }) {
   return children;
 }
 
-function RequireAdmin({ children }) {
-  const { isLoadingAuth, currentUser } = useAuth();
+function RequireSystemRole({ children }) {
+  const { isLoadingAuth, roles } = useAuth();
 
   if (isLoadingAuth) return <FullscreenLoader />;
-  if (currentUser?.role !== 'admin') return <AccessDeniedPage />;
+  const allowed = Array.isArray(roles) && (roles.includes('admin') || roles.includes('creator'));
+  if (!allowed) return <AccessDeniedPage />;
   return children;
 }
 
@@ -70,21 +71,21 @@ function ProtectedRoutes() {
       <Route
         path="/System"
         element={
-          <RequireAdmin>
+          <RequireSystemRole>
             <LayoutWrapper currentPageName="System">
               <SystemPage />
             </LayoutWrapper>
-          </RequireAdmin>
+          </RequireSystemRole>
         }
       />
       <Route
         path="/system"
         element={
-          <RequireAdmin>
+          <RequireSystemRole>
             <LayoutWrapper currentPageName="System">
               <SystemPage />
             </LayoutWrapper>
-          </RequireAdmin>
+          </RequireSystemRole>
         }
       />
 

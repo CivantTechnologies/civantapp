@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { useAuth } from './AuthProvider';
+import { useAuth } from './auth';
 import { civant } from '@/api/civantClient';
 import { pagesConfig } from '@/pages.config';
 

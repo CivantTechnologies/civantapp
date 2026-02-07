@@ -7,11 +7,9 @@ Deno.serve(async (req) => {
     const user = await getCurrentUserFromRequest(civant, req);
 
     return Response.json({
-      userId: user.userId,
       email: user.email,
-      role: user.role,
-      roles: user.roles,
-      tenantId: user.tenantId
+      tenant_id: user.tenantId,
+      roles: user.roles
     });
   } catch (error) {
     const status = (error as Error & { status?: number }).status || 401;
