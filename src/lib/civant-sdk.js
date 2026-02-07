@@ -238,6 +238,17 @@ export const createClient = ({
         entities: createEntityApi(http, appId),
         functions: createFunctionsApi(http, appId),
         integrations: createIntegrationsApi(http, appId),
+        system: {
+            getTenant(tenantId) {
+                return createFunctionsApi(http, appId).invoke('getTenant', tenantId ? { tenantId } : {});
+            },
+            listTenantUsers(tenantId) {
+                return createFunctionsApi(http, appId).invoke('listTenantUsers', tenantId ? { tenantId } : {});
+            },
+            getConnectorStatus(tenantId) {
+                return createFunctionsApi(http, appId).invoke('getConnectorStatus', tenantId ? { tenantId } : {});
+            }
+        },
         connectors: {
             getAccessToken(integrationType) {
                 return http.get(`/apps/${appId}/external-auth/tokens/${integrationType}`);
