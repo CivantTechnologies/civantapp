@@ -1,5 +1,5 @@
 import { createClientFromRequest } from './civantSdk.ts';
-import { requireAdminForTenant, requireAuthenticatedUser, resolveTenantId } from './requireAdmin.ts';
+import { requireAdminForTenant, resolveTenantId } from './requireAdmin.ts';
 
 const CONNECTOR_MAP: Record<string, { key: string; displayName: string }> = {
   BOAMP_FR: { key: 'BOAMP_FR', displayName: 'BOAMP France' },
@@ -17,12 +17,11 @@ function toDisplay(connectorKey: string) {
 Deno.serve(async (req) => {
   try {
     const civant = createClientFromRequest(req);
-    const user = await requireAuthenticatedUser(civant);
 
     const body = await req.json().catch(() => ({}));
     const tenantId = resolveTenantId(body.tenantId || body.tenant_id || req.headers.get('X-Tenant-Id'));
 
-    await requireAdminForTenant({ civant, user, tenantId });
+    await requireAdminForTenant({ civant, req, tenantId });
 
     const [configs, runs] = await Promise.all([
       civant.asServiceRole.entities.ConnectorConfig.filter({ tenant_id: tenantId }, '-updated_at', 200)

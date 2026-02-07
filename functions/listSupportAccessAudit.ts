@@ -1,5 +1,5 @@
 import { createClientFromRequest } from './civantSdk.ts';
-import { requireAdminForTenant, requireAuthenticatedUser, resolveTenantId } from './requireAdmin.ts';
+import { requireAdminForTenant, resolveTenantId } from './requireAdmin.ts';
 
 function normalizeLimit(value: unknown) {
   const n = Number(value || 50);
@@ -10,13 +10,12 @@ function normalizeLimit(value: unknown) {
 Deno.serve(async (req) => {
   try {
     const civant = createClientFromRequest(req);
-    const user = await requireAuthenticatedUser(civant);
 
     const body = await req.json().catch(() => ({}));
     const tenantId = resolveTenantId(body.tenantId || body.tenant_id || req.headers.get('X-Tenant-Id'));
     const limit = normalizeLimit(body.limit);
 
-    await requireAdminForTenant({ civant, user, tenantId });
+    await requireAdminForTenant({ civant, req, tenantId });
 
     const rows = await civant.asServiceRole.entities.support_access_audit.filter({
       tenant_id: tenantId

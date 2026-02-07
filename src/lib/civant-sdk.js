@@ -210,6 +210,12 @@ export const createClient = ({
         me() {
             return http.get(`/apps/${appId}/entities/User/me`);
         },
+        createSession(email, tenantId) {
+            return createFunctionsApi(http, appId).invoke("createSession", { email, tenantId });
+        },
+        getCurrentUser() {
+            return createFunctionsApi(http, appId).invoke("getCurrentUser", {});
+        },
         setToken,
         redirectToLogin(fromUrl) {
             if (typeof window === 'undefined') return;

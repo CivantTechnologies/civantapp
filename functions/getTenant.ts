@@ -1,13 +1,14 @@
 import { createClientFromRequest } from './civantSdk.ts';
-import { requireAuthenticatedUser, resolveTenantId } from './requireAdmin.ts';
+import { requireAdminForTenant, resolveTenantId } from './requireAdmin.ts';
 
 Deno.serve(async (req) => {
   try {
     const civant = createClientFromRequest(req);
-    await requireAuthenticatedUser(civant);
 
     const body = await req.json().catch(() => ({}));
     const tenantId = resolveTenantId(body.tenantId || body.tenant_id || req.headers.get('X-Tenant-Id'));
+
+    await requireAdminForTenant({ civant, req, tenantId });
 
     const rows = await civant.asServiceRole.entities.tenants.filter({ id: tenantId }, '-created_at', 1);
     const tenant = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
