@@ -26,11 +26,14 @@ export default function Home() {
     useEffect(() => {
         loadDashboardData();
     }, []);
+
+    const getTenderPublicationDate = (tender) => tender.publication_date || tender.published_at || tender.first_seen_at || tender.updated_at;
+    const getTenderFirstSeen = (tender) => tender.first_seen_at || tender.published_at || tender.publication_date || tender.updated_at;
     
     const loadDashboardData = async () => {
         try {
             // Load all tenders
-            const allTenders = await civant.entities.TendersCurrent.list('-first_seen_at', 1000);
+            const allTenders = await civant.entities.TendersCurrent.list('-published_at', 1000);
             
             const now = new Date();
             const last24h = subDays(now, 1);
@@ -38,7 +41,7 @@ export default function Home() {
             
             // Calculate stats
             const newTenders24h = allTenders.filter(t => 
-                t.first_seen_at && isAfter(new Date(t.first_seen_at), last24h)
+                getTenderFirstSeen(t) && isAfter(new Date(getTenderFirstSeen(t)), last24h)
             ).length;
             
             const deadlinesIn7Days = allTenders.filter(t => {
@@ -61,7 +64,12 @@ export default function Home() {
             });
             
             // Latest tenders
-            setLatestTenders(allTenders.slice(0, 8));
+            const sortedTenders = [...allTenders].sort((a, b) => {
+                const aTs = getTenderPublicationDate(a) ? new Date(getTenderPublicationDate(a)).getTime() : 0;
+                const bTs = getTenderPublicationDate(b) ? new Date(getTenderPublicationDate(b)).getTime() : 0;
+                return bTs - aTs;
+            });
+            setLatestTenders(sortedTenders.slice(0, 8));
             
             // Connector health - get latest run per source
             const runs = await civant.entities.ConnectorRuns.list('-started_at', 50);
@@ -202,8 +210,8 @@ export default function Home() {
                                     </div>
                                 ) : (
                                     latestTenders.map(tender => {
-                                        const isNew = tender.first_seen_at && 
-                                            isAfter(new Date(tender.first_seen_at), subDays(new Date(), 1));
+                                        const firstSeenAt = getTenderFirstSeen(tender);
+                                        const isNew = firstSeenAt && isAfter(new Date(firstSeenAt), subDays(new Date(), 1));
                                         const isUpdated = tender.version_count > 1;
                                         
                                         return (

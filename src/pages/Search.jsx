@@ -38,10 +38,13 @@ export default function Search() {
     useEffect(() => {
         applyFilters();
     }, [tenders, keyword, country, source, buyerSearch, cpvSearch, deadlineWithin, industry, institutionType, lastTendered]);
+
+    const getTenderPublicationDate = (tender) => tender.publication_date || tender.published_at || tender.first_seen_at || tender.updated_at;
+    const getTenderFirstSeen = (tender) => tender.first_seen_at || tender.published_at || tender.publication_date || tender.updated_at;
     
     const loadTenders = async () => {
         try {
-            const data = await civant.entities.TendersCurrent.list('-publication_date', 500);
+            const data = await civant.entities.TendersCurrent.list('-published_at', 500);
             setTenders(data);
         } catch (error) {
             console.error('Error loading tenders:', error);
@@ -136,8 +139,9 @@ export default function Search() {
             const cutoffDate = subDays(now, days);
             
             filtered = filtered.filter(t => {
-                if (!t.publication_date) return false;
-                const pubDate = new Date(t.publication_date);
+                const publicationDate = getTenderPublicationDate(t);
+                if (!publicationDate) return false;
+                const pubDate = new Date(publicationDate);
                 return pubDate >= cutoffDate;
             });
         }
@@ -396,8 +400,8 @@ export default function Search() {
                                 </tr>
                             ) : (
                                 filteredTenders.map(tender => {
-                                    const isNew = tender.first_seen_at && 
-                                        isAfter(new Date(tender.first_seen_at), subDays(new Date(), 1));
+                                    const firstSeenAt = getTenderFirstSeen(tender);
+                                    const isNew = firstSeenAt && isAfter(new Date(firstSeenAt), subDays(new Date(), 1));
                                     const isUpdated = tender.version_count > 1;
                                     
                                     return (
@@ -437,8 +441,8 @@ export default function Search() {
                                             </td>
                                             <td className="px-4 py-4 hidden lg:table-cell">
                                                 <p className="text-sm text-slate-600">
-                                                    {tender.publication_date 
-                                                        ? format(new Date(tender.publication_date), 'MMM d, yyyy')
+                                                    {getTenderPublicationDate(tender) 
+                                                        ? format(new Date(getTenderPublicationDate(tender)), 'MMM d, yyyy')
                                                         : '-'
                                                     }
                                                 </p>
