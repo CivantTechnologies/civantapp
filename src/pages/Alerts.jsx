@@ -39,6 +39,7 @@ export default function Alerts() {
     const [showForm, setShowForm] = useState(false);
     const [editingAlert, setEditingAlert] = useState(null);
     const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState('');
     
     // Form state
     const [formData, setFormData] = useState({
@@ -99,6 +100,7 @@ export default function Alerts() {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setSaving(true);
+        setSaveError('');
         
         try {
             const alertData = {
@@ -121,6 +123,7 @@ export default function Alerts() {
             
         } catch (error) {
             console.error('Error saving alert:', error);
+            setSaveError(error instanceof Error ? error.message : 'Unable to save alert. Please try again.');
         } finally {
             setSaving(false);
         }
@@ -423,14 +426,14 @@ export default function Alerts() {
                                 <div>
                                     <Label htmlFor="country">Country</Label>
                                     <Select 
-                                        value={formData.country} 
-                                        onValueChange={(value) => setFormData({ ...formData, country: value })}
+                                        value={formData.country || 'all'} 
+                                        onValueChange={(value) => setFormData({ ...formData, country: value === 'all' ? '' : value })}
                                     >
                                         <SelectTrigger>
                                             <SelectValue placeholder="All countries" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value={null}>All Countries</SelectItem>
+                                            <SelectItem value="all">All Countries</SelectItem>
                                             <SelectItem value="FR">🇫🇷 France</SelectItem>
                                             <SelectItem value="IE">🇮🇪 Ireland</SelectItem>
                                         </SelectContent>
@@ -539,6 +542,10 @@ export default function Alerts() {
                                 onCheckedChange={(checked) => setFormData({ ...formData, active: checked })}
                             />
                         </div>
+
+                        {saveError && (
+                            <p className="text-sm text-red-400">{saveError}</p>
+                        )}
                         
                         <DialogFooter>
                             <Button 

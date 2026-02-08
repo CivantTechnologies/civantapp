@@ -34,7 +34,10 @@ const TENANT_SCOPED_TABLES = new Set([
   'TenderVersions',
   'support_access_grants',
   'support_access_audit',
-  'users'
+  'users',
+  'Competitors',
+  'Alerts',
+  'AlertEvents'
 ]);
 
 type DynamicRequest = RequestLike & {

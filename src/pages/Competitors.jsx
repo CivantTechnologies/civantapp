@@ -41,6 +41,7 @@ export default function Competitors() {
     const [showForm, setShowForm] = useState(false);
     const [editingCompetitor, setEditingCompetitor] = useState(null);
     const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState('');
     const [analyzing, setAnalyzing] = useState(null);
     const [analysis, setAnalysis] = useState(null);
     
@@ -75,6 +76,7 @@ export default function Competitors() {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setSaving(true);
+        setSaveError('');
         
         try {
             const competitorData = {
@@ -94,6 +96,7 @@ export default function Competitors() {
             await loadData();
         } catch (error) {
             console.error('Error saving competitor:', error);
+            setSaveError(error instanceof Error ? error.message : 'Unable to save competitor. Please try again.');
         } finally {
             setSaving(false);
         }
@@ -565,6 +568,10 @@ export default function Competitors() {
                                 rows={3}
                             />
                         </div>
+
+                        {saveError && (
+                            <p className="text-sm text-red-400">{saveError}</p>
+                        )}
                         
                         <DialogFooter>
                             <Button 
