@@ -165,10 +165,25 @@ export async function createEntity(req: DynamicRequest) {
   const tenantId = resolveTenantFromHeader(req);
   const supabase = getServerSupabase() as any;
 
-  const bodyWithTenant =
-    tenantId && TENANT_SCOPED_TABLES.has(tableName) && !(payload as Record<string, unknown>).tenant_id
-      ? { ...(payload as Record<string, unknown>), tenant_id: tenantId }
-      : payload;
+  const bodyWithTenant = (() => {
+    if (!tenantId || !TENANT_SCOPED_TABLES.has(tableName)) {
+      return payload;
+    }
+
+    if (Array.isArray(payload)) {
+      return payload.map((row) => {
+        if (!row || typeof row !== 'object') return row;
+        if ('tenant_id' in (row as Record<string, unknown>)) return row;
+        return { ...(row as Record<string, unknown>), tenant_id: tenantId };
+      });
+    }
+
+    if (payload && typeof payload === 'object' && !('tenant_id' in (payload as Record<string, unknown>))) {
+      return { ...(payload as Record<string, unknown>), tenant_id: tenantId };
+    }
+
+    return payload;
+  })();
 
   const { data, error } = await supabase.from(tableName as any).insert(bodyWithTenant).select('*').limit(1);
   if (error) throw Object.assign(new Error(error.message), { status: 500 });
