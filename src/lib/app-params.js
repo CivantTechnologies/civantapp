@@ -1,5 +1,9 @@
 import { normalizeRuntimeValue, runtimeConfig } from '@/config';
 
+const viteEnv = /** @type {any} */ (import.meta.env);
+const viteFunctionsVersion = normalizeRuntimeValue(viteEnv.VITE_CIVANT_FUNCTIONS_VERSION);
+const viteAppBaseUrl = normalizeRuntimeValue(viteEnv.VITE_CIVANT_APP_BASE_URL);
+
 const isNode = typeof window === 'undefined';
 const memoryStore = new Map();
 const memoryStorage = {
@@ -62,8 +66,8 @@ const getAppParams = () => {
 		appId: getAppParamValue('app_id', { defaultValue: runtimeConfig.civantAppId }),
 		token: getAppParamValue('access_token', { removeFromUrl: true }),
 		fromUrl: getAppParamValue('from_url', { defaultValue: isNode ? '' : window.location.href }),
-		functionsVersion: getAppParamValue('functions_version', { defaultValue: normalizeParamValue((/** @type {any} */ (import.meta).env || {}).VITE_CIVANT_FUNCTIONS_VERSION) }),
-		appBaseUrl: getAppParamValue('app_base_url', { defaultValue: normalizeParamValue((/** @type {any} */ (import.meta).env || {}).VITE_CIVANT_APP_BASE_URL) }),
+		functionsVersion: getAppParamValue('functions_version', { defaultValue: viteFunctionsVersion }),
+		appBaseUrl: getAppParamValue('app_base_url', { defaultValue: viteAppBaseUrl }),
 	};
 };
 

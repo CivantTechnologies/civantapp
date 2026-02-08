@@ -1,4 +1,4 @@
-const env = /** @type {any} */ (import.meta).env || {};
+const viteEnv = /** @type {any} */ (import.meta.env);
 
 const normalize = (value) => {
   const text = String(value ?? '').trim();
@@ -15,7 +15,7 @@ const parseBoolean = (value) => {
 
 const issues = [];
 
-const supabaseUrl = normalize(env.VITE_SUPABASE_URL);
+const supabaseUrl = normalize(viteEnv.VITE_SUPABASE_URL);
 if (!supabaseUrl) {
   issues.push('VITE_SUPABASE_URL is missing');
 } else {
@@ -29,13 +29,13 @@ if (!supabaseUrl) {
   }
 }
 
-const supabaseAnonKey = normalize(env.VITE_SUPABASE_ANON_KEY);
+const supabaseAnonKey = normalize(viteEnv.VITE_SUPABASE_ANON_KEY);
 if (!supabaseAnonKey) issues.push('VITE_SUPABASE_ANON_KEY is missing');
 
-const civantAppId = normalize(env.VITE_CIVANT_APP_ID);
+const civantAppId = normalize(viteEnv.VITE_CIVANT_APP_ID);
 if (!civantAppId) issues.push('VITE_CIVANT_APP_ID is missing');
 
-const apiBaseUrl = normalize(env.VITE_API_BASE_URL) || '/api';
+const apiBaseUrl = normalize(viteEnv.VITE_API_BASE_URL) || '/api';
 if (apiBaseUrl && !apiBaseUrl.startsWith('/')) {
   try {
     const parsed = new URL(apiBaseUrl);
@@ -46,7 +46,7 @@ if (apiBaseUrl && !apiBaseUrl.startsWith('/')) {
     issues.push('VITE_API_BASE_URL is invalid');
   }
 }
-const debug = parseBoolean(env.VITE_DEBUG);
+const debug = parseBoolean(viteEnv.VITE_DEBUG);
 
 let hasLoggedConfigStatus = false;
 
