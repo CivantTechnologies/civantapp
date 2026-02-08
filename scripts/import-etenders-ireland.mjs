@@ -21,6 +21,12 @@ function parseArgs(argv) {
   return args;
 }
 
+function makeRunId(prefix = 'etenders_csv') {
+  const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+  const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 8);
+  return `${prefix}_${stamp}_${suffix}`;
+}
+
 function parseCsvLine(line) {
   const out = [];
   let current = '';
@@ -318,6 +324,41 @@ async function postRows({ baseUrl, appId, tenantId, table, rows, includeTenantHe
   return payload;
 }
 
+async function putEntityById({ baseUrl, appId, tenantId, table, id, payload, includeTenantHeader }) {
+  const headers = {
+    'content-type': 'application/json'
+  };
+
+  if (includeTenantHeader && tenantId) {
+    headers['x-tenant-id'] = tenantId;
+  }
+
+  const response = await fetch(
+    `${baseUrl}/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(table)}/${encodeURIComponent(id)}`,
+    {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(payload)
+    }
+  );
+
+  const text = await response.text();
+  const parsed = text ? (() => {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { raw: text };
+    }
+  })() : null;
+
+  if (!response.ok) {
+    const errorMessage = parsed?.error || parsed?.message || `HTTP ${response.status}`;
+    throw new Error(String(errorMessage));
+  }
+
+  return parsed;
+}
+
 async function insertBatchWithFallback({ baseUrl, appId, tenantId, table, rows, metrics, includeTenantHeader }) {
   if (!rows.length) return;
 
@@ -361,6 +402,9 @@ async function main() {
   const includeTenantHeader = args['with-tenant-header'] === 'true';
   const allowInferredId = args['allow-inferred-id'] === 'true';
   const onlyMissingId = args['only-missing-id'] === 'true';
+  const rawOnly = args['raw-only'] === 'true';
+  const logRaw = args['log-raw'] !== 'false';
+  const runId = String(args['run-id'] || makeRunId());
   const batchSize = Math.max(10, Number(args['batch-size'] || 200));
   const limit = args.limit ? Math.max(1, Number(args.limit)) : null;
   const dryRun = args['dry-run'] === 'true';
@@ -375,6 +419,11 @@ async function main() {
     process.exit(1);
   }
 
+  const source = 'ETENDERS_IE';
+  const startedAt = new Date().toISOString();
+  const sourceCursor = `file:${file}`;
+
+  const rawMetrics = { inserted: 0, duplicates: 0, failed: 0, errors: [] };
   const canonicalMetrics = { inserted: 0, duplicates: 0, failed: 0, errors: [] };
   const currentMetrics = { inserted: 0, duplicates: 0, failed: 0, errors: [] };
 
@@ -385,40 +434,86 @@ async function main() {
   let skipped = 0;
   let skippedNonMissing = 0;
   let dedupedInFile = 0;
+  let inferredIdRows = 0;
   let malformedRecords = 0;
   let pendingRecord = '';
   const seenCanonicalIds = new Set();
 
+  const rawBatch = [];
   const canonicalBatch = [];
   const currentBatch = [];
 
   const stream = fs.createReadStream(file, { encoding: 'utf8' });
   const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
 
+  if (!dryRun) {
+    await postRows({
+      baseUrl,
+      appId,
+      tenantId,
+      table: 'ingestion_runs',
+      rows: [{
+        run_id: runId,
+        source,
+        cursor: sourceCursor,
+        status: 'running',
+        metrics: {},
+        errors: [],
+        started_at: startedAt,
+        finished_at: null,
+        tenant_id: tenantId
+      }],
+      includeTenantHeader
+    });
+  }
+
   const flush = async () => {
-    if (!canonicalBatch.length) return;
+    if (!rawBatch.length && (rawOnly || !canonicalBatch.length)) return;
+
     if (!dryRun) {
-      await insertBatchWithFallback({
-        baseUrl,
-        appId,
-        tenantId,
-        table: 'canonical_tenders',
-        rows: canonicalBatch.splice(0, canonicalBatch.length),
-        metrics: canonicalMetrics,
-        includeTenantHeader
-      });
-      await insertBatchWithFallback({
-        baseUrl,
-        appId,
-        tenantId,
-        table: 'TendersCurrent',
-        rows: currentBatch.splice(0, currentBatch.length),
-        metrics: currentMetrics,
-        includeTenantHeader
-      });
+      if (rawBatch.length) {
+        await insertBatchWithFallback({
+          baseUrl,
+          appId,
+          tenantId,
+          table: 'raw_documents',
+          rows: rawBatch.splice(0, rawBatch.length),
+          metrics: rawMetrics,
+          includeTenantHeader
+        });
+      }
+
+      if (!rawOnly && canonicalBatch.length) {
+        await insertBatchWithFallback({
+          baseUrl,
+          appId,
+          tenantId,
+          table: 'canonical_tenders',
+          rows: canonicalBatch.splice(0, canonicalBatch.length),
+          metrics: canonicalMetrics,
+          includeTenantHeader
+        });
+        await insertBatchWithFallback({
+          baseUrl,
+          appId,
+          tenantId,
+          table: 'TendersCurrent',
+          rows: currentBatch.splice(0, currentBatch.length),
+          metrics: currentMetrics,
+          includeTenantHeader
+        });
+      } else {
+        canonicalBatch.length = 0;
+        currentBatch.length = 0;
+      }
     } else {
-      canonicalMetrics.inserted += canonicalBatch.length;
-      currentMetrics.inserted += currentBatch.length;
+      rawMetrics.inserted += rawBatch.length;
+      rawBatch.length = 0;
+
+      if (!rawOnly) {
+        canonicalMetrics.inserted += canonicalBatch.length;
+        currentMetrics.inserted += currentBatch.length;
+      }
       canonicalBatch.length = 0;
       currentBatch.length = 0;
     }
@@ -429,7 +524,8 @@ async function main() {
     if (!pendingRecord && !rawLine.trim()) continue;
 
     pendingRecord = pendingRecord ? `${pendingRecord}\n${rawLine}` : rawLine;
-    const parsed = parseCsvLine(pendingRecord);
+    const currentRecordText = pendingRecord;
+    const parsed = parseCsvLine(currentRecordText);
     if (parsed.inQuotes) {
       continue;
     }
@@ -454,9 +550,48 @@ async function main() {
       continue;
     }
 
+    if (logRaw) {
+      const contentHash = makeFingerprint([JSON.stringify(row)]);
+      const checksum = makeFingerprint([runId, String(recordNumber), contentHash]);
+
+      rawBatch.push({
+        id: `${runId}:${String(recordNumber).padStart(8, '0')}`,
+        run_id: runId,
+        source,
+        source_url: pickFirst(row['TED Notice Link'], row['TED CAN Link']),
+        document_type: 'csv_row',
+        external_id: clean(row['Tender ID']),
+        raw_text: currentRecordText,
+        raw_json: {
+          row,
+          line_number: lineNumber,
+          record_number: recordNumber,
+          content_hash: contentHash,
+          only_missing_id_mode: onlyMissingId
+        },
+        fetched_at: new Date().toISOString(),
+        checksum,
+        tenant_id: tenantId
+      });
+    }
+
+    if (rawOnly) {
+      processed += 1;
+      if (rawBatch.length >= batchSize) {
+        await flush();
+      }
+      if (limit && processed >= limit) {
+        break;
+      }
+      continue;
+    }
+
     const mapped = mapRow(row, { allowInferredId });
     if (!mapped) {
       skipped += 1;
+      if (rawBatch.length >= batchSize) {
+        await flush();
+      }
       continue;
     }
 
@@ -464,16 +599,23 @@ async function main() {
     if (canonicalId) {
       if (seenCanonicalIds.has(canonicalId)) {
         dedupedInFile += 1;
+        if (rawBatch.length >= batchSize) {
+          await flush();
+        }
         continue;
       }
       seenCanonicalIds.add(canonicalId);
+    }
+
+    if (mapped.canonicalTender?.normalized_json?.id_inferred) {
+      inferredIdRows += 1;
     }
 
     canonicalBatch.push(mapped.canonicalTender);
     currentBatch.push(mapped.currentTender);
     processed += 1;
 
-    if (canonicalBatch.length >= batchSize) {
+    if (rawBatch.length >= batchSize || canonicalBatch.length >= batchSize) {
       await flush();
     }
 
@@ -492,13 +634,69 @@ async function main() {
 
   await flush();
 
+  const duplicatesTotal = dedupedInFile + Math.max(canonicalMetrics.duplicates, currentMetrics.duplicates);
+  const metrics = {
+    total_rows: Math.max(recordNumber - 1, 0),
+    processed_rows: processed,
+    skipped_missing_required: skipped,
+    skipped_non_missing: skippedNonMissing,
+    deduped_in_file: dedupedInFile,
+    inferred_id_rows: inferredIdRows,
+    duplicates_total: duplicatesTotal,
+    raw_rows: rawMetrics.inserted,
+    raw_duplicates: rawMetrics.duplicates,
+    raw_failed: rawMetrics.failed,
+    canonical_inserted: canonicalMetrics.inserted,
+    canonical_duplicates: canonicalMetrics.duplicates,
+    canonical_failed: canonicalMetrics.failed,
+    current_inserted: currentMetrics.inserted,
+    current_duplicates: currentMetrics.duplicates,
+    current_failed: currentMetrics.failed,
+    malformed_records: malformedRecords,
+    mode: rawOnly ? 'raw_only' : 'canonical_and_current'
+  };
+
+  const runErrors = [...rawMetrics.errors, ...canonicalMetrics.errors, ...currentMetrics.errors].slice(0, 50);
+  const runStatus = runErrors.length > 0 || rawMetrics.failed || canonicalMetrics.failed || currentMetrics.failed
+    ? 'completed_with_errors'
+    : 'completed';
+
+  if (!dryRun) {
+    try {
+      await putEntityById({
+        baseUrl,
+        appId,
+        tenantId,
+        table: 'ingestion_runs',
+        id: runId,
+        payload: {
+          status: runStatus,
+          metrics,
+          errors: runErrors,
+          cursor: `record:${recordNumber}:line:${lineNumber}`,
+          finished_at: new Date().toISOString()
+        },
+        includeTenantHeader
+      });
+    } catch (error) {
+      console.error(`Failed to update ingestion run ${runId}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   const summary = {
+    run_id: runId,
     file,
     processed,
     skipped,
     skipped_non_missing: skippedNonMissing,
     deduped_in_file: dedupedInFile,
+    inferred_id_rows: inferredIdRows,
     malformed_records: malformedRecords,
+    raw_documents: {
+      inserted: rawMetrics.inserted,
+      duplicates: rawMetrics.duplicates,
+      failed: rawMetrics.failed
+    },
     canonical_tenders: {
       inserted: canonicalMetrics.inserted,
       duplicates: canonicalMetrics.duplicates,
@@ -509,7 +707,7 @@ async function main() {
       duplicates: currentMetrics.duplicates,
       failed: currentMetrics.failed
     },
-    errors: [...canonicalMetrics.errors, ...currentMetrics.errors].slice(0, 50)
+    errors: runErrors
   };
 
   console.log(JSON.stringify(summary, null, 2));

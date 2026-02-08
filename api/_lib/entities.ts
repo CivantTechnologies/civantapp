@@ -9,6 +9,9 @@ const TENDERS_CURRENT_FIELD_MAP: Record<string, string> = {
   first_seen_at: 'published_at',
   last_seen_at: 'updated_at'
 };
+const INGESTION_RUNS_FIELD_MAP: Record<string, string> = {
+  id: 'run_id'
+};
 
 const ENTITY_TABLE_MAP: Record<string, string> = {
   User: 'users'
@@ -84,8 +87,13 @@ export function resolveTableName(entityName: string) {
 }
 
 function mapFieldForTable(tableName: string, field: string) {
-  if (tableName !== 'TendersCurrent') return field;
-  return TENDERS_CURRENT_FIELD_MAP[field] || field;
+  if (tableName === 'TendersCurrent') {
+    return TENDERS_CURRENT_FIELD_MAP[field] || field;
+  }
+  if (tableName === 'ingestion_runs') {
+    return INGESTION_RUNS_FIELD_MAP[field] || field;
+  }
+  return field;
 }
 
 function normalizeSortForTable(tableName: string, sortValue: string) {
@@ -170,6 +178,12 @@ function normalizeEntityRow(tableName: string, row: unknown) {
   if (tableName === 'TendersCurrent') {
     return normalizeTendersCurrentRow(row);
   }
+  if (tableName === 'ingestion_runs' && row && typeof row === 'object') {
+    const base = row as Record<string, unknown>;
+    if (!base.id && base.run_id) {
+      return { ...base, id: base.run_id };
+    }
+  }
   return row;
 }
 
@@ -217,6 +231,9 @@ function applySort(qb: any, sortValue: string) {
 function applyIdFilter(qb: any, tableName: string, id: string) {
   if (tableName === 'TendersCurrent') {
     return qb.eq('tender_id', id);
+  }
+  if (tableName === 'ingestion_runs') {
+    return qb.eq('run_id', id);
   }
   if (tableName === 'canonical_tenders') {
     return qb.eq('canonical_id', id);
@@ -305,6 +322,8 @@ export async function deleteManyEntity(req: DynamicRequest) {
 
   let qb = tableName === 'TendersCurrent'
     ? supabase.from(tableName as any).delete().in('tender_id', ids as string[])
+    : tableName === 'ingestion_runs'
+      ? supabase.from(tableName as any).delete().in('run_id', ids as string[])
     : tableName === 'canonical_tenders'
       ? supabase.from(tableName as any).delete().in('canonical_id', ids as string[])
     : supabase.from(tableName as any).delete().in('id', ids as string[]);

@@ -193,6 +193,27 @@ async function requireTenantScopedPrivilegedUser(req: RequestLike) {
   return { user, tenantId };
 }
 
+async function requireTenantScopedAdmin(req: RequestLike) {
+  const { user, tenantId } = await requireTenantScopedPrivilegedUser(req);
+  if (!hasRole(user, 'admin')) {
+    throw Object.assign(new Error('Admin role required'), { status: 403 });
+  }
+  return { user, tenantId };
+}
+
+function toNumber(value: unknown) {
+  const n = Number(value || 0);
+  if (Number.isNaN(n) || !Number.isFinite(n)) return 0;
+  return Math.max(0, Math.round(n));
+}
+
+function normalizeMetrics(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {} as Record<string, unknown>;
+  }
+  return value as Record<string, unknown>;
+}
+
 export async function getMyProfile(req: RequestLike) {
   const user = await getCurrentUser(req);
   return {
@@ -560,6 +581,164 @@ export async function listSupportAccessAudit(req: RequestLike) {
   return (Array.isArray(data) ? data : []) as SupportAccessAuditRow[];
 }
 
+export async function getPipelineAdmin(req: RequestLike) {
+  const { user, tenantId } = await requireTenantScopedAdmin(req);
+  const body = readJsonBody<{
+    action?: string;
+    queue_id?: string;
+    decision?: string;
+    review_notes?: string;
+    prediction_id?: string;
+  }>(req);
+
+  const action = String(body.action || 'overview').trim().toLowerCase();
+  const supabase = getServerSupabase() as any;
+
+  if (action === 'review_decision') {
+    const queueId = String(body.queue_id || '').trim();
+    const decision = String(body.decision || '').trim().toLowerCase();
+    if (!queueId || !['approve', 'reject'].includes(decision)) {
+      throw badRequest('queue_id and decision=approve|reject are required');
+    }
+
+    const { data, error } = await supabase
+      .from('reconciliation_queue')
+      .update({
+        status: decision === 'approve' ? 'approved' : 'rejected',
+        reviewed_by: user.email || user.userId || 'admin',
+        reviewed_at: new Date().toISOString(),
+        review_notes: String(body.review_notes || '')
+      })
+      .eq('id', queueId)
+      .eq('tenant_id', tenantId)
+      .select('*')
+      .limit(1);
+
+    if (error) throw Object.assign(new Error(error.message), { status: 500 });
+    const row = Array.isArray(data) && data.length ? data[0] : null;
+    if (!row) throw Object.assign(new Error('Queue item not found'), { status: 404 });
+    return { success: true, item: row };
+  }
+
+  if (action === 'prediction_detail') {
+    const predictionId = String(body.prediction_id || '').trim();
+    if (!predictionId) throw badRequest('prediction_id is required');
+
+    const { data, error } = await supabase
+      .from('predictions')
+      .select('*')
+      .eq('id', predictionId)
+      .eq('tenant_id', tenantId)
+      .limit(1);
+
+    if (error) throw Object.assign(new Error(error.message), { status: 500 });
+    const row = Array.isArray(data) && data.length ? data[0] : null;
+    if (!row) throw Object.assign(new Error('Prediction not found'), { status: 404 });
+    return { success: true, prediction: row };
+  }
+
+  const [runsResult, queueResult, predictionsResult, rawCountResult] = await Promise.all([
+    supabase
+      .from('ingestion_runs')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('started_at', { ascending: false })
+      .limit(100),
+    supabase
+      .from('reconciliation_queue')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(200),
+    supabase
+      .from('predictions')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('generated_at', { ascending: false })
+      .limit(200),
+    supabase
+      .from('raw_documents')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)
+      .eq('source', 'ETENDERS_IE')
+  ]);
+
+  if (runsResult.error) throw Object.assign(new Error(runsResult.error.message), { status: 500 });
+  if (queueResult.error) throw Object.assign(new Error(queueResult.error.message), { status: 500 });
+  if (predictionsResult.error) throw Object.assign(new Error(predictionsResult.error.message), { status: 500 });
+
+  const runRows = Array.isArray(runsResult.data) ? runsResult.data : [];
+  const queueRows = Array.isArray(queueResult.data) ? queueResult.data : [];
+  const predictionRows = Array.isArray(predictionsResult.data) ? predictionsResult.data : [];
+
+  const runs = runRows.map((run) => {
+    const metrics = normalizeMetrics(run.metrics);
+    const dedupedInFile = toNumber(metrics.deduped_in_file ?? metrics.duplicates_in_file);
+    const canonicalDuplicates = toNumber(metrics.canonical_duplicates ?? metrics.duplicates);
+    const currentDuplicates = toNumber(metrics.current_duplicates);
+    const inferredIdRows = toNumber(metrics.inferred_id_rows);
+    const rawRows = toNumber(metrics.raw_rows);
+    const processedRows = toNumber(metrics.processed_rows ?? metrics.processed ?? metrics.total_rows);
+    const totalDuplicates = Math.max(
+      toNumber(metrics.duplicates_total),
+      dedupedInFile + Math.max(canonicalDuplicates, currentDuplicates)
+    );
+
+    return {
+      ...run,
+      id: run.id || run.run_id,
+      metrics,
+      duplicate_stats: {
+        deduped_in_file: dedupedInFile,
+        canonical_duplicates: canonicalDuplicates,
+        current_duplicates: currentDuplicates,
+        inferred_id_rows: inferredIdRows,
+        raw_rows: rawRows,
+        processed_rows: processedRows,
+        total_duplicates: totalDuplicates
+      }
+    };
+  });
+
+  const duplicateSummary = runs.reduce(
+    (acc, run) => {
+      const stats = normalizeMetrics(run.duplicate_stats);
+      acc.total_duplicates += toNumber(stats.total_duplicates);
+      acc.deduped_in_file += toNumber(stats.deduped_in_file);
+      acc.canonical_duplicates += toNumber(stats.canonical_duplicates);
+      acc.current_duplicates += toNumber(stats.current_duplicates);
+      acc.inferred_id_rows += toNumber(stats.inferred_id_rows);
+      acc.processed_rows += toNumber(stats.processed_rows);
+      acc.raw_rows += toNumber(stats.raw_rows);
+      return acc;
+    },
+    {
+      total_duplicates: 0,
+      deduped_in_file: 0,
+      canonical_duplicates: 0,
+      current_duplicates: 0,
+      inferred_id_rows: 0,
+      processed_rows: 0,
+      raw_rows: 0
+    }
+  );
+
+  const rawDocumentsLogged = Number(rawCountResult.count || 0);
+
+  return {
+    success: true,
+    runs,
+    queue: queueRows,
+    predictions: predictionRows,
+    duplicateSummary: {
+      ...duplicateSummary,
+      run_count: runs.length,
+      raw_documents_logged: rawDocumentsLogged
+    }
+  };
+}
+
 export async function dispatchFunction(functionName: string, req: RequestLike) {
   switch (functionName) {
     case 'getMyProfile':
@@ -586,6 +765,8 @@ export async function dispatchFunction(functionName: string, req: RequestLike) {
       return getSupportAccessStatus(req);
     case 'listSupportAccessAudit':
       return listSupportAccessAudit(req);
+    case 'getPipelineAdmin':
+      return getPipelineAdmin(req);
     default:
       throw Object.assign(new Error(`Function not found: ${functionName}`), { status: 404 });
   }

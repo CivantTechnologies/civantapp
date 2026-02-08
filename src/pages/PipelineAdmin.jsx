@@ -9,27 +9,33 @@ function pretty(value) {
   return JSON.stringify(value, null, 2);
 }
 
+function unwrapResponse(response) {
+  return response?.data ?? response ?? null;
+}
+
 export default function PipelineAdmin() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [runs, setRuns] = useState([]);
   const [queue, setQueue] = useState([]);
   const [predictions, setPredictions] = useState([]);
+  const [duplicateSummary, setDuplicateSummary] = useState(null);
   const [selectedPrediction, setSelectedPrediction] = useState(null);
   const [busyQueueId, setBusyQueueId] = useState(null);
 
   const loadData = async () => {
-    const response = await civant.functions.invoke('getPipelineAdmin', { action: 'overview' });
-    const data = response?.data || {};
+    const response = unwrapResponse(await civant.functions.invoke('getPipelineAdmin', { action: 'overview' }));
+    const data = response || {};
     setRuns(data.runs || []);
     setQueue(data.queue || []);
     setPredictions(data.predictions || []);
+    setDuplicateSummary(data.duplicateSummary || null);
   };
 
   useEffect(() => {
     const init = async () => {
       try {
-        const me = await civant.auth.me();
+        const me = unwrapResponse(await civant.auth.me());
         setUser(me);
         if (me?.role === 'admin') {
           await loadData();
@@ -65,7 +71,8 @@ export default function PipelineAdmin() {
         action: 'prediction_detail',
         prediction_id: predictionId
       });
-      setSelectedPrediction(response?.data?.prediction || null);
+      const payload = unwrapResponse(response);
+      setSelectedPrediction(payload?.prediction || null);
     } catch (error) {
       console.error('Failed to load prediction detail:', error);
     }
@@ -102,7 +109,7 @@ export default function PipelineAdmin() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-2"><CardTitle className="text-base">Runs</CardTitle></CardHeader>
           <CardContent><p className="text-2xl font-bold">{runs.length}</p></CardContent>
@@ -115,18 +122,54 @@ export default function PipelineAdmin() {
           <CardHeader className="pb-2"><CardTitle className="text-base">Predictions</CardTitle></CardHeader>
           <CardContent><p className="text-2xl font-bold">{predictions.length}</p></CardContent>
         </Card>
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-2"><CardTitle className="text-base">Duplicate Rows</CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{duplicateSummary?.total_duplicates || 0}</p>
+            <p className="text-xs text-slate-500 mt-1">In-file + DB duplicate detections</p>
+          </CardContent>
+        </Card>
       </div>
+
+      {duplicateSummary && (
+        <Card className="border-0 shadow-sm">
+          <CardHeader><CardTitle>Duplicate Stats</CardTitle></CardHeader>
+          <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+            <div className="rounded-lg border border-slate-200 p-3">
+              <p className="text-slate-500">Deduped in file</p>
+              <p className="text-lg font-semibold">{duplicateSummary.deduped_in_file || 0}</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 p-3">
+              <p className="text-slate-500">Recovered with inferred IDs</p>
+              <p className="text-lg font-semibold">{duplicateSummary.inferred_id_rows || 0}</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 p-3">
+              <p className="text-slate-500">Raw rows logged</p>
+              <p className="text-lg font-semibold">{duplicateSummary.raw_documents_logged || 0}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="border-0 shadow-sm">
         <CardHeader><CardTitle>Ingestion Runs + Errors</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           {runs.length === 0 && <p className="text-slate-500">No runs yet.</p>}
           {runs.map((run) => (
-            <div key={run.id} className="rounded-lg border border-slate-200 p-3">
+            <div key={run.id || run.run_id} className="rounded-lg border border-slate-200 p-3">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline">{run.status}</Badge>
                 <span className="text-sm font-medium">{run.run_id}</span>
                 <span className="text-xs text-slate-500">{run.source}</span>
+                <Badge variant="outline">
+                  duplicates: {run.duplicate_stats?.total_duplicates || 0}
+                </Badge>
+                <Badge variant="outline">
+                  raw rows: {run.duplicate_stats?.raw_rows || 0}
+                </Badge>
+              </div>
+              <div className="mt-2 text-xs text-slate-600">
+                processed {run.duplicate_stats?.processed_rows || 0} rows, inferred IDs {run.duplicate_stats?.inferred_id_rows || 0}
               </div>
               {!!(run.errors && run.errors.length) && (
                 <pre className="mt-2 text-xs bg-slate-50 rounded p-2 overflow-x-auto">{pretty(run.errors)}</pre>
