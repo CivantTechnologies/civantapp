@@ -1,25 +1,31 @@
 import { createClientFromRequest } from './civantSdk.ts';
-import { requireAdminForTenant, resolveTenantId } from './requireAdmin.ts';
+import { requireAdminForTenant } from './requireAdmin.ts';
+import { getTenantFromHeader } from './getTenantFromHeader.ts';
 
 Deno.serve(async (req) => {
   try {
     const civant = createClientFromRequest(req);
-
-    const body = await req.json().catch(() => ({}));
-    const tenantId = resolveTenantId(body.tenantId || body.tenant_id || req.headers.get('X-Tenant-Id'));
+    const tenantId = getTenantFromHeader(req);
 
     await requireAdminForTenant({ civant, req, tenantId });
 
     const tenantUsers = await civant.asServiceRole.entities.users.filter({ tenant_id: tenantId }, '-created_at', 200);
 
-    const withRoles = (Array.isArray(tenantUsers) ? tenantUsers : []).map((tenantUser: Record<string, unknown>) => {
-      const role = String(tenantUser.role || 'user');
+    const withRoles = await Promise.all((Array.isArray(tenantUsers) ? tenantUsers : []).map(async (tenantUser: Record<string, unknown>) => {
+      const roleRows = await civant.asServiceRole.entities.user_roles.filter({ user_id: String(tenantUser.id || '') }, '-role', 50)
+        .catch(() => []);
+      const roles = Array.isArray(roleRows)
+        ? roleRows.map((row: Record<string, unknown>) => String(row.role || '').trim().toLowerCase()).filter(Boolean)
+        : [];
+      const fallbackRole = String(tenantUser.role || '').trim().toLowerCase();
+      if (!roles.length && fallbackRole) roles.push(fallbackRole);
+
       return {
         userId: String(tenantUser.id || ''),
         email: String(tenantUser.email || ''),
-        roles: [role]
+        roles: roles.length ? roles : ['user']
       };
-    });
+    }));
 
     return Response.json(withRoles);
   } catch (error) {

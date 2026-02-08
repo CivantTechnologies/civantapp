@@ -16,10 +16,10 @@ export type CurrentUser = {
   sessionId: string;
 };
 
-const ALLOWED_SYSTEM_ROLES = new Set(['admin', 'creator']);
+const PRIVILEGED_ROLES = new Set(['admin', 'creator']);
 
 export function resolveTenantId(requestedTenantId?: unknown) {
-  const normalized = String(requestedTenantId || '').trim();
+  const normalized = String(requestedTenantId || '').trim().toLowerCase();
   return normalized || Deno.env.get('DEFAULT_TENANT_ID') || 'civant_default';
 }
 
@@ -114,6 +114,20 @@ async function resolveCurrentUser(civant: CivantClient, email: string): Promise<
   };
 }
 
+export function hasRole(user: CurrentUser, role: string) {
+  return user.roles.includes(String(role || '').toLowerCase());
+}
+
+export function isPrivileged(user: CurrentUser) {
+  return user.roles.some((role) => PRIVILEGED_ROLES.has(role));
+}
+
+export function canAccessTenant(user: CurrentUser, tenantId: string) {
+  const normalizedTenant = resolveTenantId(tenantId);
+  if (hasRole(user, 'creator')) return true;
+  return user.tenantId === normalizedTenant;
+}
+
 export async function getCurrentUserFromRequest(civant: CivantClient, req: Request): Promise<CurrentUser> {
   const token = parseBearerToken(req);
   if (!token) throw unauthorized('Missing bearer token');
@@ -130,14 +144,26 @@ export async function requireAuthenticatedUser(params: {
   return getCurrentUserFromRequest(civant, req);
 }
 
-export async function checkIsAdminForTenant(params: {
+export async function requireTenantAccess(params: {
   civant: CivantClient;
   req: Request;
   tenantId: string;
 }) {
   const user = await getCurrentUserFromRequest(params.civant, params.req);
-  if (user.tenantId !== params.tenantId) return false;
-  return user.roles.some((role) => ALLOWED_SYSTEM_ROLES.has(role));
+  const normalizedTenant = resolveTenantId(params.tenantId);
+  if (!canAccessTenant(user, normalizedTenant)) {
+    throw forbidden('Forbidden for tenant');
+  }
+  return user;
+}
+
+export async function checkIsAdminForTenant(params: {
+  civant: CivantClient;
+  req: Request;
+  tenantId: string;
+}) {
+  const user = await requireTenantAccess(params);
+  return isPrivileged(user);
 }
 
 export async function requireAdminForTenant(params: {
@@ -145,12 +171,20 @@ export async function requireAdminForTenant(params: {
   req: Request;
   tenantId: string;
 }) {
-  const user = await getCurrentUserFromRequest(params.civant, params.req);
-  if (user.tenantId !== params.tenantId) {
-    throw forbidden('Forbidden for tenant');
-  }
-  if (!user.roles.some((role) => ALLOWED_SYSTEM_ROLES.has(role))) {
+  const user = await requireTenantAccess(params);
+  if (!isPrivileged(user)) {
     throw forbidden('Admin or creator role required');
+  }
+  return user;
+}
+
+export async function requireCreator(params: {
+  civant: CivantClient;
+  req: Request;
+}) {
+  const user = await getCurrentUserFromRequest(params.civant, params.req);
+  if (!hasRole(user, 'creator')) {
+    throw forbidden('Creator role required');
   }
   return user;
 }

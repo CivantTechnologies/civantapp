@@ -1,14 +1,12 @@
 import { createClientFromRequest } from './civantSdk.ts';
-import { requireAdminForTenant, resolveTenantId } from './requireAdmin.ts';
+import { requireAdminForTenant } from './requireAdmin.ts';
+import { getTenantFromHeader } from './getTenantFromHeader.ts';
 import { computeSupportStatus } from './supportAccessAllowed.ts';
 
 Deno.serve(async (req) => {
   try {
     const civant = createClientFromRequest(req);
-
-    const body = await req.json().catch(() => ({}));
-    const tenantId = resolveTenantId(body.tenantId || body.tenant_id || req.headers.get('X-Tenant-Id'));
-
+    const tenantId = getTenantFromHeader(req);
     const user = await requireAdminForTenant({ civant, req, tenantId });
 
     const status = await computeSupportStatus({ civant, tenantId, actor: { id: user.userId, email: user.email } });

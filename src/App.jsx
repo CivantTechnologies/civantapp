@@ -6,6 +6,7 @@ import { pagesConfig } from './pages.config';
 import { BrowserRouter as Router, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/auth';
+import { TenantProvider } from '@/lib/tenant';
 import Login from '@/pages/Login';
 
 const { Pages, Layout, mainPage } = pagesConfig;
@@ -131,13 +132,15 @@ function AppRoutes() {
 function App() {
   return (
     <AuthProvider>
-      <QueryClientProvider client={queryClientInstance}>
-        <Router>
-          <NavigationTracker />
-          <AppRoutes />
-        </Router>
-        <Toaster />
-      </QueryClientProvider>
+      <TenantProvider>
+        <QueryClientProvider client={queryClientInstance}>
+          <Router>
+            <NavigationTracker />
+            <AppRoutes />
+          </Router>
+          <Toaster />
+        </QueryClientProvider>
+      </TenantProvider>
     </AuthProvider>
   );
 }

@@ -1,5 +1,7 @@
 import axios from 'axios';
 
+const ACTIVE_TENANT_STORAGE_KEY = 'civant_active_tenant';
+
 const hasFileLike = (value) => {
     if (!value) return false;
     if (typeof File !== 'undefined' && value instanceof File) return true;
@@ -75,14 +77,17 @@ const createEntityApi = (http, appId) => new Proxy({}, {
 });
 
 const createFunctionsApi = (http, appId) => ({
-    invoke(functionName, payload) {
+    invoke(functionName, payload, options = {}) {
+        const headers = options.headers || undefined;
         if (hasFileLike(payload)) {
             const data = toFormData(payload);
             return http.post(`/apps/${appId}/functions/${functionName}`, data, {
-                headers: { 'Content-Type': 'multipart/form-data' }
+                headers: { 'Content-Type': 'multipart/form-data', ...(headers || {}) }
             });
         }
-        return http.post(`/apps/${appId}/functions/${functionName}`, payload || {});
+        return http.post(`/apps/${appId}/functions/${functionName}`, payload || {}, {
+            headers
+        });
     }
 });
 
@@ -152,7 +157,7 @@ export const createAxiosClient = ({
             (response) => response.data,
             (error) => {
                 const normalizedError = /** @type {any} */ (new Error(
-                    error?.response?.data?.message || error?.message || 'Request failed'
+                    error?.response?.data?.message || error?.response?.data?.error || error?.message || 'Request failed'
                 ));
                 normalizedError.status = error?.response?.status;
                 normalizedError.code = error?.response?.data?.code;
@@ -193,6 +198,34 @@ export const createClient = ({
     void requiresAuth;
     const baseURL = serverUrl || appBaseUrl || '';
     const http = createAxiosClient({ baseURL, token, interceptResponses: true });
+    const functionsApi = createFunctionsApi(http, appId);
+
+    let activeTenantId = typeof window !== 'undefined' && window.localStorage
+        ? (window.localStorage.getItem(ACTIVE_TENANT_STORAGE_KEY) || '')
+        : '';
+
+    const setActiveTenantId = (tenantId, persist = true) => {
+        activeTenantId = String(tenantId || '').trim().toLowerCase();
+        if (typeof window !== 'undefined' && window.localStorage) {
+            if (persist && activeTenantId) {
+                window.localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, activeTenantId);
+            } else if (!activeTenantId) {
+                window.localStorage.removeItem(ACTIVE_TENANT_STORAGE_KEY);
+            }
+        }
+    };
+
+    const getActiveTenantId = () => activeTenantId;
+
+    const tenantHeaders = (headers = {}) => {
+        if (!activeTenantId) {
+            throw new Error('Select a tenant');
+        }
+        return {
+            ...headers,
+            'x-tenant-id': activeTenantId
+        };
+    };
 
     const setToken = (nextToken, persist = true) => {
         if (nextToken) {
@@ -203,6 +236,10 @@ export const createClient = ({
             }
         } else {
             delete http.defaults.headers.common.Authorization;
+            if (typeof window !== 'undefined' && window.localStorage) {
+                window.localStorage.removeItem('civant_access_token');
+                window.localStorage.removeItem('token');
+            }
         }
     };
 
@@ -211,13 +248,13 @@ export const createClient = ({
             return http.get(`/apps/${appId}/entities/User/me`);
         },
         createSession(email, tenantId) {
-            return createFunctionsApi(http, appId).invoke("createSession", { email, tenantId });
+            return functionsApi.invoke('createSession', { email, tenantId });
         },
         getCurrentUser() {
-            return createFunctionsApi(http, appId).invoke("getCurrentUser", {});
+            return functionsApi.invoke('getCurrentUser', {});
         },
         getMyProfile() {
-            return createFunctionsApi(http, appId).invoke("getMyProfile", {});
+            return functionsApi.invoke('getMyProfile', {});
         },
         setToken,
         redirectToLogin(fromUrl) {
@@ -230,8 +267,10 @@ export const createClient = ({
             if (typeof window !== 'undefined' && window.localStorage) {
                 window.localStorage.removeItem('civant_access_token');
                 window.localStorage.removeItem('token');
+                window.localStorage.removeItem(ACTIVE_TENANT_STORAGE_KEY);
             }
             delete http.defaults.headers.common.Authorization;
+            activeTenantId = '';
             if (typeof window !== 'undefined') {
                 if (redirectUrl) {
                     window.location.href = redirectUrl;
@@ -244,33 +283,41 @@ export const createClient = ({
 
     const client = /** @type {any} */ ({
         auth,
+        setActiveTenantId,
+        getActiveTenantId,
         entities: createEntityApi(http, appId),
-        functions: createFunctionsApi(http, appId),
+        functions: functionsApi,
         integrations: createIntegrationsApi(http, appId),
         system: {
-            getCapabilities(tenantId) {
-                return createFunctionsApi(http, appId).invoke('getCapabilities', tenantId ? { tenantId } : {});
+            listTenants() {
+                return functionsApi.invoke('listTenants', {});
             },
-            getTenant(tenantId) {
-                return createFunctionsApi(http, appId).invoke('getTenant', tenantId ? { tenantId } : {});
+            createTenant(payload = {}) {
+                return functionsApi.invoke('createTenant', payload);
             },
-            listTenantUsers(tenantId) {
-                return createFunctionsApi(http, appId).invoke('listTenantUsers', tenantId ? { tenantId } : {});
+            getCapabilities() {
+                return functionsApi.invoke('getCapabilities', {}, { headers: tenantHeaders() });
             },
-            getConnectorStatus(tenantId) {
-                return createFunctionsApi(http, appId).invoke('getConnectorStatus', tenantId ? { tenantId } : {});
+            getTenant() {
+                return functionsApi.invoke('getTenant', {}, { headers: tenantHeaders() });
+            },
+            listTenantUsers() {
+                return functionsApi.invoke('listTenantUsers', {}, { headers: tenantHeaders() });
+            },
+            getConnectorStatus() {
+                return functionsApi.invoke('getConnectorStatus', {}, { headers: tenantHeaders() });
             },
             enableSupportAccess(payload = {}) {
-                return createFunctionsApi(http, appId).invoke('enableSupportAccess', payload);
+                return functionsApi.invoke('enableSupportAccess', payload, { headers: tenantHeaders() });
             },
             revokeSupportAccess(payload = {}) {
-                return createFunctionsApi(http, appId).invoke('revokeSupportAccess', payload);
+                return functionsApi.invoke('revokeSupportAccess', payload, { headers: tenantHeaders() });
             },
             getSupportAccessStatus(payload = {}) {
-                return createFunctionsApi(http, appId).invoke('getSupportAccessStatus', payload);
+                return functionsApi.invoke('getSupportAccessStatus', payload, { headers: tenantHeaders() });
             },
             listSupportAccessAudit(payload = {}) {
-                return createFunctionsApi(http, appId).invoke('listSupportAccessAudit', payload);
+                return functionsApi.invoke('listSupportAccessAudit', payload, { headers: tenantHeaders() });
             }
         },
         connectors: {

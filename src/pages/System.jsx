@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { civant } from '@/api/civantClient';
 import { useAuth } from '@/lib/auth';
+import { useTenant } from '@/lib/tenant';
 import { AlertCircle, Loader2, RefreshCw, Shield, Building2, Users, PlugZap } from 'lucide-react';
 import {
   Page,
@@ -48,7 +49,8 @@ function StatusBadge({ status }) {
 }
 
 export default function System() {
-  const { roles, tenantId } = useAuth();
+  const { roles } = useAuth();
+  const { activeTenantId, tenants, refreshTenants } = useTenant();
   const isSystemAllowed = Array.isArray(roles) && (roles.includes('admin') || roles.includes('creator'));
 
   const [loading, setLoading] = useState(true);
@@ -69,13 +71,13 @@ export default function System() {
   const [enableReason, setEnableReason] = useState('');
   const [revokeReason, setRevokeReason] = useState('');
 
-  const loadSupportSection = async (resolvedTenantId) => {
+  const loadSupportSection = async () => {
     setSupportLoading(true);
     setSupportError('');
     try {
       const [statusPayload, auditPayload] = await Promise.all([
-        civant.system.getSupportAccessStatus({ tenantId: resolvedTenantId }),
-        civant.system.listSupportAccessAudit({ tenantId: resolvedTenantId, limit: 10 })
+        civant.system.getSupportAccessStatus(),
+        civant.system.listSupportAccessAudit({ limit: 10 })
       ]);
       setSupportStatus(unwrapResponse(statusPayload));
       setSupportAudit(Array.isArray(unwrapResponse(auditPayload)) ? unwrapResponse(auditPayload) : []);
@@ -91,21 +93,21 @@ export default function System() {
     setError('');
 
     try {
-      if (!tenantId) {
-        throw new Error('Tenant is not configured for the current user session.');
+      if (!activeTenantId) {
+        throw new Error('Select a tenant');
       }
 
-      const tenantPayload = unwrapResponse(await civant.system.getTenant(tenantId));
+      const tenantPayload = unwrapResponse(await civant.system.getTenant());
       setTenant(tenantPayload || null);
 
       const [usersPayload, connectorsPayload] = await Promise.all([
-        civant.system.listTenantUsers(tenantId),
-        civant.system.getConnectorStatus(tenantId)
+        civant.system.listTenantUsers(),
+        civant.system.getConnectorStatus()
       ]);
 
       setTenantUsers(Array.isArray(unwrapResponse(usersPayload)) ? unwrapResponse(usersPayload) : []);
       setConnectors(Array.isArray(unwrapResponse(connectorsPayload)) ? unwrapResponse(connectorsPayload) : []);
-      await loadSupportSection(tenantId);
+      await loadSupportSection();
       setDenied(false);
     } catch (err) {
       const status = err?.status || err?.response?.status;
@@ -126,15 +128,11 @@ export default function System() {
       return;
     }
     loadSystemData(false);
-  }, [tenantId, isSystemAllowed]);
+  }, [activeTenantId, isSystemAllowed]);
 
   const handleEnableSupportAccess = async () => {
     if (!enableReason.trim()) {
       setSupportError('Enable reason is required.');
-      return;
-    }
-    if (!tenantId) {
-      setSupportError('Tenant is not configured.');
       return;
     }
 
@@ -143,13 +141,12 @@ export default function System() {
     setSupportActionLoading('enable');
     try {
       await civant.system.enableSupportAccess({
-        tenantId,
         durationMinutes: Number(enableDurationMinutes),
         reason: enableReason.trim()
       });
       setSupportMessage('Support access enabled.');
       setEnableReason('');
-      await loadSupportSection(tenantId);
+      await loadSupportSection();
     } catch (err) {
       setSupportError(err?.message || 'Failed to enable support access.');
     } finally {
@@ -162,22 +159,15 @@ export default function System() {
       setSupportError('Revoke reason is required.');
       return;
     }
-    if (!tenantId) {
-      setSupportError('Tenant is not configured.');
-      return;
-    }
 
     setSupportError('');
     setSupportMessage('');
     setSupportActionLoading('revoke');
     try {
-      await civant.system.revokeSupportAccess({
-        tenantId,
-        reason: revokeReason.trim()
-      });
+      await civant.system.revokeSupportAccess({ reason: revokeReason.trim() });
       setSupportMessage('Support access revoked.');
       setRevokeReason('');
-      await loadSupportSection(tenantId);
+      await loadSupportSection();
     } catch (err) {
       setSupportError(err?.message || 'Failed to revoke support access.');
     } finally {
@@ -198,6 +188,21 @@ export default function System() {
             <AlertCircle className="h-10 w-10 mx-auto text-destructive" />
             <h2 className="text-xl font-semibold text-card-foreground">Not authorised</h2>
             <p className="text-muted-foreground">You do not have permission to access System settings.</p>
+          </CardContent>
+        </Card>
+      </Page>
+    );
+  }
+
+  if (!activeTenantId) {
+    return (
+      <Page>
+        <Card>
+          <CardContent className="p-8 text-center space-y-3">
+            <AlertCircle className="h-10 w-10 mx-auto text-destructive" />
+            <h2 className="text-xl font-semibold text-card-foreground">Select a tenant</h2>
+            <p className="text-muted-foreground">Choose a tenant from the sidebar to access System settings.</p>
+            <Button variant="secondary" onClick={() => refreshTenants()}>Reload tenants</Button>
           </CardContent>
         </Card>
       </Page>
@@ -234,10 +239,13 @@ export default function System() {
             <PageTitle>System / Admin</PageTitle>
             <PageDescription>Tenant context, roles, connector health, and platform controls.</PageDescription>
           </div>
-          <Button variant="secondary" onClick={() => loadSystemData(true)} disabled={refreshing}>
-            {refreshing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary">Tenant: {activeTenantId}</Badge>
+            <Button variant="secondary" onClick={() => loadSystemData(true)} disabled={refreshing}>
+              {refreshing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+              Refresh
+            </Button>
+          </div>
         </div>
       </PageHeader>
 
@@ -261,7 +269,7 @@ export default function System() {
             </div>
             <div>
               <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Tenant ID</p>
-              <Input readOnly value={tenant?.tenantId || tenantId || 'Not configured'} />
+              <Input readOnly value={tenant?.tenantId || activeTenantId || 'Not configured'} />
             </div>
             <div>
               <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Regions</p>

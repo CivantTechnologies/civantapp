@@ -1,5 +1,6 @@
 import { createClientFromRequest } from './civantSdk.ts';
-import { requireAdminForTenant, resolveTenantId } from './requireAdmin.ts';
+import { requireAdminForTenant } from './requireAdmin.ts';
+import { getTenantFromHeader } from './getTenantFromHeader.ts';
 
 const CONNECTOR_MAP: Record<string, { key: string; displayName: string }> = {
   BOAMP_FR: { key: 'BOAMP_FR', displayName: 'BOAMP France' },
@@ -17,17 +18,15 @@ function toDisplay(connectorKey: string) {
 Deno.serve(async (req) => {
   try {
     const civant = createClientFromRequest(req);
-
-    const body = await req.json().catch(() => ({}));
-    const tenantId = resolveTenantId(body.tenantId || body.tenant_id || req.headers.get('X-Tenant-Id'));
+    const tenantId = getTenantFromHeader(req);
 
     await requireAdminForTenant({ civant, req, tenantId });
 
     const [configs, runs] = await Promise.all([
       civant.asServiceRole.entities.ConnectorConfig.filter({ tenant_id: tenantId }, '-updated_at', 200)
-        .catch(() => civant.asServiceRole.entities.ConnectorConfig.list('-updated_at', 200)),
+        .catch(() => []),
       civant.asServiceRole.entities.ConnectorRuns.filter({ tenant_id: tenantId }, '-started_at', 300)
-        .catch(() => civant.asServiceRole.entities.ConnectorRuns.list('-started_at', 300))
+        .catch(() => [])
     ]);
 
     const configList = Array.isArray(configs) ? configs : [];
