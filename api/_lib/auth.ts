@@ -60,7 +60,7 @@ export async function getCurrentUser(req: RequestLike): Promise<CurrentUser> {
     .limit(1);
 
   if (userError) throw Object.assign(new Error(userError.message), { status: 500 });
-  const userRow = Array.isArray(userRows) && userRows.length > 0 ? userRows[0] as Record<string, unknown> : null;
+  const userRow = Array.isArray(userRows) && userRows.length > 0 ? userRows[0] : null;
   if (!userRow) throw forbidden('User not registered in Civant');
 
   const userId = String(userRow.id || '');
@@ -77,7 +77,7 @@ export async function getCurrentUser(req: RequestLike): Promise<CurrentUser> {
   const inlineRole = String(userRow.role || '').trim().toLowerCase();
   if (inlineRole) roleSet.add(inlineRole);
 
-  for (const roleRow of (Array.isArray(roleRows) ? roleRows : []) as Array<Record<string, unknown>>) {
+  for (const roleRow of (Array.isArray(roleRows) ? roleRows : [])) {
     const role = String(roleRow.role || '').trim().toLowerCase();
     if (role) roleSet.add(role);
   }

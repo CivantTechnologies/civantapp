@@ -10,6 +10,7 @@ import {
 } from './auth.js';
 import { readJsonBody, type RequestLike } from './http.js';
 import { getServerSupabase } from './supabase.js';
+import type { ApiDatabase, Json } from './db.types.js';
 
 const CONNECTOR_MAP: Record<string, { key: string; displayName: string }> = {
   BOAMP_FR: { key: 'BOAMP_FR', displayName: 'BOAMP France' },
@@ -20,6 +21,14 @@ const CONNECTOR_MAP: Record<string, { key: string; displayName: string }> = {
 };
 
 const TENANT_ID_PATTERN = /^[a-z0-9_]{3,40}$/;
+
+type SupportAccessGrantRow = ApiDatabase['public']['Tables']['support_access_grants']['Row'];
+type SupportAccessAuditRow = ApiDatabase['public']['Tables']['support_access_audit']['Row'];
+type TenantRow = ApiDatabase['public']['Tables']['tenants']['Row'];
+type UserRow = ApiDatabase['public']['Tables']['users']['Row'];
+type UserRoleRow = ApiDatabase['public']['Tables']['user_roles']['Row'];
+type ConnectorConfigRow = ApiDatabase['public']['Tables']['ConnectorConfig']['Row'];
+type ConnectorRunRow = ApiDatabase['public']['Tables']['ConnectorRuns']['Row'];
 
 function badRequest(message: string) {
   return Object.assign(new Error(message), { status: 400 });
@@ -72,7 +81,7 @@ async function writeSupportAudit(params: {
   actor: Pick<CurrentUser, 'userId' | 'email'>;
   action: string;
   reason?: string | null;
-  metadata?: Record<string, unknown> | null;
+  metadata?: Json | null;
 }) {
   const { tenantId, actor, action, reason, metadata } = params;
   const supabase = getServerSupabase();
@@ -86,7 +95,7 @@ async function writeSupportAudit(params: {
       actor_email: actor.email || null,
       action,
       reason: reason || null,
-      metadata_json: metadata || null,
+      metadata_json: metadata ?? null,
       created_at: new Date().toISOString()
     });
 
@@ -105,7 +114,7 @@ async function getLatestSupportGrant(tenantId: string) {
     .limit(1);
 
   if (error) throw Object.assign(new Error(error.message), { status: 500 });
-  return Array.isArray(data) && data.length ? data[0] as Record<string, unknown> : null;
+  return Array.isArray(data) && data.length ? (data[0] as SupportAccessGrantRow) : null;
 }
 
 async function getActiveSupportGrant(tenantId: string) {
@@ -119,7 +128,8 @@ async function getActiveSupportGrant(tenantId: string) {
     .limit(50);
 
   if (error) throw Object.assign(new Error(error.message), { status: 500 });
-  const active = (Array.isArray(data) ? data : []).find((row) => !row.revoked_at && !isExpired(row.expires_at));
+  const grantRows = (Array.isArray(data) ? data : []) as SupportAccessGrantRow[];
+  const active = grantRows.find((row: SupportAccessGrantRow) => !row.revoked_at && !isExpired(row.expires_at));
   return active || null;
 }
 
@@ -291,7 +301,7 @@ export async function getTenant(req: RequestLike) {
     .limit(1);
 
   if (error) throw Object.assign(new Error(error.message), { status: 500 });
-  const tenant = Array.isArray(data) && data.length ? data[0] as Record<string, unknown> : null;
+  const tenant = Array.isArray(data) && data.length ? (data[0] as TenantRow) : null;
 
   return {
     tenantId,
@@ -316,7 +326,7 @@ export async function listTenantUsers(req: RequestLike) {
 
   if (usersError) throw Object.assign(new Error(usersError.message), { status: 500 });
 
-  const userRows = Array.isArray(users) ? users : [];
+  const userRows = (Array.isArray(users) ? users : []) as UserRow[];
   const userIds = userRows.map((row) => String(row.id || '')).filter(Boolean);
 
   let rolesByUserId = new Map<string, string[]>();
@@ -328,7 +338,7 @@ export async function listTenantUsers(req: RequestLike) {
 
     if (rolesError) throw Object.assign(new Error(rolesError.message), { status: 500 });
 
-    rolesByUserId = (Array.isArray(roleRows) ? roleRows : []).reduce((map, row) => {
+    rolesByUserId = ((Array.isArray(roleRows) ? roleRows : []) as UserRoleRow[]).reduce((map, row: UserRoleRow) => {
       const userId = String(row.user_id || '');
       if (!userId) return map;
       const role = String(row.role || '').trim().toLowerCase();
@@ -376,8 +386,8 @@ export async function getConnectorStatus(req: RequestLike) {
   if (configResult.error) throw Object.assign(new Error(configResult.error.message), { status: 500 });
   if (runsResult.error) throw Object.assign(new Error(runsResult.error.message), { status: 500 });
 
-  const configs = Array.isArray(configResult.data) ? configResult.data : [];
-  const runs = Array.isArray(runsResult.data) ? runsResult.data : [];
+  const configs = (Array.isArray(configResult.data) ? configResult.data : []) as ConnectorConfigRow[];
+  const runs = (Array.isArray(runsResult.data) ? runsResult.data : []) as ConnectorRunRow[];
 
   const keys = new Set<string>();
 
@@ -394,17 +404,21 @@ export async function getConnectorStatus(req: RequestLike) {
   return Array.from(keys)
     .map((key) => {
       const display = toDisplay(key);
-      const cfg = configs.find((row) => String(row.connector_key || row.connector_id || row.source || '').trim() === key);
-      const keyRuns = runs.filter((row) => String(row.connector_key || row.source || '').trim() === key);
+      const cfg = configs.find(
+        (row: ConnectorConfigRow) => String(row.connector_key || row.connector_id || row.source || '').trim() === key
+      );
+      const keyRuns = runs.filter((row: ConnectorRunRow) => String(row.connector_key || row.source || '').trim() === key);
       const latestRun = keyRuns[0];
-      const latestSuccess = keyRuns.find((row) => String(row.status || '').toLowerCase() === 'success');
+      const latestSuccess = keyRuns.find((row: ConnectorRunRow) => String(row.status || '').toLowerCase() === 'success');
 
       const enabled = cfg?.enabled !== false;
       const status = !enabled
         ? 'disabled'
         : String(latestRun?.status || cfg?.status || 'no_data').toLowerCase();
 
-      const metadata = (latestRun?.metadata && typeof latestRun.metadata === 'object') ? latestRun.metadata : null;
+      const metadata = (latestRun?.metadata && typeof latestRun.metadata === 'object' && !Array.isArray(latestRun.metadata))
+        ? (latestRun.metadata as Record<string, unknown>)
+        : null;
 
       return {
         key: display.key,
@@ -412,7 +426,7 @@ export async function getConnectorStatus(req: RequestLike) {
         status,
         lastRunAt: latestRun?.started_at || cfg?.updated_at || null,
         lastSuccessAt: latestSuccess?.finished_at || latestSuccess?.started_at || null,
-        lastError: latestRun?.error_summary || metadata?.error || null,
+        lastError: latestRun?.error_summary || String(metadata?.error || '') || null,
         schedule: cfg?.schedule || cfg?.fetch_interval || null
       };
     })
@@ -543,7 +557,7 @@ export async function listSupportAccessAudit(req: RequestLike) {
     .limit(limit);
 
   if (error) throw Object.assign(new Error(error.message), { status: 500 });
-  return Array.isArray(data) ? data : [];
+  return (Array.isArray(data) ? data : []) as SupportAccessAuditRow[];
 }
 
 export async function dispatchFunction(functionName: string, req: RequestLike) {

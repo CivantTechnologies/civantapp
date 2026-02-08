@@ -1,5 +1,24 @@
 import { createClientFromRequest } from './civantSdk.ts';
 
+const getErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+type ImportedTenderRecord = {
+    tender_uid?: string;
+    source?: string;
+    source_notice_id?: string;
+    country?: string;
+    notice_type?: string;
+    title?: string;
+    buyer_name?: string;
+    cpv_codes?: string;
+    publication_date?: string;
+    deadline_date?: string;
+    estimated_value?: number;
+    currency?: string;
+    url?: string;
+};
+
 Deno.serve(async (req) => {
     try {
         const civant = createClientFromRequest(req);
@@ -9,7 +28,7 @@ Deno.serve(async (req) => {
             return Response.json({ error: 'Unauthorized - Admin access required' }, { status: 403 });
         }
         
-        const { file_url, data_type } = await req.json();
+        const { file_url, data_type } = await req.json() as { file_url?: string; data_type?: string };
         
         if (!file_url) {
             return Response.json({ error: 'file_url is required' }, { status: 400 });
@@ -50,7 +69,7 @@ Deno.serve(async (req) => {
             }, { status: 400 });
         }
         
-        const records = Array.isArray(extractResult.output) ? extractResult.output : [extractResult.output];
+        const records: ImportedTenderRecord[] = Array.isArray(extractResult.output) ? extractResult.output : [extractResult.output];
         
         if (records.length === 0) {
             return Response.json({ error: 'No valid records found in file' }, { status: 400 });
@@ -59,7 +78,7 @@ Deno.serve(async (req) => {
         // Process and insert records
         let inserted = 0;
         let updated = 0;
-        let errors = [];
+        const errors: Array<{ record: string; error: string }> = [];
         
         for (const record of records) {
             try {
@@ -101,7 +120,7 @@ Deno.serve(async (req) => {
                 // Check if exists
                 const existing = await civant.asServiceRole.entities.TendersCurrent.filter({
                     tender_uid: tenderData.tender_uid
-                });
+                }) as Array<Record<string, any>>;
                 
                 if (existing.length > 0) {
                     // Update if fingerprint changed
@@ -117,10 +136,10 @@ Deno.serve(async (req) => {
                     await civant.asServiceRole.entities.TendersCurrent.create(tenderData);
                     inserted++;
                 }
-            } catch (error) {
+            } catch (error: unknown) {
                 errors.push({
-                    record: record.title || record.source_notice_id,
-                    error: error.message
+                    record: String(record.title || record.source_notice_id || 'unknown_record'),
+                    error: getErrorMessage(error)
                 });
             }
         }
@@ -134,9 +153,9 @@ Deno.serve(async (req) => {
             error_details: errors.slice(0, 5)
         });
         
-    } catch (error) {
+    } catch (error: unknown) {
         return Response.json({ 
-            error: error.message || 'Import failed'
+            error: getErrorMessage(error) || 'Import failed'
         }, { status: 500 });
     }
 });

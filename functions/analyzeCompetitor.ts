@@ -1,5 +1,8 @@
 import { createClientFromRequest } from './civantSdk.ts';
 
+const getErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
 Deno.serve(async (req) => {
     try {
         const civant = createClientFromRequest(req);
@@ -9,24 +12,24 @@ Deno.serve(async (req) => {
             return Response.json({ error: 'Unauthorized' }, { status: 401 });
         }
         
-        const { company_name } = await req.json();
+        const { company_name } = await req.json() as { company_name?: string };
         
         if (!company_name) {
             return Response.json({ error: 'company_name is required' }, { status: 400 });
         }
         
         // Search for awards and tenders mentioning this company
-        const allTenders = await civant.entities.TendersCurrent.list('-publication_date', 2000);
+        const allTenders = await civant.entities.TendersCurrent.list('-publication_date', 2000) as Array<Record<string, any>>;
         
         // Filter tenders that mention the competitor
-        const relatedTenders = allTenders.filter(t => 
+        const relatedTenders = allTenders.filter((t: Record<string, any>) => 
             t.title?.toLowerCase().includes(company_name.toLowerCase()) ||
             t.buyer_name?.toLowerCase().includes(company_name.toLowerCase())
         );
         
         // Also check enrichment data for contractor details
-        const enrichments = await civant.entities.TenderEnrichment.list('-enrichment_date', 500);
-        const enrichmentMatches = enrichments.filter(e => {
+        const enrichments = await civant.entities.TenderEnrichment.list('-enrichment_date', 500) as Array<Record<string, any>>;
+        const enrichmentMatches = enrichments.filter((e: Record<string, any>) => {
             try {
                 const contractor = JSON.parse(e.contractor_details || '{}');
                 return contractor.contractor_name?.toLowerCase().includes(company_name.toLowerCase());
@@ -36,13 +39,13 @@ Deno.serve(async (req) => {
         });
         
         // Get tender UIDs from enrichments
-        const enrichedTenderUids = enrichmentMatches.map(e => e.tender_uid);
-        const enrichedTenders = allTenders.filter(t => enrichedTenderUids.includes(t.tender_uid));
+        const enrichedTenderUids = enrichmentMatches.map((e: Record<string, any>) => e.tender_uid);
+        const enrichedTenders = allTenders.filter((t: Record<string, any>) => enrichedTenderUids.includes(t.tender_uid));
         
         // Combine and deduplicate
         const allMatchingTenders = [...relatedTenders, ...enrichedTenders]
-            .filter((tender, index, self) => 
-                index === self.findIndex(t => t.id === tender.id)
+            .filter((tender: Record<string, any>, index: number, self: Array<Record<string, any>>) => 
+                index === self.findIndex((t: Record<string, any>) => t.id === tender.id)
             );
         
         if (allMatchingTenders.length === 0) {
@@ -55,7 +58,7 @@ Deno.serve(async (req) => {
         }
         
         // Prepare data for AI analysis
-        const tenderSummary = allMatchingTenders.map(t => ({
+        const tenderSummary = allMatchingTenders.map((t: Record<string, any>) => ({
             title: t.title,
             buyer: t.buyer_name,
             country: t.country,
@@ -164,7 +167,7 @@ Be specific with data points and actionable insights.`;
             company_name,
             found_tenders: allMatchingTenders.length,
             analysis: response,
-            sample_tenders: allMatchingTenders.slice(0, 10).map(t => ({
+            sample_tenders: allMatchingTenders.slice(0, 10).map((t: Record<string, any>) => ({
                 id: t.id,
                 title: t.title,
                 buyer: t.buyer_name,
@@ -174,9 +177,9 @@ Be specific with data points and actionable insights.`;
             }))
         });
         
-    } catch (error) {
+    } catch (error: unknown) {
         return Response.json({ 
-            error: error.message || 'Analysis failed'
+            error: getErrorMessage(error) || 'Analysis failed'
         }, { status: 500 });
     }
 });

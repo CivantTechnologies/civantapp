@@ -1,5 +1,8 @@
 import { createClientFromRequest } from './civantSdk.ts';
 
+const getErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
 Deno.serve(async (req) => {
     try {
         const civant = createClientFromRequest(req);
@@ -92,15 +95,15 @@ Deno.serve(async (req) => {
                 total: Object.values(deletionLog).reduce((a, b) => a + b, 0)
             });
             
-        } catch (error) {
+        } catch (error: unknown) {
             return Response.json({
                 success: false,
-                error: error.message,
+                error: getErrorMessage(error),
                 partialDeletion: deletionLog
             }, { status: 500 });
         }
         
-    } catch (error) {
-        return Response.json({ error: error.message }, { status: 500 });
+    } catch (error: unknown) {
+        return Response.json({ error: getErrorMessage(error) }, { status: 500 });
     }
 });

@@ -1,5 +1,30 @@
 import { createClientFromRequest } from './civantSdk.ts';
 
+const getErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+type ConnectorConfigRecord = {
+    id: string;
+    connector_id: string;
+    enabled?: boolean;
+    fetch_interval?: 'manual' | 'hourly' | 'daily' | 'weekly' | string;
+    last_successful_run?: string | null;
+    last_error?: string | null;
+    last_error_at?: string | null;
+    total_runs?: number;
+    successful_runs?: number;
+};
+
+type ConnectorExecutionResponse = {
+    data?: {
+        success?: boolean;
+        fetched_count?: number;
+        inserted_count?: number;
+        updated_count?: number;
+        error?: string;
+    };
+};
+
 Deno.serve(async (req) => {
     try {
         const civant = createClientFromRequest(req);
@@ -10,8 +35,8 @@ Deno.serve(async (req) => {
         }
         
         // Fetch all connector configurations
-        const configs = await civant.asServiceRole.entities.ConnectorConfig.list();
-        const results = [];
+        const configs = await civant.asServiceRole.entities.ConnectorConfig.list() as ConnectorConfigRecord[];
+        const results: Array<Record<string, unknown>> = [];
         const now = new Date();
         
         for (const config of configs) {
@@ -45,14 +70,14 @@ Deno.serve(async (req) => {
                 isDue = true; // Never run before
             } else {
                 const lastRun = new Date(config.last_successful_run);
-                const hoursSinceLastRun = (now - lastRun) / (1000 * 60 * 60);
+                const hoursSinceLastRun = (now.getTime() - lastRun.getTime()) / (1000 * 60 * 60);
                 isDue = hoursSinceLastRun >= intervalHours;
             }
             
             // Also retry if last run failed and it's been at least 1 hour
             if (!isDue && config.last_error && config.last_error_at) {
                 const lastError = new Date(config.last_error_at);
-                const hoursSinceError = (now - lastError) / (1000 * 60 * 60);
+                const hoursSinceError = (now.getTime() - lastError.getTime()) / (1000 * 60 * 60);
                 if (hoursSinceError >= 1) {
                     isDue = true;
                 }
@@ -70,7 +95,7 @@ Deno.serve(async (req) => {
             // Run the connector
             try {
                 const params = { days_since: 7, limit: 100, mode: 'incremental' };
-                let response;
+                let response: ConnectorExecutionResponse | undefined;
                 
                 switch (config.connector_id) {
                     case 'BOAMP_FR':
@@ -87,7 +112,7 @@ Deno.serve(async (req) => {
                         break;
                 }
                 
-                const updateData = {
+                const updateData: Record<string, unknown> = {
                     total_runs: (config.total_runs || 0) + 1
                 };
                 
@@ -118,10 +143,10 @@ Deno.serve(async (req) => {
                 
                 await civant.asServiceRole.entities.ConnectorConfig.update(config.id, updateData);
                 
-            } catch (error) {
+            } catch (error: unknown) {
                 // Update config with error
                 await civant.asServiceRole.entities.ConnectorConfig.update(config.id, {
-                    last_error: error.message,
+                    last_error: getErrorMessage(error),
                     last_error_at: now.toISOString(),
                     total_runs: (config.total_runs || 0) + 1
                 });
@@ -129,7 +154,7 @@ Deno.serve(async (req) => {
                 results.push({
                     connector_id: config.connector_id,
                     success: false,
-                    error: error.message
+                    error: getErrorMessage(error)
                 });
             }
         }
@@ -150,10 +175,10 @@ Deno.serve(async (req) => {
             results
         });
         
-    } catch (error) {
+    } catch (error: unknown) {
         return Response.json({ 
             success: false,
-            error: error.message 
+            error: getErrorMessage(error)
         }, { status: 500 });
     }
 });

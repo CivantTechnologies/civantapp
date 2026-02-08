@@ -10,6 +10,9 @@
     "lint:fix": "eslint . --fix",
     "test": "node --test tests/*.test.js",
     "typecheck": "tsc -p ./jsconfig.json",
+    "typecheck:api": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --lib es2022,dom api/**/*.ts",
+    "typecheck:deno": "npx --yes deno check functions/*.ts functions/pipeline/*.ts",
+    "audit:full": "npm run lint && npm run typecheck && npm run typecheck:api && npm run typecheck:deno && npm test && npm run build && npm audit",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -1,5 +1,34 @@
 import { createClientFromRequest } from './civantSdk.ts';
 
+const getErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+type AlertRecord = {
+    id: string;
+    alert_name?: string;
+    user_email?: string;
+    country?: string;
+    keywords?: string;
+    buyer_contains?: string;
+    cpv_contains?: string;
+    deadline_within_days?: number;
+    active?: boolean;
+};
+
+type TenderRecord = {
+    id: string;
+    tender_uid?: string;
+    title?: string;
+    buyer_name?: string;
+    country?: string;
+    publication_date?: string;
+    deadline_date?: string;
+    estimated_value?: number;
+    cpv_codes?: string;
+    url?: string;
+    first_seen_at?: string;
+};
+
 // Process alerts and send email notifications for matching tenders
 Deno.serve(async (req) => {
     try {
@@ -13,25 +42,25 @@ Deno.serve(async (req) => {
         // Get all active alerts
         const alerts = await civant.asServiceRole.entities.Alerts.filter({
             active: true
-        });
+        }) as AlertRecord[];
         
         // Get recent tenders (last 24 hours)
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
         
-        const allTenders = await civant.asServiceRole.entities.TendersCurrent.list('-first_seen_at', 500);
-        const recentTenders = allTenders.filter(t => 
+        const allTenders = await civant.asServiceRole.entities.TendersCurrent.list('-first_seen_at', 500) as TenderRecord[];
+        const recentTenders = allTenders.filter((t: TenderRecord) => 
             t.first_seen_at && new Date(t.first_seen_at) >= yesterday
         );
         
         let matchCount = 0;
         let emailsSent = 0;
-        const errors = [];
+        const errors: string[] = [];
         
         for (const alert of alerts) {
             try {
                 // Find matching tenders
-                const matches = recentTenders.filter(tender => {
+                const matches = recentTenders.filter((tender: TenderRecord) => {
                     // Country filter
                     if (alert.country && tender.country !== alert.country) {
                         return false;
@@ -39,10 +68,10 @@ Deno.serve(async (req) => {
                     
                     // Keywords filter
                     if (alert.keywords) {
-                        const keywords = alert.keywords.toLowerCase().split(',').map(k => k.trim());
+                        const keywords = alert.keywords.toLowerCase().split(',').map((k: string) => k.trim());
                         const title = (tender.title || '').toLowerCase();
                         const buyer = (tender.buyer_name || '').toLowerCase();
-                        const hasKeyword = keywords.some(kw => 
+                        const hasKeyword = keywords.some((kw: string) => 
                             title.includes(kw) || buyer.includes(kw)
                         );
                         if (!hasKeyword) return false;
@@ -65,7 +94,7 @@ Deno.serve(async (req) => {
                     if (alert.deadline_within_days && tender.deadline_date) {
                         const deadline = new Date(tender.deadline_date);
                         const now = new Date();
-                        const daysUntilDeadline = Math.ceil((deadline - now) / (1000 * 60 * 60 * 24));
+                        const daysUntilDeadline = Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
                         if (daysUntilDeadline < 0 || daysUntilDeadline > alert.deadline_within_days) {
                             return false;
                         }
@@ -114,7 +143,7 @@ Deno.serve(async (req) => {
                             
                             await civant.integrations.Core.SendEmail({
                                 to: alert.user_email,
-                                subject: `[Civant] New Match: ${tender.title.substring(0, 50)}...`,
+                                subject: `[Civant] New Match: ${String(tender.title || 'Tender').substring(0, 50)}...`,
                                 body: emailBody
                             });
                             
@@ -125,8 +154,8 @@ Deno.serve(async (req) => {
                             });
                             
                             emailsSent++;
-                        } catch (emailError) {
-                            errors.push(`Email error for ${alert.user_email}: ${emailError.message}`);
+                        } catch (emailError: unknown) {
+                            errors.push(`Email error for ${alert.user_email}: ${getErrorMessage(emailError)}`);
                         }
                     }
                 }
@@ -136,8 +165,8 @@ Deno.serve(async (req) => {
                     last_checked_at: new Date().toISOString()
                 });
                 
-            } catch (alertError) {
-                errors.push(`Alert ${alert.id} error: ${alertError.message}`);
+            } catch (alertError: unknown) {
+                errors.push(`Alert ${alert.id} error: ${getErrorMessage(alertError)}`);
             }
         }
         
@@ -149,7 +178,7 @@ Deno.serve(async (req) => {
             errors: errors.slice(0, 10)
         });
         
-    } catch (error) {
-        return Response.json({ error: error.message }, { status: 500 });
+    } catch (error: unknown) {
+        return Response.json({ error: getErrorMessage(error) }, { status: 500 });
     }
 });

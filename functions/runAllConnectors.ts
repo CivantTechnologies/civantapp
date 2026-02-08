@@ -1,5 +1,32 @@
 import { createClientFromRequest } from './civantSdk.ts';
 
+const getErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+type ConnectorResult = {
+    error?: string;
+    fetched_count?: number;
+    inserted_count?: number;
+    updated_count?: number;
+    versioned_count?: number;
+    success?: boolean;
+    [key: string]: unknown;
+};
+
+type RunAllResults = {
+    started_at: string;
+    finished_at?: string;
+    mode?: string;
+    connectors: Record<string, ConnectorResult>;
+    alerts?: Record<string, unknown>;
+    totals?: {
+        fetched: number;
+        inserted: number;
+        updated: number;
+        versioned: number;
+    };
+};
+
 // Orchestrator function to run all connectors
 Deno.serve(async (req) => {
     try {
@@ -10,12 +37,12 @@ Deno.serve(async (req) => {
             return Response.json({ error: 'Admin access required' }, { status: 403 });
         }
         
-        const body = await req.json().catch(() => ({}));
+        const body = await req.json().catch(() => ({})) as { mode?: string; days_since?: number; years_back?: number };
         const mode = body.mode || 'incremental'; // 'incremental' or 'backfill'
-        const daysSince = body.days_since || 1825; // 5 years default
-        const yearsBack = body.years_back || 10;
+        const daysSince = Number(body.days_since || 1825); // 5 years default
+        const yearsBack = Number(body.years_back || 10);
         
-        const results = {
+        const results: RunAllResults = {
             started_at: new Date().toISOString(),
             connectors: {}
         };
@@ -29,8 +56,8 @@ Deno.serve(async (req) => {
         try {
             const boampResult = await civant.functions.invoke('fetchBoampFr', connectorParams);
             results.connectors.BOAMP_FR = boampResult.data || boampResult;
-        } catch (e) {
-            results.connectors.BOAMP_FR = { error: e.message };
+        } catch (e: unknown) {
+            results.connectors.BOAMP_FR = { error: getErrorMessage(e) };
         }
         
         // Run TED IE
@@ -40,8 +67,8 @@ Deno.serve(async (req) => {
                 country: 'IE'
             });
             results.connectors.TED_IE = tedIeResult.data || tedIeResult;
-        } catch (e) {
-            results.connectors.TED_IE = { error: e.message };
+        } catch (e: unknown) {
+            results.connectors.TED_IE = { error: getErrorMessage(e) };
         }
         
         // Run TED FR
@@ -51,24 +78,24 @@ Deno.serve(async (req) => {
                 country: 'FR'
             });
             results.connectors.TED_FR = tedFrResult.data || tedFrResult;
-        } catch (e) {
-            results.connectors.TED_FR = { error: e.message };
+        } catch (e: unknown) {
+            results.connectors.TED_FR = { error: getErrorMessage(e) };
         }
         
         // Run Ireland source
         try {
             const ieResult = await civant.functions.invoke('fetchIreland', connectorParams);
             results.connectors.ETENDERS_IE = ieResult.data || ieResult;
-        } catch (e) {
-            results.connectors.ETENDERS_IE = { error: e.message };
+        } catch (e: unknown) {
+            results.connectors.ETENDERS_IE = { error: getErrorMessage(e) };
         }
         
         // Process alerts after ingestion
         try {
             const alertsResult = await civant.functions.invoke('processAlerts', {});
             results.alerts = alertsResult.data || alertsResult;
-        } catch (e) {
-            results.alerts = { error: e.message };
+        } catch (e: unknown) {
+            results.alerts = { error: getErrorMessage(e) };
         }
         
         results.finished_at = new Date().toISOString();
@@ -79,12 +106,12 @@ Deno.serve(async (req) => {
         let totalUpdated = 0;
         let totalVersioned = 0;
         
-        Object.values(results.connectors).forEach(c => {
+        Object.values(results.connectors).forEach((c: ConnectorResult) => {
             if (c && !c.error) {
-                totalFetched += c.fetched_count || 0;
-                totalInserted += c.inserted_count || 0;
-                totalUpdated += c.updated_count || 0;
-                totalVersioned += c.versioned_count || 0;
+                totalFetched += Number(c.fetched_count || 0);
+                totalInserted += Number(c.inserted_count || 0);
+                totalUpdated += Number(c.updated_count || 0);
+                totalVersioned += Number(c.versioned_count || 0);
             }
         });
         
@@ -99,7 +126,7 @@ Deno.serve(async (req) => {
         
         return Response.json(results);
         
-    } catch (error) {
-        return Response.json({ error: error.message }, { status: 500 });
+    } catch (error: unknown) {
+        return Response.json({ error: getErrorMessage(error) }, { status: 500 });
     }
 });

@@ -1,5 +1,8 @@
 import { createClientFromRequest } from './civantSdk.ts';
 
+const getErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
 Deno.serve(async (req) => {
     try {
         const civant = createClientFromRequest(req);
@@ -9,13 +12,14 @@ Deno.serve(async (req) => {
             return Response.json({ error: 'Unauthorized' }, { status: 401 });
         }
         
-        const body = await req.json();
+        const body = await req.json() as { report_type?: string; filters?: Record<string, unknown> };
         const { report_type, filters } = body;
+        void report_type;
         
         // Fetch tenders based on filters
-        const tenders = filters 
+        const tenders = (filters 
             ? await civant.entities.TendersCurrent.filter(filters)
-            : await civant.entities.TendersCurrent.list('-publication_date', 500);
+            : await civant.entities.TendersCurrent.list('-publication_date', 500)) as Array<Record<string, any>>;
         
         // Generate CSV content
         const headers = [
@@ -32,7 +36,7 @@ Deno.serve(async (req) => {
             'URL'
         ];
         
-        const rows = tenders.map(t => [
+        const rows = tenders.map((t: Record<string, any>) => [
             t.title || '',
             t.buyer_name || '',
             t.country || '',
@@ -48,7 +52,7 @@ Deno.serve(async (req) => {
         
         const csvContent = [
             headers.join(','),
-            ...rows.map(row => row.map(cell => 
+            ...rows.map((row: Array<string | number>) => row.map((cell: string | number) => 
                 `"${String(cell).replace(/"/g, '""')}"`
             ).join(','))
         ].join('\n');
@@ -94,7 +98,7 @@ Deno.serve(async (req) => {
             throw new Error(`Drive API error: ${error}`);
         }
         
-        const file = await driveResponse.json();
+        const file = await driveResponse.json() as { id?: string; name?: string };
         
         return Response.json({
             success: true,
@@ -105,10 +109,10 @@ Deno.serve(async (req) => {
             record_count: tenders.length
         });
         
-    } catch (error) {
+    } catch (error: unknown) {
         return Response.json({ 
             success: false, 
-            error: error.message 
+            error: getErrorMessage(error)
         }, { status: 500 });
     }
 });

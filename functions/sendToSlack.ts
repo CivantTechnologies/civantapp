@@ -1,5 +1,8 @@
 import { createClientFromRequest } from './civantSdk.ts';
 
+const getErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
 Deno.serve(async (req) => {
     try {
         const civant = createClientFromRequest(req);
@@ -9,7 +12,7 @@ Deno.serve(async (req) => {
             return Response.json({ error: 'Unauthorized' }, { status: 401 });
         }
         
-        const body = await req.json();
+        const body = await req.json() as { tender_id?: string; channel?: string };
         const { tender_id, channel } = body;
         
         if (!tender_id) {
@@ -17,7 +20,7 @@ Deno.serve(async (req) => {
         }
         
         // Fetch tender details
-        const tenders = await civant.entities.TendersCurrent.filter({ id: tender_id });
+        const tenders = await civant.entities.TendersCurrent.filter({ id: tender_id }) as Array<Record<string, any>>;
         if (tenders.length === 0) {
             return Response.json({ error: 'Tender not found' }, { status: 404 });
         }
@@ -37,7 +40,7 @@ Deno.serve(async (req) => {
             ? `*Value:* ${new Intl.NumberFormat('en', { style: 'currency', currency: tender.currency || 'EUR', maximumFractionDigits: 0 }).format(tender.estimated_value)}`
             : '';
         
-        const blocks = [
+        const blocks: Array<Record<string, unknown>> = [
             {
                 type: 'section',
                 text: {
@@ -99,7 +102,7 @@ Deno.serve(async (req) => {
             })
         });
         
-        const slackData = await slackResponse.json();
+        const slackData = await slackResponse.json() as { ok?: boolean; error?: string; channel?: string; ts?: string };
         
         if (!slackData.ok) {
             throw new Error(`Slack API error: ${slackData.error}`);
@@ -112,10 +115,10 @@ Deno.serve(async (req) => {
             timestamp: slackData.ts
         });
         
-    } catch (error) {
+    } catch (error: unknown) {
         return Response.json({ 
             success: false, 
-            error: error.message 
+            error: getErrorMessage(error)
         }, { status: 500 });
     }
 });

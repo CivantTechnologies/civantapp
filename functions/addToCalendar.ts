@@ -1,5 +1,8 @@
 import { createClientFromRequest } from './civantSdk.ts';
 
+const getErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
 Deno.serve(async (req) => {
     try {
         const civant = createClientFromRequest(req);
@@ -9,7 +12,7 @@ Deno.serve(async (req) => {
             return Response.json({ error: 'Unauthorized' }, { status: 401 });
         }
         
-        const body = await req.json();
+        const body = await req.json() as { tender_id?: string };
         const { tender_id } = body;
         
         if (!tender_id) {
@@ -17,12 +20,12 @@ Deno.serve(async (req) => {
         }
         
         // Fetch tender details
-        const tenders = await civant.entities.TendersCurrent.filter({ id: tender_id });
+        const tenders = await civant.entities.TendersCurrent.filter({ id: tender_id }) as Array<Record<string, unknown>>;
         if (tenders.length === 0) {
             return Response.json({ error: 'Tender not found' }, { status: 404 });
         }
         
-        const tender = tenders[0];
+        const tender = tenders[0] as Record<string, any>;
         
         if (!tender.deadline_date) {
             return Response.json({ error: 'Tender has no deadline date' }, { status: 400 });
@@ -76,7 +79,7 @@ Deno.serve(async (req) => {
             throw new Error(`Calendar API error: ${error}`);
         }
         
-        const calendarEvent = await calendarResponse.json();
+        const calendarEvent = await calendarResponse.json() as { id?: string; htmlLink?: string };
         
         return Response.json({
             success: true,
@@ -85,10 +88,10 @@ Deno.serve(async (req) => {
             message: 'Tender deadline added to calendar'
         });
         
-    } catch (error) {
+    } catch (error: unknown) {
         return Response.json({ 
             success: false, 
-            error: error.message 
+            error: getErrorMessage(error)
         }, { status: 500 });
     }
 });

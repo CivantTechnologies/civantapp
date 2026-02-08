@@ -1,5 +1,8 @@
 import { createClientFromRequest } from './civantSdk.ts';
 
+const getErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
 Deno.serve(async (req) => {
     try {
         const civant = createClientFromRequest(req);
@@ -9,14 +12,14 @@ Deno.serve(async (req) => {
             return Response.json({ error: 'Unauthorized' }, { status: 401 });
         }
         
-        const { tender_id } = await req.json();
+        const { tender_id } = await req.json() as { tender_id?: string };
         
         if (!tender_id) {
             return Response.json({ error: 'tender_id is required' }, { status: 400 });
         }
         
         // Fetch tender details
-        const tenders = await civant.entities.TendersCurrent.filter({ id: tender_id });
+        const tenders = await civant.entities.TendersCurrent.filter({ id: tender_id }) as Array<Record<string, any>>;
         if (tenders.length === 0) {
             return Response.json({ error: 'Tender not found' }, { status: 404 });
         }
@@ -26,7 +29,7 @@ Deno.serve(async (req) => {
         // Check if enrichment already exists
         const existing = await civant.entities.TenderEnrichment.filter({
             tender_uid: tender.tender_uid
-        });
+        }) as Array<Record<string, any>>;
         
         if (existing.length > 0) {
             return Response.json({
@@ -137,9 +140,9 @@ Provide practical, actionable insights based on the tender information.`;
             raw_analysis: response
         });
         
-    } catch (error) {
+    } catch (error: unknown) {
         return Response.json({ 
-            error: error.message || 'Enrichment failed'
+            error: getErrorMessage(error) || 'Enrichment failed'
         }, { status: 500 });
     }
 });
