@@ -37,3 +37,22 @@ Open [Civant.com](http://Civant.com) and click on Publish.
 Documentation: [https://docs.civant.com/Integrations/Using-GitHub](https://docs.civant.com/Integrations/Using-GitHub)
 
 Support: [https://app.civant.com/support](https://app.civant.com/support)
+
+## Deployment Debug Checklist (Vercel)
+
+Use this quick checklist before escalating production issues.
+
+1. Hard refresh first (`Cmd+Shift+R`) after each new deployment.
+2. Test in an Incognito window to rule out extension interference.
+3. If console errors start with `chrome-extension://`, they are browser extension errors, not Civant app errors.
+4. Confirm required frontend env vars are set in Vercel for the deployed environment:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+   - `VITE_CIVANT_APP_ID`
+   - `VITE_API_BASE_URL` (usually `/api`)
+5. Confirm production routes load:
+   - `/` should return app HTML
+   - `/login` should return app HTML (SPA fallback), not Vercel `NOT_FOUND`
+6. In DevTools Network, filter for failed requests and inspect the exact URL:
+   - Treat first-party failures (`https://civantapp.vercel.app/...`) as app issues
+   - Ignore third-party extension URLs when validating app health
