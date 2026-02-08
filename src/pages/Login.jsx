@@ -69,7 +69,7 @@ export default function Login() {
       <Card className="w-full max-w-md">
         <CardHeader>
           <div className="mb-2 flex justify-center">
-            <img src="/civant-logo.jpg" alt="Civant logo" className="h-auto w-52 rounded-md border border-border/60" />
+            <img src="/civant-logo.png" alt="Civant logo" className="h-auto w-64 max-w-full" />
           </div>
           <CardTitle>Log in</CardTitle>
         </CardHeader>
