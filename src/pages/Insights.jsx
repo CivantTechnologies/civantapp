@@ -222,7 +222,7 @@ export default function Insights() {
     if (loading) {
         return (
             <div className="flex items-center justify-center h-64">
-                <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+                <Loader2 className="h-8 w-8 animate-spin text-civant-teal" />
             </div>
         );
     }
@@ -232,8 +232,8 @@ export default function Insights() {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-900">Insights</h1>
-                    <p className="text-slate-500 mt-1">Buyer analytics and predictability metrics</p>
+                    <h1 className="text-2xl font-bold text-slate-100">Insights</h1>
+                    <p className="text-slate-400 mt-1">Buyer analytics and predictability metrics</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <Select value={selectedCountry} onValueChange={setSelectedCountry}>
@@ -267,43 +267,43 @@ export default function Insights() {
             
             {/* Summary Stats */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card className="border-0 shadow-sm">
+                <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
                     <CardContent className="p-6">
                         <div className="flex items-center gap-3">
                             <div className="p-3 rounded-xl bg-indigo-50">
-                                <Building2 className="h-5 w-5 text-indigo-600" />
+                                <Building2 className="h-5 w-5 text-civant-teal" />
                             </div>
                             <div>
-                                <p className="text-sm text-slate-500">Unique Buyers</p>
-                                <p className="text-2xl font-bold text-slate-900">{Object.keys(buyerStats).length}</p>
+                                <p className="text-sm text-slate-400">Unique Buyers</p>
+                                <p className="text-2xl font-bold text-slate-100">{Object.keys(buyerStats).length}</p>
                             </div>
                         </div>
                     </CardContent>
                 </Card>
                 
-                <Card className="border-0 shadow-sm">
+                <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
                     <CardContent className="p-6">
                         <div className="flex items-center gap-3">
                             <div className="p-3 rounded-xl bg-emerald-50">
                                 <TrendingUp className="h-5 w-5 text-emerald-600" />
                             </div>
                             <div>
-                                <p className="text-sm text-slate-500">Total Tenders</p>
-                                <p className="text-2xl font-bold text-slate-900">{filteredTenders.length}</p>
+                                <p className="text-sm text-slate-400">Total Tenders</p>
+                                <p className="text-2xl font-bold text-slate-100">{filteredTenders.length}</p>
                             </div>
                         </div>
                     </CardContent>
                 </Card>
                 
-                <Card className="border-0 shadow-sm">
+                <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
                     <CardContent className="p-6">
                         <div className="flex items-center gap-3">
                             <div className="p-3 rounded-xl bg-amber-50">
                                 <Clock className="h-5 w-5 text-amber-600" />
                             </div>
                             <div>
-                                <p className="text-sm text-slate-500">Avg Tender Window</p>
-                                <p className="text-2xl font-bold text-slate-900">
+                                <p className="text-sm text-slate-400">Avg Tender Window</p>
+                                <p className="text-2xl font-bold text-slate-100">
                                     {(() => {
                                         const allWindows = topBuyers.flatMap(b => b.avgWindow ? [b.avgWindow] : []);
                                         return allWindows.length > 0 
@@ -316,15 +316,15 @@ export default function Insights() {
                     </CardContent>
                 </Card>
                 
-                <Card className="border-0 shadow-sm">
+                <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
                     <CardContent className="p-6">
                         <div className="flex items-center gap-3">
                             <div className="p-3 rounded-xl bg-red-50">
                                 <AlertCircle className="h-5 w-5 text-red-600" />
                             </div>
                             <div>
-                                <p className="text-sm text-slate-500">Deadline Changes</p>
-                                <p className="text-2xl font-bold text-slate-900">
+                                <p className="text-sm text-slate-400">Deadline Changes</p>
+                                <p className="text-2xl font-bold text-slate-100">
                                     {versions.filter(v => v.change_type === 'deadline_changed').length}
                                 </p>
                             </div>
@@ -336,7 +336,7 @@ export default function Insights() {
             {/* Charts Row */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Monthly Trend */}
-                <Card className="border-0 shadow-sm">
+                <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
                     <CardHeader className="pb-2">
                         <CardTitle className="text-lg font-semibold">Monthly Tender Volume</CardTitle>
                     </CardHeader>
@@ -368,7 +368,7 @@ export default function Insights() {
                 </Card>
                 
                 {/* Notice Type Breakdown */}
-                <Card className="border-0 shadow-sm">
+                <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
                     <CardHeader className="pb-2">
                         <CardTitle className="text-lg font-semibold">Notice Types</CardTitle>
                     </CardHeader>
@@ -386,8 +386,8 @@ export default function Insights() {
                                 return (
                                     <div key={type}>
                                         <div className="flex items-center justify-between mb-1">
-                                            <span className="text-sm font-medium text-slate-700 capitalize">{type}</span>
-                                            <span className="text-sm text-slate-500">{count} ({percentage}%)</span>
+                                            <span className="text-sm font-medium text-slate-300 capitalize">{type}</span>
+                                            <span className="text-sm text-slate-400">{count} ({percentage}%)</span>
                                         </div>
                                         <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                                             <div 
@@ -408,7 +408,7 @@ export default function Insights() {
                 <Card className="border-indigo-100 bg-gradient-to-br from-indigo-50 to-purple-50">
                     <CardHeader>
                         <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                            <Sparkles className="h-5 w-5 text-indigo-600" />
+                            <Sparkles className="h-5 w-5 text-civant-teal" />
                             AI Forecast Analysis - {selectedBuyer}
                         </CardTitle>
                     </CardHeader>
@@ -416,23 +416,23 @@ export default function Insights() {
                         {/* Analysis Summary */}
                         {aiAnalysis.analysis && (
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <div className="bg-white p-4 rounded-lg">
-                                    <p className="text-xs text-slate-500">Avg Interval</p>
-                                    <p className="text-xl font-bold text-slate-900">{Math.round(aiAnalysis.analysis.avg_interval_days)} days</p>
+                                <div className="bg-slate-900/70 p-4 rounded-lg">
+                                    <p className="text-xs text-slate-400">Avg Interval</p>
+                                    <p className="text-xl font-bold text-slate-100">{Math.round(aiAnalysis.analysis.avg_interval_days)} days</p>
                                 </div>
-                                <div className="bg-white p-4 rounded-lg">
-                                    <p className="text-xs text-slate-500">Seasonality</p>
-                                    <p className="text-xl font-bold text-slate-900">
+                                <div className="bg-slate-900/70 p-4 rounded-lg">
+                                    <p className="text-xs text-slate-400">Seasonality</p>
+                                    <p className="text-xl font-bold text-slate-100">
                                         {aiAnalysis.analysis.seasonality_detected ? 'Yes' : 'No'}
                                     </p>
                                 </div>
-                                <div className="bg-white p-4 rounded-lg">
-                                    <p className="text-xs text-slate-500">Trend</p>
-                                    <p className="text-xl font-bold text-slate-900 capitalize">{aiAnalysis.analysis.trend}</p>
+                                <div className="bg-slate-900/70 p-4 rounded-lg">
+                                    <p className="text-xs text-slate-400">Trend</p>
+                                    <p className="text-xl font-bold text-slate-100 capitalize">{aiAnalysis.analysis.trend}</p>
                                 </div>
-                                <div className="bg-white p-4 rounded-lg">
-                                    <p className="text-xs text-slate-500">Data Quality</p>
-                                    <p className="text-xl font-bold text-slate-900 capitalize">{aiAnalysis.analysis.data_quality}</p>
+                                <div className="bg-slate-900/70 p-4 rounded-lg">
+                                    <p className="text-xs text-slate-400">Data Quality</p>
+                                    <p className="text-xl font-bold text-slate-100 capitalize">{aiAnalysis.analysis.data_quality}</p>
                                 </div>
                             </div>
                         )}
@@ -440,23 +440,23 @@ export default function Insights() {
                         {/* Predictions with Confidence Intervals */}
                         {aiAnalysis.predictions && aiAnalysis.predictions.length > 0 && (
                             <div>
-                                <h4 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                                <h4 className="text-sm font-semibold text-slate-100 mb-3 flex items-center gap-2">
                                     <Target className="h-4 w-4" />
                                     Predicted Tenders
                                 </h4>
                                 <div className="grid gap-3">
                                     {aiAnalysis.predictions.map((pred, idx) => (
-                                        <div key={idx} className="bg-white p-4 rounded-lg">
+                                        <div key={idx} className="bg-slate-900/70 p-4 rounded-lg">
                                             <div className="flex items-start justify-between mb-3">
                                                 <div>
                                                     <div className="flex items-center gap-2 mb-1">
                                                         <Calendar className="h-4 w-4 text-slate-400" />
-                                                        <span className="font-semibold text-slate-900">
+                                                        <span className="font-semibold text-slate-100">
                                                             {format(new Date(pred.predicted_date), 'MMMM d, yyyy')}
                                                         </span>
                                                     </div>
                                                     {pred.estimated_value_range && (
-                                                        <p className="text-sm text-slate-600">
+                                                        <p className="text-sm text-slate-300">
                                                             Expected Value: {new Intl.NumberFormat('en', { style: 'currency', currency: 'EUR', notation: 'compact' }).format(pred.estimated_value_range.min)} - {new Intl.NumberFormat('en', { style: 'currency', currency: 'EUR', notation: 'compact' }).format(pred.estimated_value_range.max)}
                                                         </p>
                                                     )}
@@ -465,11 +465,11 @@ export default function Insights() {
                                                     <Badge className={
                                                         pred.confidence_level === 'high' ? 'bg-emerald-50 text-emerald-700' :
                                                         pred.confidence_level === 'medium' ? 'bg-amber-50 text-amber-700' :
-                                                        'bg-slate-50 text-slate-600'
+                                                        'bg-slate-900/60 text-slate-300'
                                                     }>
                                                         {pred.confidence_score ? `${Math.round(pred.confidence_score * 100)}%` : pred.confidence_level}
                                                     </Badge>
-                                                    <p className="text-xs text-slate-500 mt-1">Confidence</p>
+                                                    <p className="text-xs text-slate-400 mt-1">Confidence</p>
                                                 </div>
                                             </div>
 
@@ -487,14 +487,14 @@ export default function Insights() {
                                             </div>
 
                                             {pred.seasonality_factor && (
-                                                <p className="text-sm text-slate-700 mb-2">
+                                                <p className="text-sm text-slate-300 mb-2">
                                                     <span className="font-medium">Seasonality:</span> {pred.seasonality_factor}
                                                 </p>
                                             )}
 
                                             {pred.expected_cpv_codes && pred.expected_cpv_codes.length > 0 && (
                                                 <div className="mb-2">
-                                                    <p className="text-xs text-slate-500 mb-1">Expected Categories:</p>
+                                                    <p className="text-xs text-slate-400 mb-1">Expected Categories:</p>
                                                     <div className="flex flex-wrap gap-1">
                                                         {pred.expected_cpv_codes.map((cpv, i) => (
                                                             <Badge key={i} variant="outline" className="text-xs">
@@ -507,8 +507,8 @@ export default function Insights() {
 
                                             {pred.key_indicators && pred.key_indicators.length > 0 && (
                                                 <div>
-                                                    <p className="text-xs font-medium text-slate-700 mb-1">Key Indicators:</p>
-                                                    <ul className="text-xs text-slate-600 space-y-1">
+                                                    <p className="text-xs font-medium text-slate-300 mb-1">Key Indicators:</p>
+                                                    <ul className="text-xs text-slate-300 space-y-1">
                                                         {pred.key_indicators.map((indicator, i) => (
                                                             <li key={i}>• {indicator}</li>
                                                         ))}
@@ -536,7 +536,7 @@ export default function Insights() {
             )}
 
             {/* Top Buyers Table */}
-            <Card className="border-0 shadow-sm">
+            <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
                 <CardHeader>
                     <CardTitle className="text-lg font-semibold flex items-center gap-2">
                         <Building2 className="h-5 w-5" />
@@ -547,7 +547,7 @@ export default function Insights() {
                     <div className="overflow-x-auto">
                         <Table>
                             <TableHeader>
-                                <TableRow className="bg-slate-50">
+                                <TableRow className="bg-slate-900/60">
                                     <TableHead>Buyer</TableHead>
                                     <TableHead className="text-right">Tender Count</TableHead>
                                     <TableHead className="text-right">Total Value</TableHead>
@@ -560,7 +560,7 @@ export default function Insights() {
                                     <TableBody>
                                     {topBuyers.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={7} className="text-center py-8 text-slate-500">
+                                        <TableCell colSpan={7} className="text-center py-8 text-slate-400">
                                             No data available
                                         </TableCell>
                                     </TableRow>

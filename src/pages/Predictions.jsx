@@ -203,7 +203,7 @@ export default function Predictions() {
         const colors = {
             high: 'bg-emerald-50 text-emerald-700 border-emerald-200',
             medium: 'bg-amber-50 text-amber-700 border-amber-200',
-            low: 'bg-slate-50 text-slate-600 border-slate-200'
+            low: 'bg-slate-900/60 text-slate-300 border-slate-700'
         };
         return colors[likelihood];
     };
@@ -215,7 +215,7 @@ export default function Predictions() {
     if (loading) {
         return (
             <div className="flex items-center justify-center h-64">
-                <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+                <Loader2 className="h-8 w-8 animate-spin text-civant-teal" />
             </div>
         );
     }
@@ -225,11 +225,11 @@ export default function Predictions() {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-                        <Sparkles className="h-6 w-6 text-indigo-600" />
+                    <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
+                        <Sparkles className="h-6 w-6 text-civant-teal" />
                         Tender Predictions
                     </h1>
-                    <p className="text-slate-500 mt-1">
+                    <p className="text-slate-400 mt-1">
                         AI-powered forecasts based on historical contract award patterns
                     </p>
                 </div>
@@ -247,15 +247,15 @@ export default function Predictions() {
             
             {/* Stats */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <Card className="border-0 shadow-sm">
+                <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
                     <CardContent className="p-6">
                         <div className="flex items-center gap-3">
                             <div className="p-3 rounded-xl bg-emerald-50">
                                 <Target className="h-5 w-5 text-emerald-600" />
                             </div>
                             <div>
-                                <p className="text-sm text-slate-500">High Likelihood</p>
-                                <p className="text-2xl font-bold text-slate-900">
+                                <p className="text-sm text-slate-400">High Likelihood</p>
+                                <p className="text-2xl font-bold text-slate-100">
                                     {predictions.filter(p => p.likelihood === 'high').length}
                                 </p>
                             </div>
@@ -263,15 +263,15 @@ export default function Predictions() {
                     </CardContent>
                 </Card>
                 
-                <Card className="border-0 shadow-sm">
+                <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
                     <CardContent className="p-6">
                         <div className="flex items-center gap-3">
                             <div className="p-3 rounded-xl bg-amber-50">
                                 <TrendingUp className="h-5 w-5 text-amber-600" />
                             </div>
                             <div>
-                                <p className="text-sm text-slate-500">Medium Likelihood</p>
-                                <p className="text-2xl font-bold text-slate-900">
+                                <p className="text-sm text-slate-400">Medium Likelihood</p>
+                                <p className="text-2xl font-bold text-slate-100">
                                     {predictions.filter(p => p.likelihood === 'medium').length}
                                 </p>
                             </div>
@@ -279,15 +279,15 @@ export default function Predictions() {
                     </CardContent>
                 </Card>
                 
-                <Card className="border-0 shadow-sm">
+                <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
                     <CardContent className="p-6">
                         <div className="flex items-center gap-3">
                             <div className="p-3 rounded-xl bg-indigo-50">
-                                <Building2 className="h-5 w-5 text-indigo-600" />
+                                <Building2 className="h-5 w-5 text-civant-teal" />
                             </div>
                             <div>
-                                <p className="text-sm text-slate-500">Total Predictions</p>
-                                <p className="text-2xl font-bold text-slate-900">{predictions.length}</p>
+                                <p className="text-sm text-slate-400">Total Predictions</p>
+                                <p className="text-2xl font-bold text-slate-100">{predictions.length}</p>
                             </div>
                         </div>
                     </CardContent>
@@ -297,13 +297,13 @@ export default function Predictions() {
             {/* Predictions List */}
             <div className="space-y-4">
                 {predictions.length === 0 ? (
-                    <Card className="border-0 shadow-sm">
+                    <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
                         <CardContent className="py-12 text-center">
                             <Sparkles className="h-12 w-12 mx-auto text-slate-300 mb-4" />
-                            <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                            <h3 className="text-lg font-semibold text-slate-100 mb-2">
                                 No predictions available
                             </h3>
-                            <p className="text-slate-500">
+                            <p className="text-slate-400">
                                 More historical data is needed to generate accurate predictions
                             </p>
                         </CardContent>
@@ -313,7 +313,7 @@ export default function Predictions() {
                         const aiData = aiPredictions[prediction.buyer];
                         
                         return (
-                            <Card key={idx} className="border-0 shadow-sm hover:shadow-md transition-shadow">
+                            <Card key={idx} className="border border-civant-border bg-civant-navy/55 shadow-none hover:bg-slate-900/70 transition-colors">
                                 <CardContent className="p-6">
                                     <div className="flex items-start gap-4">
                                         {/* Flag & Icon */}
@@ -328,10 +328,10 @@ export default function Predictions() {
                                         <div className="flex-1">
                                             <div className="flex items-start justify-between mb-3">
                                                 <div>
-                                                    <h3 className="font-semibold text-slate-900 mb-1">
+                                                    <h3 className="font-semibold text-slate-100 mb-1">
                                                         {prediction.buyer}
                                                     </h3>
-                                                    <p className="text-sm text-slate-500">
+                                                    <p className="text-sm text-slate-400">
                                                         Based on {prediction.historicalCount} historical tenders
                                                     </p>
                                                 </div>
@@ -379,8 +379,8 @@ export default function Predictions() {
                                             <div className="flex items-center gap-2">
                                                 <Calendar className="h-4 w-4 text-slate-400" />
                                                 <div>
-                                                    <p className="text-xs text-slate-500">Predicted Date</p>
-                                                    <p className="text-sm font-medium text-slate-900">
+                                                    <p className="text-xs text-slate-400">Predicted Date</p>
+                                                    <p className="text-sm font-medium text-slate-100">
                                                         {format(prediction.predictedDate, 'MMM yyyy')}
                                                     </p>
                                                 </div>
@@ -389,8 +389,8 @@ export default function Predictions() {
                                             <div className="flex items-center gap-2">
                                                 <Clock className="h-4 w-4 text-slate-400" />
                                                 <div>
-                                                    <p className="text-xs text-slate-500">Avg Interval</p>
-                                                    <p className="text-sm font-medium text-slate-900">
+                                                    <p className="text-xs text-slate-400">Avg Interval</p>
+                                                    <p className="text-sm font-medium text-slate-100">
                                                         {prediction.avgInterval} months
                                                     </p>
                                                 </div>
@@ -400,8 +400,8 @@ export default function Predictions() {
                                                 <div className="flex items-center gap-2">
                                                     <DollarSign className="h-4 w-4 text-slate-400" />
                                                     <div>
-                                                        <p className="text-xs text-slate-500">Expected Value</p>
-                                                        <p className="text-sm font-medium text-slate-900">
+                                                        <p className="text-xs text-slate-400">Expected Value</p>
+                                                        <p className="text-sm font-medium text-slate-100">
                                                             {new Intl.NumberFormat('en', {
                                                                 style: 'currency',
                                                                 currency: 'EUR',
@@ -416,8 +416,8 @@ export default function Predictions() {
                                             <div className="flex items-center gap-2">
                                                 <Calendar className="h-4 w-4 text-slate-400" />
                                                 <div>
-                                                    <p className="text-xs text-slate-500">Last Tender</p>
-                                                    <p className="text-sm font-medium text-slate-900">
+                                                    <p className="text-xs text-slate-400">Last Tender</p>
+                                                    <p className="text-sm font-medium text-slate-100">
                                                         {format(prediction.lastTenderDate, 'MMM yyyy')}
                                                     </p>
                                                 </div>
@@ -427,7 +427,7 @@ export default function Predictions() {
                                         {/* CPV Codes */}
                                         {prediction.topCpvs.length > 0 && (
                                             <div>
-                                                <p className="text-xs text-slate-500 mb-1">Likely Categories (CPV):</p>
+                                                <p className="text-xs text-slate-400 mb-1">Likely Categories (CPV):</p>
                                                 <div className="flex flex-wrap gap-1">
                                                     {prediction.topCpvs.map((cpv, i) => (
                                                         <Badge key={i} variant="outline" className="text-xs">
@@ -440,29 +440,29 @@ export default function Predictions() {
                                         
                                         {/* AI Predictions */}
                                         {aiData && aiData.predictions && (
-                                            <div className="mt-4 pt-4 border-t border-slate-100">
+                                            <div className="mt-4 pt-4 border-t border-slate-800">
                                                 <div className="flex items-center gap-2 mb-3">
-                                                    <Sparkles className="h-4 w-4 text-indigo-600" />
-                                                    <h4 className="text-sm font-semibold text-slate-900">AI-Powered Forecast</h4>
+                                                    <Sparkles className="h-4 w-4 text-civant-teal" />
+                                                    <h4 className="text-sm font-semibold text-slate-100">AI-Powered Forecast</h4>
                                                 </div>
                                                 
                                                 {aiData.analysis && (
                                                     <div className="mb-3 p-3 bg-indigo-50 rounded-lg">
                                                         <div className="grid grid-cols-2 gap-2 text-xs">
                                                             <div>
-                                                                <span className="text-slate-600">Avg Interval:</span>
+                                                                <span className="text-slate-300">Avg Interval:</span>
                                                                 <span className="ml-1 font-medium">{Math.round(aiData.analysis.avg_interval_days)} days</span>
                                                             </div>
                                                             <div>
-                                                                <span className="text-slate-600">Trend:</span>
+                                                                <span className="text-slate-300">Trend:</span>
                                                                 <span className="ml-1 font-medium capitalize">{aiData.analysis.trend}</span>
                                                             </div>
                                                             <div>
-                                                                <span className="text-slate-600">Seasonality:</span>
+                                                                <span className="text-slate-300">Seasonality:</span>
                                                                 <span className="ml-1 font-medium">{aiData.analysis.seasonality_detected ? 'Detected' : 'None'}</span>
                                                             </div>
                                                             <div>
-                                                                <span className="text-slate-600">Data Quality:</span>
+                                                                <span className="text-slate-300">Data Quality:</span>
                                                                 <span className="ml-1 font-medium capitalize">{aiData.analysis.data_quality}</span>
                                                             </div>
                                                         </div>
@@ -471,11 +471,11 @@ export default function Predictions() {
                                                 
                                                 <div className="space-y-3">
                                                     {aiData.predictions.slice(0, 3).map((pred, i) => (
-                                                        <div key={i} className="p-3 bg-slate-50 rounded-lg">
+                                                        <div key={i} className="p-3 bg-slate-900/60 rounded-lg">
                                                             <div className="flex items-center justify-between mb-2">
                                                                 <div className="flex items-center gap-2">
                                                                     <Calendar className="h-3 w-3 text-slate-400" />
-                                                                    <span className="font-medium text-slate-900">
+                                                                    <span className="font-medium text-slate-100">
                                                                         {format(new Date(pred.predicted_date), 'MMM d, yyyy')}
                                                                     </span>
                                                                 </div>
@@ -494,31 +494,31 @@ export default function Predictions() {
                                                                 </div>
 
                                                                 {pred.estimated_value_range && (
-                                                                <div className="text-xs text-slate-600 mb-2">
+                                                                <div className="text-xs text-slate-300 mb-2">
                                                                     Value: {new Intl.NumberFormat('en', { style: 'currency', currency: 'EUR', notation: 'compact' }).format(pred.estimated_value_range.min)} - {new Intl.NumberFormat('en', { style: 'currency', currency: 'EUR', notation: 'compact' }).format(pred.estimated_value_range.max)}
                                                                 </div>
                                                                 )}
 
                                                                 {pred.contract_basis && (
-                                                                <div className="text-xs text-slate-600 mb-2">
+                                                                <div className="text-xs text-slate-300 mb-2">
                                                                     <span className="font-medium">Basis:</span> {pred.contract_basis}
                                                                 </div>
                                                                 )}
 
                                                                 {pred.renewal_likelihood && (
-                                                                <div className="text-xs text-slate-600 mb-2">
+                                                                <div className="text-xs text-slate-300 mb-2">
                                                                     <span className="font-medium">Renewal:</span> {pred.renewal_likelihood}
                                                                 </div>
                                                                 )}
                                                             
                                                             {pred.seasonality_factor && (
-                                                                <div className="text-xs text-slate-600 mb-2">
+                                                                <div className="text-xs text-slate-300 mb-2">
                                                                     <span className="font-medium">Seasonality:</span> {pred.seasonality_factor}
                                                                 </div>
                                                             )}
                                                             
                                                             {pred.key_indicators && pred.key_indicators.length > 0 && (
-                                                                <div className="text-xs text-slate-600">
+                                                                <div className="text-xs text-slate-300">
                                                                     <span className="font-medium">Key Factors:</span>
                                                                     <ul className="mt-1 ml-4 list-disc">
                                                                         {pred.key_indicators.slice(0, 2).map((indicator, j) => (
@@ -545,7 +545,7 @@ export default function Predictions() {
             <Card className="border-indigo-100 bg-indigo-50">
                 <CardContent className="p-6">
                     <div className="flex gap-4">
-                        <Sparkles className="h-5 w-5 text-indigo-600 mt-0.5" />
+                        <Sparkles className="h-5 w-5 text-civant-teal mt-0.5" />
                         <div>
                             <h3 className="font-semibold text-indigo-900 mb-2">
                                 How Predictions Work

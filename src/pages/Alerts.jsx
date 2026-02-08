@@ -181,7 +181,7 @@ export default function Alerts() {
     if (loading) {
         return (
             <div className="flex items-center justify-center h-64">
-                <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+                <Loader2 className="h-8 w-8 animate-spin text-civant-teal" />
             </div>
         );
     }
@@ -191,11 +191,11 @@ export default function Alerts() {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-900">Alerts</h1>
-                    <p className="text-slate-500 mt-1">Get notified when matching tenders are published</p>
+                    <h1 className="text-2xl font-bold text-slate-100">Alerts</h1>
+                    <p className="text-slate-400 mt-1">Get notified when matching tenders are published</p>
                 </div>
                 <Button 
-                    className="bg-indigo-600 hover:bg-indigo-700"
+                    className="bg-civant-teal text-slate-950 hover:bg-civant-teal/90"
                     onClick={() => {
                         setEditingAlert(null);
                         resetForm();
@@ -210,11 +210,11 @@ export default function Alerts() {
             {/* Alerts List */}
             <div className="grid gap-4">
                 {alerts.length === 0 ? (
-                    <Card className="border-0 shadow-sm">
+                    <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
                         <CardContent className="py-12 text-center">
                             <Bell className="h-12 w-12 mx-auto text-slate-300 mb-4" />
-                            <h3 className="text-lg font-semibold text-slate-900 mb-2">No alerts yet</h3>
-                            <p className="text-slate-500 mb-4">Create an alert to get notified about matching tenders</p>
+                            <h3 className="text-lg font-semibold text-slate-100 mb-2">No alerts yet</h3>
+                            <p className="text-slate-400 mb-4">Create an alert to get notified about matching tenders</p>
                             <Button onClick={() => setShowForm(true)}>
                                 <Plus className="h-4 w-4 mr-2" />
                                 Create Your First Alert
@@ -226,7 +226,7 @@ export default function Alerts() {
                         const matchCount = alertEvents.filter(e => e.alert_id === alert.id).length;
                         
                         return (
-                            <Card key={alert.id} className="border-0 shadow-sm">
+                            <Card key={alert.id} className="border border-civant-border bg-civant-navy/55 shadow-none">
                                 <CardContent className="p-6">
                                     <div className="flex items-start justify-between">
                                         <div className="flex items-start gap-4">
@@ -237,13 +237,13 @@ export default function Alerts() {
                                             }`}>
                                                 <Bell className={`h-5 w-5 ${
                                                     alert.active 
-                                                        ? 'text-indigo-600' 
+                                                        ? 'text-civant-teal' 
                                                         : 'text-slate-400'
                                                 }`} />
                                             </div>
                                             <div>
                                                 <div className="flex items-center gap-2 mb-1">
-                                                    <h3 className="font-semibold text-slate-900">
+                                                    <h3 className="font-semibold text-slate-100">
                                                         {alert.alert_name}
                                                     </h3>
                                                     {alert.active ? (
@@ -251,7 +251,7 @@ export default function Alerts() {
                                                             Active
                                                         </Badge>
                                                     ) : (
-                                                        <Badge variant="outline" className="text-slate-500">
+                                                        <Badge variant="outline" className="text-slate-400">
                                                             Paused
                                                         </Badge>
                                                     )}
@@ -300,7 +300,7 @@ export default function Alerts() {
                                                     </div>
 
                                                     {/* Stats */}
-                                                    <div className="flex items-center gap-4 mt-3 text-sm text-slate-500">
+                                                    <div className="flex items-center gap-4 mt-3 text-sm text-slate-400">
                                                     <span>{matchCount} matches</span>
                                                     {alert.last_checked_at && (
                                                        <span>
@@ -319,9 +319,9 @@ export default function Alerts() {
                                                 onClick={() => toggleActive(alert)}
                                             >
                                                 {alert.active ? (
-                                                    <Pause className="h-4 w-4 text-slate-500" />
+                                                    <Pause className="h-4 w-4 text-slate-400" />
                                                 ) : (
-                                                    <Play className="h-4 w-4 text-slate-500" />
+                                                    <Play className="h-4 w-4 text-slate-400" />
                                                 )}
                                             </Button>
                                             <Button 
@@ -329,7 +329,7 @@ export default function Alerts() {
                                                 size="icon"
                                                 onClick={() => handleEdit(alert)}
                                             >
-                                                <Edit2 className="h-4 w-4 text-slate-500" />
+                                                <Edit2 className="h-4 w-4 text-slate-400" />
                                             </Button>
                                             <Button 
                                                 variant="ghost" 
@@ -349,26 +349,26 @@ export default function Alerts() {
             
             {/* Recent Matches */}
             {alertEvents.length > 0 && (
-                <Card className="border-0 shadow-sm">
+                <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
                     <CardHeader>
                         <CardTitle className="text-lg font-semibold">Recent Matches</CardTitle>
                     </CardHeader>
                     <CardContent className="p-0">
-                        <div className="divide-y divide-slate-100">
+                        <div className="divide-y divide-slate-800">
                             {alertEvents.slice(0, 10).map(event => {
                                 const alert = alerts.find(a => a.id === event.alert_id);
                                 return (
                                     <div key={event.id} className="p-4 flex items-center justify-between">
                                         <div>
-                                            <p className="font-medium text-slate-900">
+                                            <p className="font-medium text-slate-100">
                                                 {alert?.alert_name || 'Alert'}
                                             </p>
-                                            <p className="text-sm text-slate-500">
+                                            <p className="text-sm text-slate-400">
                                                 Matched tender: {event.tender_uid}
                                             </p>
                                         </div>
                                         <div className="flex items-center gap-3">
-                                            <span className="text-sm text-slate-500">
+                                            <span className="text-sm text-slate-400">
                                                 {event.matched_at && formatDistanceToNow(new Date(event.matched_at), { addSuffix: true })}
                                             </span>
                                             {event.sent ? (
@@ -414,7 +414,7 @@ export default function Alerts() {
                         
                         {/* Filters Section */}
                         <div className="space-y-4 pt-2 border-t">
-                            <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                            <h4 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
                                 <Filter className="h-4 w-4" />
                                 Filter Criteria
                             </h4>
@@ -457,7 +457,7 @@ export default function Alerts() {
                                     onChange={(e) => setFormData({ ...formData, keywords: e.target.value })}
                                     placeholder="e.g. software, cloud, IT"
                                 />
-                                <p className="text-xs text-slate-500 mt-1">Match any of these keywords in title or description</p>
+                                <p className="text-xs text-slate-400 mt-1">Match any of these keywords in title or description</p>
                             </div>
                             
                             <div>
@@ -478,13 +478,13 @@ export default function Alerts() {
                                     onChange={(e) => setFormData({ ...formData, cpv_contains: e.target.value })}
                                     placeholder="e.g. 72000000, 45"
                                 />
-                                <p className="text-xs text-slate-500 mt-1">Partial CPV code matching</p>
+                                <p className="text-xs text-slate-400 mt-1">Partial CPV code matching</p>
                             </div>
                         </div>
                         
                         {/* Notification Settings Section */}
                         <div className="space-y-4 pt-2 border-t">
-                            <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                            <h4 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
                                 <Bell className="h-4 w-4" />
                                 Notification Settings
                             </h4>
@@ -502,13 +502,13 @@ export default function Alerts() {
                                         <SelectItem value="immediate">
                                             <div className="flex flex-col">
                                                 <span>Immediate</span>
-                                                <span className="text-xs text-slate-500">Notify as soon as a match is found</span>
+                                                <span className="text-xs text-slate-400">Notify as soon as a match is found</span>
                                             </div>
                                         </SelectItem>
                                         <SelectItem value="daily_digest">
                                             <div className="flex flex-col">
                                                 <span>Daily Digest</span>
-                                                <span className="text-xs text-slate-500">Receive a summary once per day</span>
+                                                <span className="text-xs text-slate-400">Receive a summary once per day</span>
                                             </div>
                                         </SelectItem>
                                     </SelectContent>
@@ -524,14 +524,14 @@ export default function Alerts() {
                                     onChange={(e) => setFormData({ ...formData, expiry_date: e.target.value })}
                                     min={new Date().toISOString().split('T')[0]}
                                 />
-                                <p className="text-xs text-slate-500 mt-1">Alert will automatically deactivate after this date</p>
+                                <p className="text-xs text-slate-400 mt-1">Alert will automatically deactivate after this date</p>
                             </div>
                         </div>
                         
                         <div className="flex items-center justify-between pt-2 border-t">
                             <div className="flex flex-col">
                                 <Label htmlFor="active">Alert Active</Label>
-                                <p className="text-xs text-slate-500">Enable or disable this alert</p>
+                                <p className="text-xs text-slate-400">Enable or disable this alert</p>
                             </div>
                             <Switch
                                 id="active"
@@ -554,7 +554,7 @@ export default function Alerts() {
                             </Button>
                             <Button 
                                 type="submit" 
-                                className="bg-indigo-600 hover:bg-indigo-700"
+                                className="bg-civant-teal text-slate-950 hover:bg-civant-teal/90"
                                 disabled={saving}
                             >
                                 {saving ? (
