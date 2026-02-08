@@ -2,8 +2,8 @@ import {
   createEntity,
   deleteManyEntity,
   listOrFilterEntity
-} from '../../../../_lib/entities.js';
-import { methodNotAllowed, normalizeError, sendJson, type RequestLike, type ResponseLike } from '../../../../_lib/http.js';
+} from '../../../_lib/entities.js';
+import { methodNotAllowed, normalizeError, sendJson, type RequestLike, type ResponseLike } from '../../../_lib/http.js';
 
 type EntityRequest = RequestLike & {
   query?: Record<string, unknown>;

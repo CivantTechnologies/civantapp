@@ -1,4 +1,4 @@
-import { normalizeError, sendJson, type RequestLike, type ResponseLike } from '../../../../../_lib/http.js';
+import { normalizeError, sendJson, type RequestLike, type ResponseLike } from '../../../../_lib/http.js';
 
 type LogRequest = RequestLike & {
   query?: Record<string, unknown>;
