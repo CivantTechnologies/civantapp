@@ -7,11 +7,19 @@ import { Button } from '@/components/ui/button';
 
 export default function Login() {
   const navigate = useNavigate();
-  const { isAuthenticated, isLoadingAuth, authError, loginWithPassword } = useAuth();
+  const {
+    isAuthenticated,
+    isLoadingAuth,
+    authError,
+    loginWithPassword,
+    requestPasswordReset
+  } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
 
   if (isAuthenticated) {
     return <Navigate to="/" replace />;
@@ -27,6 +35,7 @@ export default function Login() {
     }
 
     setError('');
+    setNotice('');
     const result = await loginWithPassword({ email: normalizedEmail, password });
     if (result.ok) {
       navigate('/', { replace: true });
@@ -35,11 +44,35 @@ export default function Login() {
     }
   };
 
+  const onForgotPassword = async () => {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      setError('Enter your email first, then click Forgot my password.');
+      setNotice('');
+      return;
+    }
+
+    setIsResetting(true);
+    setError('');
+    setNotice('');
+    const result = await requestPasswordReset(normalizedEmail);
+    if (result.ok) {
+      setNotice('If this email exists, a password reset link has been sent.');
+    } else {
+      setError(result.error || 'Unable to send reset email.');
+    }
+    setIsResetting(false);
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Sign in to Civant</CardTitle>
+          <div className="flex items-center gap-3 mb-1">
+            <img src="/favicon.svg" alt="Civant logo" className="h-9 w-9 rounded-lg" />
+            <span className="text-lg font-semibold text-card-foreground">Civant</span>
+          </div>
+          <CardTitle>Log in</CardTitle>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={onSubmit}>
@@ -69,9 +102,18 @@ export default function Login() {
               />
             </div>
 
-            {(error || authError) && (
-              <p className="text-sm text-destructive">{error || authError}</p>
-            )}
+            {(error || authError) && <p className="text-sm text-destructive">{error || authError}</p>}
+            {notice && <p className="text-sm text-emerald-400">{notice}</p>}
+
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full justify-center text-sm text-muted-foreground hover:text-card-foreground"
+              onClick={onForgotPassword}
+              disabled={isLoadingAuth || isResetting}
+            >
+              {isResetting ? 'Sending reset link...' : 'Forgot my password?'}
+            </Button>
 
             <Button type="submit" className="w-full" disabled={isLoadingAuth}>
               {isLoadingAuth ? 'Signing in...' : 'Log in'}

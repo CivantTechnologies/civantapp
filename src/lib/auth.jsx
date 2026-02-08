@@ -229,6 +229,23 @@ export function AuthProvider({ children }) {
     return { ok: true };
   };
 
+  const requestPasswordReset = async (email) => {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    if (!normalizedEmail) {
+      return { ok: false, error: 'Enter your email first.' };
+    }
+
+    const redirectTo =
+      typeof window !== 'undefined' ? `${window.location.origin}/login` : undefined;
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, { redirectTo });
+
+    if (error) {
+      return { ok: false, error: error.message || 'Could not send reset email.' };
+    }
+
+    return { ok: true };
+  };
+
   const logout = async () => {
     setIsLoadingAuth(true);
     setAuthError('');
@@ -263,6 +280,7 @@ export function AuthProvider({ children }) {
     authWarning,
     retryProfile,
     loginWithPassword,
+    requestPasswordReset,
     logout
   }), [
     session,

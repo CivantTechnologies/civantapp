@@ -21,6 +21,9 @@ function createDisabledSupabase(reason) {
       async signInWithPassword() {
         return { data: null, error };
       },
+      async resetPasswordForEmail() {
+        return { data: null, error };
+      },
       async signOut() {
         return { error: null };
       }
