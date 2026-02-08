@@ -1,6 +1,21 @@
 import axios from 'axios';
 
 const ACTIVE_TENANT_STORAGE_KEY = 'civant_active_tenant';
+const DEFAULT_TENANT_ID = 'civant_default';
+
+function normalizeValue(value) {
+    const text = String(value ?? '').trim();
+    if (!text) return '';
+    const lowered = text.toLowerCase();
+    if (lowered === 'null' || lowered === 'undefined') return '';
+    return text;
+}
+
+function createClientError(code, message) {
+    const error = /** @type {any} */ (new Error(message));
+    error.code = code;
+    return error;
+}
 
 const hasFileLike = (value) => {
     if (!value) return false;
@@ -30,13 +45,13 @@ const toFormData = (input) => {
     return formData;
 };
 
-const createEntityApi = (http, appId) => new Proxy({}, {
+const createEntityApi = (http, getAppId) => new Proxy({}, {
     get(_, entityName) {
         if (typeof entityName !== 'string' || entityName === 'then' || entityName.startsWith('_')) {
             return undefined;
         }
 
-        const basePath = `/apps/${appId}/entities/${entityName}`;
+        const getBasePath = () => `/apps/${getAppId()}/entities/${entityName}`;
         return {
             list(sort, limit, skip, fields) {
                 const params = {};
@@ -44,7 +59,7 @@ const createEntityApi = (http, appId) => new Proxy({}, {
                 if (typeof limit === 'number') params.limit = limit;
                 if (typeof skip === 'number') params.skip = skip;
                 if (fields) params.fields = Array.isArray(fields) ? fields.join(',') : fields;
-                return http.get(basePath, { params });
+                return http.get(getBasePath(), { params });
             },
             filter(query = {}, sort, limit, skip, fields) {
                 const params = { q: JSON.stringify(query || {}) };
@@ -52,46 +67,47 @@ const createEntityApi = (http, appId) => new Proxy({}, {
                 if (typeof limit === 'number') params.limit = limit;
                 if (typeof skip === 'number') params.skip = skip;
                 if (fields) params.fields = Array.isArray(fields) ? fields.join(',') : fields;
-                return http.get(basePath, { params });
+                return http.get(getBasePath(), { params });
             },
             get(id) {
-                return http.get(`${basePath}/${id}`);
+                return http.get(`${getBasePath()}/${id}`);
             },
             create(payload) {
-                return http.post(basePath, payload);
+                return http.post(getBasePath(), payload);
             },
             update(id, payload) {
-                return http.put(`${basePath}/${id}`, payload);
+                return http.put(`${getBasePath()}/${id}`, payload);
             },
             delete(id) {
-                return http.delete(`${basePath}/${id}`);
+                return http.delete(`${getBasePath()}/${id}`);
             },
             deleteMany(payload) {
-                return http.delete(basePath, { data: payload });
+                return http.delete(getBasePath(), { data: payload });
             },
             bulkCreate(payload) {
-                return http.post(`${basePath}/bulk`, payload);
+                return http.post(`${getBasePath()}/bulk`, payload);
             }
         };
     }
 });
 
-const createFunctionsApi = (http, appId) => ({
+const createFunctionsApi = (http, getAppId) => ({
     invoke(functionName, payload, options = {}) {
         const headers = options.headers || undefined;
+        const endpoint = `/apps/${getAppId()}/functions/${functionName}`;
         if (hasFileLike(payload)) {
             const data = toFormData(payload);
-            return http.post(`/apps/${appId}/functions/${functionName}`, data, {
+            return http.post(endpoint, data, {
                 headers: { 'Content-Type': 'multipart/form-data', ...(headers || {}) }
             });
         }
-        return http.post(`/apps/${appId}/functions/${functionName}`, payload || {}, {
+        return http.post(endpoint, payload || {}, {
             headers
         });
     }
 });
 
-const createIntegrationsApi = (http, appId) => new Proxy({}, {
+const createIntegrationsApi = (http, getAppId) => new Proxy({}, {
     get(_, integrationName) {
         if (typeof integrationName !== 'string' || integrationName === 'then' || integrationName.startsWith('_')) {
             return undefined;
@@ -104,6 +120,7 @@ const createIntegrationsApi = (http, appId) => new Proxy({}, {
                 }
 
                 return async (payload = {}) => {
+                    const appId = getAppId();
                     const endpoint = integrationName === 'Core'
                         ? `/apps/${appId}/integration-endpoints/Core/${operationName}`
                         : `/apps/${appId}/integration-endpoints/installable/${integrationName}/integration-endpoints/${operationName}`;
@@ -196,16 +213,33 @@ export const createClient = ({
 }) => {
     void functionsVersion;
     void requiresAuth;
+
+    let resolvedAppId = normalizeValue(appId);
     const baseURL = serverUrl || appBaseUrl || '';
     const http = createAxiosClient({ baseURL, token, interceptResponses: true });
-    const functionsApi = createFunctionsApi(http, appId);
+
+    const ensureAppId = () => {
+        if (!resolvedAppId) {
+            throw createClientError(
+                'MISSING_APP_ID',
+                'Missing Civant app id (VITE_CIVANT_APP_ID). Configure runtime env before making API calls.'
+            );
+        }
+        return resolvedAppId;
+    };
+
+    const functionsApi = createFunctionsApi(http, ensureAppId);
 
     let activeTenantId = typeof window !== 'undefined' && window.localStorage
-        ? (window.localStorage.getItem(ACTIVE_TENANT_STORAGE_KEY) || '')
+        ? normalizeValue(window.localStorage.getItem(ACTIVE_TENANT_STORAGE_KEY))
         : '';
 
+    if (!activeTenantId) activeTenantId = DEFAULT_TENANT_ID;
+
     const setActiveTenantId = (tenantId, persist = true) => {
-        activeTenantId = String(tenantId || '').trim().toLowerCase();
+        const normalized = normalizeValue(tenantId).toLowerCase() || DEFAULT_TENANT_ID;
+        activeTenantId = normalized;
+
         if (typeof window !== 'undefined' && window.localStorage) {
             if (persist && activeTenantId) {
                 window.localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, activeTenantId);
@@ -215,15 +249,17 @@ export const createClient = ({
         }
     };
 
-    const getActiveTenantId = () => activeTenantId;
+    const getActiveTenantId = () => activeTenantId || DEFAULT_TENANT_ID;
 
     const tenantHeaders = (headers = {}) => {
-        if (!activeTenantId) {
-            throw new Error('Select a tenant');
+        const effectiveTenantId = getActiveTenantId();
+        if (!effectiveTenantId) {
+            throw createClientError('MISSING_TENANT_ID', 'Select a tenant before making tenant-scoped requests.');
         }
+
         return {
             ...headers,
-            'x-tenant-id': activeTenantId
+            'x-tenant-id': effectiveTenantId
         };
     };
 
@@ -245,7 +281,7 @@ export const createClient = ({
 
     const auth = {
         me() {
-            return http.get(`/apps/${appId}/entities/User/me`);
+            return http.get(`/apps/${ensureAppId()}/entities/User/me`);
         },
         createSession(email, tenantId) {
             return functionsApi.invoke('createSession', { email, tenantId });
@@ -270,7 +306,7 @@ export const createClient = ({
                 window.localStorage.removeItem(ACTIVE_TENANT_STORAGE_KEY);
             }
             delete http.defaults.headers.common.Authorization;
-            activeTenantId = '';
+            activeTenantId = DEFAULT_TENANT_ID;
             if (typeof window !== 'undefined') {
                 if (redirectUrl) {
                     window.location.href = redirectUrl;
@@ -285,9 +321,12 @@ export const createClient = ({
         auth,
         setActiveTenantId,
         getActiveTenantId,
-        entities: createEntityApi(http, appId),
+        setAppId(nextAppId) {
+            resolvedAppId = normalizeValue(nextAppId);
+        },
+        entities: createEntityApi(http, ensureAppId),
         functions: functionsApi,
-        integrations: createIntegrationsApi(http, appId),
+        integrations: createIntegrationsApi(http, ensureAppId),
         system: {
             listTenants() {
                 return functionsApi.invoke('listTenants', {});
@@ -322,12 +361,12 @@ export const createClient = ({
         },
         connectors: {
             getAccessToken(integrationType) {
-                return http.get(`/apps/${appId}/external-auth/tokens/${integrationType}`);
+                return http.get(`/apps/${ensureAppId()}/external-auth/tokens/${integrationType}`);
             }
         },
         appLogs: {
             logUserInApp(pageName) {
-                return http.post(`/app-logs/${appId}/log-user-in-app/${pageName}`);
+                return http.post(`/app-logs/${ensureAppId()}/log-user-in-app/${pageName}`);
             }
         }
     });

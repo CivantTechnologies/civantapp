@@ -22,7 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 export default function Layout({ children, currentPageName }) {
-  const { currentUser, roles, logout } = useAuth();
+  const { currentUser, roles, logout, authWarning } = useAuth();
   const {
     tenants,
     activeTenantId,
@@ -90,6 +90,11 @@ export default function Layout({ children, currentPageName }) {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {authWarning ? (
+        <div className="mx-4 mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+          {authWarning}
+        </div>
+      ) : null}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-card/95 border-b border-border z-50 px-4 flex items-center justify-between backdrop-blur-sm">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(!sidebarOpen)}>

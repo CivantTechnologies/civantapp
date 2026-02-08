@@ -4,6 +4,7 @@ import { useAuth } from '@/lib/auth';
 
 const TenantContext = createContext(null);
 const ACTIVE_TENANT_STORAGE_KEY = 'civant_active_tenant';
+const DEFAULT_TENANT_ID = 'civant_default';
 
 function unwrapResponse(response) {
   return response?.data ?? response ?? null;
@@ -20,8 +21,8 @@ function normalizeTenants(payload) {
 }
 
 function getStoredActiveTenantId() {
-  if (typeof window === 'undefined' || !window.localStorage) return '';
-  return String(window.localStorage.getItem(ACTIVE_TENANT_STORAGE_KEY) || '').trim().toLowerCase();
+  if (typeof window === 'undefined' || !window.localStorage) return DEFAULT_TENANT_ID;
+  return String(window.localStorage.getItem(ACTIVE_TENANT_STORAGE_KEY) || DEFAULT_TENANT_ID).trim().toLowerCase();
 }
 
 function setStoredActiveTenantId(tenantId) {
@@ -42,7 +43,7 @@ export function TenantProvider({ children }) {
   const [tenantError, setTenantError] = useState('');
 
   const setActiveTenantId = (nextTenantId) => {
-    const normalized = String(nextTenantId || '').trim().toLowerCase();
+    const normalized = String(nextTenantId || '').trim().toLowerCase() || DEFAULT_TENANT_ID;
     setActiveTenantIdState(normalized);
     setStoredActiveTenantId(normalized);
     civant.setActiveTenantId(normalized, true);
@@ -73,7 +74,7 @@ export function TenantProvider({ children }) {
         ? existingId
         : hasUserTenant
           ? userTenant
-          : (nextTenants[0]?.id || '');
+          : (nextTenants[0]?.id || userTenant || DEFAULT_TENANT_ID);
 
       setActiveTenantId(nextActiveTenantId);
       return nextTenants;

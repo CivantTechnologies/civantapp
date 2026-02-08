@@ -21,26 +21,43 @@ function normalizeProfile(payload) {
   };
 }
 
+function fallbackProfileFromSession(session) {
+  return {
+    email: String(session?.user?.email || ''),
+    tenant_id: '',
+    roles: []
+  };
+}
+
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [authError, setAuthError] = useState('');
+  const [authWarning, setAuthWarning] = useState('');
 
   const clearClientAuth = () => {
     civant.auth.setToken(null, false);
     setProfile(null);
+    setAuthWarning('');
   };
 
-  const loadProfile = async (accessToken) => {
+  const loadProfile = async (accessToken, sessionSnapshot = null) => {
     if (!accessToken) {
       clearClientAuth();
       return;
     }
 
     civant.auth.setToken(accessToken, true);
-    const payload = unwrapResponse(await civant.auth.getMyProfile());
-    setProfile(normalizeProfile(payload));
+
+    try {
+      const payload = unwrapResponse(await civant.auth.getMyProfile());
+      setProfile(normalizeProfile(payload));
+      setAuthWarning('');
+    } catch (error) {
+      setProfile(fallbackProfileFromSession(sessionSnapshot));
+      setAuthWarning(error?.message || 'Profile data could not be loaded. Some admin features may be hidden.');
+    }
   };
 
   useEffect(() => {
@@ -56,8 +73,9 @@ export function AuthProvider({ children }) {
 
         const nextSession = data?.session ?? null;
         setSession(nextSession);
+
         if (nextSession?.access_token) {
-          await loadProfile(nextSession.access_token);
+          await loadProfile(nextSession.access_token, nextSession);
         } else {
           clearClientAuth();
         }
@@ -80,7 +98,7 @@ export function AuthProvider({ children }) {
       setAuthError('');
       try {
         if (nextSession?.access_token) {
-          await loadProfile(nextSession.access_token);
+          await loadProfile(nextSession.access_token, nextSession);
         } else {
           clearClientAuth();
         }
@@ -121,14 +139,14 @@ export function AuthProvider({ children }) {
 
   const roles = profile?.roles || [];
   const tenantId = profile?.tenant_id || '';
-  const isAuthenticated = Boolean(session?.access_token && profile?.email);
+  const isAuthenticated = Boolean(session?.access_token);
   const isPrivileged = roles.includes('admin') || roles.includes('creator');
 
   const value = useMemo(() => ({
     session,
     profile,
     currentUser: {
-      email: profile?.email || '',
+      email: profile?.email || session?.user?.email || '',
       tenantId,
       roles
     },
@@ -138,9 +156,10 @@ export function AuthProvider({ children }) {
     isAuthenticated,
     isLoadingAuth,
     authError,
+    authWarning,
     loginWithPassword,
     logout
-  }), [session, profile, tenantId, roles.join(','), isPrivileged, isAuthenticated, isLoadingAuth, authError]);
+  }), [session, profile, tenantId, roles.join(','), isPrivileged, isAuthenticated, isLoadingAuth, authError, authWarning]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
