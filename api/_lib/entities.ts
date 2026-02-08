@@ -218,6 +218,9 @@ function applyIdFilter(qb: any, tableName: string, id: string) {
   if (tableName === 'TendersCurrent') {
     return qb.eq('tender_id', id);
   }
+  if (tableName === 'canonical_tenders') {
+    return qb.eq('canonical_id', id);
+  }
   return qb.eq('id', id);
 }
 
@@ -302,6 +305,8 @@ export async function deleteManyEntity(req: DynamicRequest) {
 
   let qb = tableName === 'TendersCurrent'
     ? supabase.from(tableName as any).delete().in('tender_id', ids as string[])
+    : tableName === 'canonical_tenders'
+      ? supabase.from(tableName as any).delete().in('canonical_id', ids as string[])
     : supabase.from(tableName as any).delete().in('id', ids as string[]);
   if (tenantId && TENANT_SCOPED_TABLES.has(tableName)) {
     qb = qb.eq('tenant_id', tenantId);
