@@ -2,6 +2,13 @@ import { getHeader, type RequestLike } from './http.js';
 import { getServerSupabase } from './supabase.js';
 
 const TENANT_ID_PATTERN = /^[a-z0-9_]{3,40}$/;
+const TENDERS_CURRENT_FIELD_MAP: Record<string, string> = {
+  id: 'tender_id',
+  tender_uid: 'tender_id',
+  publication_date: 'published_at',
+  first_seen_at: 'published_at',
+  last_seen_at: 'updated_at'
+};
 
 const ENTITY_TABLE_MAP: Record<string, string> = {
   User: 'users'
@@ -76,6 +83,96 @@ export function resolveTableName(entityName: string) {
   return ENTITY_TABLE_MAP[entityName] || entityName;
 }
 
+function mapFieldForTable(tableName: string, field: string) {
+  if (tableName !== 'TendersCurrent') return field;
+  return TENDERS_CURRENT_FIELD_MAP[field] || field;
+}
+
+function normalizeSortForTable(tableName: string, sortValue: string) {
+  if (!sortValue) return sortValue;
+
+  return sortValue
+    .split(',')
+    .map((token) => {
+      const raw = token.trim();
+      if (!raw) return '';
+      const desc = raw.startsWith('-');
+      const field = desc ? raw.slice(1) : raw;
+      const mappedField = mapFieldForTable(tableName, field);
+      return `${desc ? '-' : ''}${mappedField}`;
+    })
+    .filter(Boolean)
+    .join(',');
+}
+
+function normalizeTendersCurrentRow(row: unknown) {
+  if (!row || typeof row !== 'object') return row;
+
+  const base = row as Record<string, unknown>;
+  const nestedData = base.data;
+  const data =
+    nestedData && typeof nestedData === 'object' && !Array.isArray(nestedData)
+      ? (nestedData as Record<string, unknown>)
+      : {};
+
+  const merged: Record<string, unknown> = { ...data, ...base };
+  const tenderId = String(base.tender_id || data.tender_id || data.id || '').trim();
+
+  if (tenderId) {
+    if (!merged.id) merged.id = tenderId;
+    if (!merged.tender_uid) merged.tender_uid = tenderId;
+    if (!merged.canonical_id) merged.canonical_id = tenderId;
+  }
+
+  if (!merged.title && data.tender_name) {
+    merged.title = data.tender_name;
+  }
+
+  const cpvCodes = merged.cpv_codes;
+  if (Array.isArray(cpvCodes)) {
+    merged.cpv_codes = cpvCodes.join(',');
+  } else if (cpvCodes === null || cpvCodes === undefined) {
+    merged.cpv_codes = '';
+  }
+
+  if (!merged.publication_date && typeof base.published_at === 'string') {
+    merged.publication_date = base.published_at.slice(0, 10);
+  }
+
+  if (!merged.first_seen_at) {
+    merged.first_seen_at = data.first_seen_at || base.published_at || base.updated_at || null;
+  }
+
+  if (!merged.last_seen_at) {
+    merged.last_seen_at = data.last_seen_at || base.updated_at || null;
+  }
+
+  if (!merged.buyer_name && data.contracting_authority) {
+    merged.buyer_name = data.contracting_authority;
+  }
+
+  if (!merged.notice_type) {
+    merged.notice_type = data.notice_type || 'tender';
+  }
+
+  if (!merged.source_notice_id && data.tender_id) {
+    merged.source_notice_id = data.tender_id;
+  }
+
+  if (!merged.url && data.source_url) {
+    merged.url = data.source_url;
+  }
+
+  return merged;
+}
+
+function normalizeEntityRow(tableName: string, row: unknown) {
+  if (tableName === 'TendersCurrent') {
+    return normalizeTendersCurrentRow(row);
+  }
+  return row;
+}
+
 function applyFilter(
   qb: any,
   field: string,
@@ -119,7 +216,7 @@ function applySort(qb: any, sortValue: string) {
 
 function applyIdFilter(qb: any, tableName: string, id: string) {
   if (tableName === 'TendersCurrent') {
-    return qb.or(`id.eq.${id},tender_id.eq.${id}`);
+    return qb.eq('tender_id', id);
   }
   return qb.eq('id', id);
 }
@@ -142,10 +239,10 @@ export async function listOrFilterEntity(req: DynamicRequest) {
   }
 
   for (const [field, value] of Object.entries(queryObj)) {
-    qb = applyFilter(qb, field, value);
+    qb = applyFilter(qb, mapFieldForTable(tableName, field), value);
   }
 
-  qb = applySort(qb, sort);
+  qb = applySort(qb, normalizeSortForTable(tableName, sort));
 
   if (limit > 0) {
     qb = qb.range(skip, skip + limit - 1);
@@ -155,7 +252,8 @@ export async function listOrFilterEntity(req: DynamicRequest) {
 
   const { data, error } = await qb;
   if (error) throw Object.assign(new Error(error.message), { status: 500 });
-  return Array.isArray(data) ? data : [];
+  const rows = Array.isArray(data) ? data : [];
+  return rows.map((row) => normalizeEntityRow(tableName, row));
 }
 
 export async function createEntity(req: DynamicRequest) {
@@ -188,7 +286,7 @@ export async function createEntity(req: DynamicRequest) {
   const { data, error } = await supabase.from(tableName as any).insert(bodyWithTenant).select('*').limit(1);
   if (error) throw Object.assign(new Error(error.message), { status: 500 });
 
-  if (Array.isArray(data) && data.length > 0) return data[0];
+  if (Array.isArray(data) && data.length > 0) return normalizeEntityRow(tableName, data[0]);
   return {};
 }
 
@@ -202,7 +300,9 @@ export async function deleteManyEntity(req: DynamicRequest) {
 
   if (!ids.length) throw badRequest('ids array is required for deleteMany');
 
-  let qb = supabase.from(tableName as any).delete().in('id', ids as string[]);
+  let qb = tableName === 'TendersCurrent'
+    ? supabase.from(tableName as any).delete().in('tender_id', ids as string[])
+    : supabase.from(tableName as any).delete().in('id', ids as string[]);
   if (tenantId && TENANT_SCOPED_TABLES.has(tableName)) {
     qb = qb.eq('tenant_id', tenantId);
   }
@@ -233,7 +333,7 @@ export async function getEntityById(req: DynamicRequest) {
   if (!Array.isArray(data) || data.length === 0) {
     throw Object.assign(new Error('Record not found'), { status: 404 });
   }
-  return data[0];
+  return normalizeEntityRow(tableName, data[0]);
 }
 
 export async function updateEntityById(req: DynamicRequest) {
@@ -255,7 +355,7 @@ export async function updateEntityById(req: DynamicRequest) {
   const { data, error } = await qb.select('*').limit(1);
   if (error) throw Object.assign(new Error(error.message), { status: 500 });
 
-  if (Array.isArray(data) && data.length > 0) return data[0];
+  if (Array.isArray(data) && data.length > 0) return normalizeEntityRow(tableName, data[0]);
   return {};
 }
 
