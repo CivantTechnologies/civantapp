@@ -13,6 +13,7 @@
     "typecheck:api": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --lib es2022,dom api/**/*.ts",
     "typecheck:deno": "npx --yes deno check functions/*.ts functions/pipeline/*.ts",
     "audit:full": "npm run lint && npm run typecheck && npm run typecheck:api && npm run typecheck:deno && npm test && npm run build && npm audit",
+    "import:boamp": "node scripts/import-boamp-fr.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
