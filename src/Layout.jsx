@@ -114,7 +114,7 @@ export default function Layout({ children, currentPageName }) {
       </header>
 
       <aside className={`
-        fixed top-0 left-0 h-full w-72 bg-card border-r border-border z-40
+        fixed top-0 left-0 h-full w-72 bg-card border-r border-border z-40 flex flex-col overflow-hidden
         transform transition-transform duration-200 ease-in-out
         lg:translate-x-0
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
@@ -176,37 +176,39 @@ export default function Layout({ children, currentPageName }) {
           )}
         </div>
 
-        <nav className="p-4 space-y-1.5">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = currentPageName === item.page;
+        <div className="flex-1 min-h-0 overflow-y-auto p-4">
+          <nav className="space-y-1.5">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = currentPageName === item.page;
 
-            return (
-              <Link
-                key={item.page}
-                to={createPageUrl(item.page)}
-                onClick={() => setSidebarOpen(false)}
-                className={`
-                  flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium border
-                  transition-all duration-150
-                  ${isActive
-      ? 'border-primary/30 bg-primary/20 text-card-foreground'
-      : 'border-transparent text-muted-foreground hover:border-border hover:bg-muted/60 hover:text-card-foreground'
-    }
-                `}
-              >
-                <Icon className={`h-4 w-4 ${isActive ? 'text-primary' : ''}`} />
-                {item.name}
-                {isActive && (
-                  <ChevronRight className="h-4 w-4 ml-auto text-primary" />
-                )}
-              </Link>
-            );
-          })}
-        </nav>
+              return (
+                <Link
+                  key={item.page}
+                  to={createPageUrl(item.page)}
+                  onClick={() => setSidebarOpen(false)}
+                  className={`
+                    flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium border
+                    transition-all duration-150
+                    ${isActive
+                      ? 'border-primary/30 bg-primary/20 text-card-foreground'
+                      : 'border-transparent text-muted-foreground hover:border-border hover:bg-muted/60 hover:text-card-foreground'
+                    }
+                  `}
+                >
+                  <Icon className={`h-4 w-4 ${isActive ? 'text-primary' : ''}`} />
+                  {item.name}
+                  {isActive && (
+                    <ChevronRight className="h-4 w-4 ml-auto text-primary" />
+                  )}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
 
         {currentUser && (
-          <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-border space-y-3">
+          <div className="p-4 border-t border-border space-y-3 shrink-0">
             <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-border bg-muted/40">
               <div className="w-8 h-8 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-primary text-sm font-medium">
                 {currentUser.email?.charAt(0) || 'U'}
