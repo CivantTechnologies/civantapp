@@ -44,13 +44,20 @@ const toFormData = (input) => {
     return formData;
 };
 
-const createEntityApi = (http, getAppId) => new Proxy({}, {
+const createEntityApi = (http, getAppId, getOptionalTenantHeaders) => new Proxy({}, {
     get(_, entityName) {
         if (typeof entityName !== 'string' || entityName === 'then' || entityName.startsWith('_')) {
             return undefined;
         }
 
         const getBasePath = () => `/apps/${getAppId()}/entities/${entityName}`;
+        const withTenantHeaders = (config = {}) => ({
+            ...config,
+            headers: {
+                ...(config.headers || {}),
+                ...(typeof getOptionalTenantHeaders === 'function' ? getOptionalTenantHeaders() : {})
+            }
+        });
         return {
             list(sort, limit, skip, fields) {
                 const params = {};
@@ -58,7 +65,7 @@ const createEntityApi = (http, getAppId) => new Proxy({}, {
                 if (typeof limit === 'number') params.limit = limit;
                 if (typeof skip === 'number') params.skip = skip;
                 if (fields) params.fields = Array.isArray(fields) ? fields.join(',') : fields;
-                return http.get(getBasePath(), { params });
+                return http.get(getBasePath(), withTenantHeaders({ params }));
             },
             filter(query = {}, sort, limit, skip, fields) {
                 const params = { q: JSON.stringify(query || {}) };
@@ -66,25 +73,25 @@ const createEntityApi = (http, getAppId) => new Proxy({}, {
                 if (typeof limit === 'number') params.limit = limit;
                 if (typeof skip === 'number') params.skip = skip;
                 if (fields) params.fields = Array.isArray(fields) ? fields.join(',') : fields;
-                return http.get(getBasePath(), { params });
+                return http.get(getBasePath(), withTenantHeaders({ params }));
             },
             get(id) {
-                return http.get(`${getBasePath()}/${id}`);
+                return http.get(`${getBasePath()}/${id}`, withTenantHeaders());
             },
             create(payload) {
-                return http.post(getBasePath(), payload);
+                return http.post(getBasePath(), payload, withTenantHeaders());
             },
             update(id, payload) {
-                return http.put(`${getBasePath()}/${id}`, payload);
+                return http.put(`${getBasePath()}/${id}`, payload, withTenantHeaders());
             },
             delete(id) {
-                return http.delete(`${getBasePath()}/${id}`);
+                return http.delete(`${getBasePath()}/${id}`, withTenantHeaders());
             },
             deleteMany(payload) {
-                return http.delete(getBasePath(), { data: payload });
+                return http.delete(getBasePath(), withTenantHeaders({ data: payload }));
             },
             bulkCreate(payload) {
-                return http.post(`${getBasePath()}/bulk`, payload);
+                return http.post(`${getBasePath()}/bulk`, payload, withTenantHeaders());
             }
         };
     }
@@ -261,6 +268,17 @@ export const createClient = ({
         };
     };
 
+    const optionalTenantHeaders = (headers = {}) => {
+        const effectiveTenantId = getActiveTenantId();
+        if (!effectiveTenantId) {
+            return { ...headers };
+        }
+        return {
+            ...headers,
+            'x-tenant-id': effectiveTenantId
+        };
+    };
+
     const setToken = (nextToken, persist = true) => {
         if (nextToken) {
             http.defaults.headers.common.Authorization = `Bearer ${nextToken}`;
@@ -322,7 +340,7 @@ export const createClient = ({
         setAppId(nextAppId) {
             resolvedAppId = normalizeValue(nextAppId);
         },
-        entities: createEntityApi(http, ensureAppId),
+        entities: createEntityApi(http, ensureAppId, optionalTenantHeaders),
         functions: functionsApi,
         integrations: createIntegrationsApi(http, ensureAppId),
         system: {

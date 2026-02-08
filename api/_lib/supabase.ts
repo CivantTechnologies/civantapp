@@ -3,10 +3,15 @@ import type { ApiDatabase } from './db.types.js';
 
 let cachedClient: SupabaseClient<ApiDatabase> | null = null;
 
-function requiredEnv(name: string) {
-  const value = String(process.env[name] || '').trim();
+function requiredEnv(primary: string, fallback?: string) {
+  const primaryValue = String(process.env[primary] || '').trim();
+  const fallbackValue = fallback ? String(process.env[fallback] || '').trim() : '';
+  const value = primaryValue || fallbackValue;
   if (!value) {
-    throw Object.assign(new Error(`Missing required environment variable: ${name}`), { status: 500 });
+    const message = fallback
+      ? `Missing required environment variable: ${primary} (or ${fallback})`
+      : `Missing required environment variable: ${primary}`;
+    throw Object.assign(new Error(message), { status: 500 });
   }
   return value;
 }
@@ -14,7 +19,7 @@ function requiredEnv(name: string) {
 export function getServerSupabase() {
   if (cachedClient) return cachedClient;
 
-  const supabaseUrl = requiredEnv('SUPABASE_URL');
+  const supabaseUrl = requiredEnv('SUPABASE_URL', 'VITE_SUPABASE_URL');
   const serviceRoleKey = requiredEnv('SUPABASE_SERVICE_ROLE_KEY');
 
   cachedClient = createClient<ApiDatabase>(supabaseUrl, serviceRoleKey, {
