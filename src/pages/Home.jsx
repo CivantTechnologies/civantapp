@@ -130,7 +130,7 @@ export default function Home() {
         <Page className="space-y-8">
             <PageHeader className="gap-4">
                 <span className="inline-flex w-fit rounded-full border border-primary/30 bg-primary/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
-                    Civant Radar
+                    Civant Intelligence
                 </span>
                 <div className="space-y-3">
                     <PageTitle className="max-w-3xl text-3xl md:text-4xl">
