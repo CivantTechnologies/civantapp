@@ -11,6 +11,7 @@ export type CurrentUser = {
 
 const TENANT_ID_PATTERN = /^[a-z0-9_]{3,40}$/;
 const PRIVILEGED_ROLES = new Set(['admin', 'creator']);
+const ROLE_PATTERN = /^(admin|creator|user|viewer)$/;
 
 function unauthorized(message = 'Unauthorized') {
   return Object.assign(new Error(message), { status: 401 });
@@ -26,6 +27,11 @@ function badRequest(message: string) {
 
 function normalizeTenantId(value: unknown) {
   return String(value || '').trim().toLowerCase();
+}
+
+function normalizeRole(value: unknown) {
+  const role = String(value || '').trim().toLowerCase();
+  return ROLE_PATTERN.test(role) ? role : 'user';
 }
 
 function isMissingColumnOrTable(error: unknown) {
@@ -58,6 +64,17 @@ export async function getCurrentUser(req: RequestLike): Promise<CurrentUser> {
 
   const email = String(authData.user.email || '').trim().toLowerCase();
   if (!email) throw unauthorized('Email claim missing in token');
+  const authUserId = String(authData.user.id || '').trim();
+  if (!authUserId) throw unauthorized('User id missing in token');
+
+  const metadata = (authData.user.user_metadata && typeof authData.user.user_metadata === 'object')
+    ? (authData.user.user_metadata as Record<string, unknown>)
+    : {};
+  const requestedTenantId = normalizeTenantId(metadata.tenant_id);
+  const tenantIdFromMetadata = TENANT_ID_PATTERN.test(requestedTenantId)
+    ? requestedTenantId
+    : 'civant_default';
+  const requestedRole = normalizeRole(metadata.role);
 
   let userRows: Array<Record<string, unknown>> = [];
   let inlineRole = '';
@@ -92,11 +109,85 @@ export async function getCurrentUser(req: RequestLike): Promise<CurrentUser> {
     inlineRole = String(firstRow?.role || '').trim().toLowerCase();
   }
 
-  const userRow = userRows.length > 0 ? userRows[0] : null;
-  if (!userRow) throw forbidden('User not registered in Civant');
+  let userRow = userRows.length > 0 ? userRows[0] : null;
+  if (!userRow) {
+    const ensureDefaultTenantResult = await supabase
+      .from('tenants')
+      .upsert(
+        {
+          id: 'civant_default',
+          name: 'Civant Default Tenant',
+          regions: ['IE', 'FR'],
+          plan: 'starter'
+        },
+        { onConflict: 'id' }
+      );
+    if (ensureDefaultTenantResult.error && !isMissingColumnOrTable(ensureDefaultTenantResult.error)) {
+      throw Object.assign(new Error(ensureDefaultTenantResult.error.message), { status: 500 });
+    }
+
+    const insertWithRoleResult = await supabase
+      .from('users')
+      .upsert(
+        {
+          id: authUserId,
+          email,
+          tenant_id: tenantIdFromMetadata,
+          role: requestedRole
+        },
+        { onConflict: 'email' }
+      )
+      .select('id,email,tenant_id,role')
+      .limit(1);
+
+    if (insertWithRoleResult.error) {
+      if (!isMissingColumnOrTable(insertWithRoleResult.error)) {
+        throw Object.assign(new Error(insertWithRoleResult.error.message), { status: 500 });
+      }
+
+      const fallbackInsertResult = await supabase
+        .from('users')
+        .upsert(
+          {
+            id: authUserId,
+            email,
+            tenant_id: tenantIdFromMetadata
+          },
+          { onConflict: 'email' }
+        )
+        .select('id,email,tenant_id')
+        .limit(1);
+
+      if (fallbackInsertResult.error) {
+        throw Object.assign(new Error(fallbackInsertResult.error.message), { status: 500 });
+      }
+      userRow = Array.isArray(fallbackInsertResult.data) ? fallbackInsertResult.data[0] : null;
+      inlineRole = requestedRole;
+    } else {
+      userRow = Array.isArray(insertWithRoleResult.data) ? insertWithRoleResult.data[0] : null;
+      inlineRole = String(userRow?.role || requestedRole || '').trim().toLowerCase();
+    }
+
+    if (!userRow) {
+      throw forbidden('User not registered in Civant');
+    }
+  }
 
   const userId = String(userRow.id || '');
   const tenantId = normalizeTenantId(userRow.tenant_id);
+
+  const roleWriteResult = await supabase
+    .from('user_roles')
+    .upsert(
+      {
+        user_id: userId,
+        role: inlineRole || requestedRole || 'user'
+      },
+      { onConflict: 'user_id,role' }
+    );
+  if (roleWriteResult.error && !isMissingColumnOrTable(roleWriteResult.error)) {
+    throw Object.assign(new Error(roleWriteResult.error.message), { status: 500 });
+  }
 
   const { data: roleRows, error: roleError } = await supabase
     .from('user_roles')
