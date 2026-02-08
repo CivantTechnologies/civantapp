@@ -134,7 +134,7 @@ export default function Home() {
                 </span>
                 <div className="space-y-3">
                     <PageTitle className="max-w-3xl text-3xl md:text-4xl">
-                        Track public procurement shifts before your competitors do
+                        Identify public procurement shifts before your competitors do
                     </PageTitle>
                     <PageDescription className="max-w-2xl">
                         AI-assisted monitoring for Irish and French tender markets, with alerts and predictive signals from live procurement activity.
