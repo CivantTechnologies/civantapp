@@ -25,6 +25,22 @@ const hasFileLike = (value) => {
     return false;
 };
 
+const isMissingColumnError = (error) => {
+    const message = String(error?.data?.error || error?.message || '').toLowerCase();
+    return message.includes('does not exist') || message.includes('unknown column');
+};
+
+const withSortFallback = async (request, fallbackRequest, sort) => {
+    try {
+        return await request();
+    } catch (error) {
+        if (!sort || !isMissingColumnError(error)) {
+            throw error;
+        }
+        return fallbackRequest();
+    }
+};
+
 const toFormData = (input) => {
     if (input instanceof FormData) return input;
 
@@ -65,15 +81,34 @@ const createEntityApi = (http, getAppId, getOptionalTenantHeaders) => new Proxy(
                 if (typeof limit === 'number') params.limit = limit;
                 if (typeof skip === 'number') params.skip = skip;
                 if (fields) params.fields = Array.isArray(fields) ? fields.join(',') : fields;
-                return http.get(getBasePath(), withTenantHeaders({ params }));
+                const config = withTenantHeaders({ params });
+                return withSortFallback(
+                    () => http.get(getBasePath(), config),
+                    () => {
+                        const retryParams = { ...params };
+                        delete retryParams.sort;
+                        return http.get(getBasePath(), withTenantHeaders({ params: retryParams }));
+                    },
+                    sort
+                );
             },
             filter(query = {}, sort, limit, skip, fields) {
+                /** @type {Record<string, any>} */
                 const params = { q: JSON.stringify(query || {}) };
                 if (sort) params.sort = sort;
                 if (typeof limit === 'number') params.limit = limit;
                 if (typeof skip === 'number') params.skip = skip;
                 if (fields) params.fields = Array.isArray(fields) ? fields.join(',') : fields;
-                return http.get(getBasePath(), withTenantHeaders({ params }));
+                const config = withTenantHeaders({ params });
+                return withSortFallback(
+                    () => http.get(getBasePath(), config),
+                    () => {
+                        const retryParams = { ...params };
+                        delete retryParams.sort;
+                        return http.get(getBasePath(), withTenantHeaders({ params: retryParams }));
+                    },
+                    sort
+                );
             },
             get(id) {
                 return http.get(`${getBasePath()}/${id}`, withTenantHeaders());

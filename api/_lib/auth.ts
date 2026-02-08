@@ -28,6 +28,12 @@ function normalizeTenantId(value: unknown) {
   return String(value || '').trim().toLowerCase();
 }
 
+function isMissingColumnOrTable(error: unknown) {
+  const code = String((error as { code?: string })?.code || '').trim();
+  const message = String((error as { message?: string })?.message || '').toLowerCase();
+  return code === '42703' || code === '42P01' || message.includes('does not exist');
+}
+
 export function getBearerToken(req: RequestLike) {
   const header = getHeader(req, 'authorization').trim();
   if (!header) return '';
@@ -53,14 +59,40 @@ export async function getCurrentUser(req: RequestLike): Promise<CurrentUser> {
   const email = String(authData.user.email || '').trim().toLowerCase();
   if (!email) throw unauthorized('Email claim missing in token');
 
-  const { data: userRows, error: userError } = await supabase
+  let userRows: Array<Record<string, unknown>> = [];
+  let inlineRole = '';
+  const preferredUserSelect = await supabase
     .from('users')
     .select('id,email,tenant_id,role')
     .eq('email', email)
     .limit(1);
 
-  if (userError) throw Object.assign(new Error(userError.message), { status: 500 });
-  const userRow = Array.isArray(userRows) && userRows.length > 0 ? userRows[0] : null;
+  if (preferredUserSelect.error) {
+    if (!isMissingColumnOrTable(preferredUserSelect.error)) {
+      throw Object.assign(new Error(preferredUserSelect.error.message), { status: 500 });
+    }
+
+    const fallbackUserSelect = await supabase
+      .from('users')
+      .select('id,email,tenant_id')
+      .eq('email', email)
+      .limit(1);
+
+    if (fallbackUserSelect.error) {
+      throw Object.assign(new Error(fallbackUserSelect.error.message), { status: 500 });
+    }
+    userRows = Array.isArray(fallbackUserSelect.data)
+      ? (fallbackUserSelect.data as Array<Record<string, unknown>>)
+      : [];
+  } else {
+    userRows = Array.isArray(preferredUserSelect.data)
+      ? (preferredUserSelect.data as Array<Record<string, unknown>>)
+      : [];
+    const firstRow = userRows[0];
+    inlineRole = String(firstRow?.role || '').trim().toLowerCase();
+  }
+
+  const userRow = userRows.length > 0 ? userRows[0] : null;
   if (!userRow) throw forbidden('User not registered in Civant');
 
   const userId = String(userRow.id || '');
@@ -71,13 +103,17 @@ export async function getCurrentUser(req: RequestLike): Promise<CurrentUser> {
     .select('role')
     .eq('user_id', userId);
 
-  if (roleError) throw Object.assign(new Error(roleError.message), { status: 500 });
+  const resolvedRoleRows = roleError && isMissingColumnOrTable(roleError)
+    ? []
+    : (Array.isArray(roleRows) ? roleRows : []);
+  if (roleError && !isMissingColumnOrTable(roleError)) {
+    throw Object.assign(new Error(roleError.message), { status: 500 });
+  }
 
   const roleSet = new Set<string>();
-  const inlineRole = String(userRow.role || '').trim().toLowerCase();
   if (inlineRole) roleSet.add(inlineRole);
 
-  for (const roleRow of (Array.isArray(roleRows) ? roleRows : [])) {
+  for (const roleRow of resolvedRoleRows) {
     const role = String(roleRow.role || '').trim().toLowerCase();
     if (role) roleSet.add(role);
   }
