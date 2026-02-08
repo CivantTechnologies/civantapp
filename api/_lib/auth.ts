@@ -37,7 +37,14 @@ function normalizeRole(value: unknown) {
 function isMissingColumnOrTable(error: unknown) {
   const code = String((error as { code?: string })?.code || '').trim();
   const message = String((error as { message?: string })?.message || '').toLowerCase();
-  return code === '42703' || code === '42P01' || message.includes('does not exist');
+  return (
+    code === '42703' ||
+    code === '42P01' ||
+    code === 'PGRST204' ||
+    message.includes('does not exist') ||
+    message.includes('could not find the') ||
+    message.includes('schema cache')
+  );
 }
 
 export function getBearerToken(req: RequestLike) {
