@@ -264,7 +264,7 @@ function MermaidDiagram({ chart }) {
                 win.mermaid.initialize({
                     startOnLoad: false,
                     securityLevel: 'loose',
-                    theme: 'default',
+                    theme: 'dark',
                     flowchart: { useMaxWidth: false, htmlLabels: true }
                 });
 
@@ -293,7 +293,7 @@ function MermaidDiagram({ chart }) {
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-[320px]">
-                <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
+                <Loader2 className="h-6 w-6 animate-spin text-civant-teal" />
             </div>
         );
     }
@@ -301,7 +301,7 @@ function MermaidDiagram({ chart }) {
     if (error) {
         return (
             <div className="space-y-3">
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900 text-sm">
+                <div className="rounded-xl border border-amber-400/40 bg-amber-500/15 p-4 text-amber-100 text-sm">
                     <div className="flex items-center gap-2 font-medium">
                         <AlertCircle className="h-4 w-4" />
                         Could not render Mermaid
@@ -316,7 +316,7 @@ function MermaidDiagram({ chart }) {
     }
 
     return (
-        <div className="overflow-auto rounded-xl border border-slate-200 bg-white p-4">
+        <div className="overflow-auto rounded-xl border border-civant-border bg-civant-navy/75 p-4">
             <div className="min-w-[1280px]" dangerouslySetInnerHTML={{ __html: svg }} />
         </div>
     );
@@ -352,7 +352,7 @@ export default function Architecture() {
     if (loadingUser) {
         return (
             <div className="flex items-center justify-center h-64">
-                <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+                <Loader2 className="h-8 w-8 animate-spin text-civant-teal" />
             </div>
         );
     }
@@ -361,8 +361,8 @@ export default function Architecture() {
         return (
             <div className="text-center py-12">
                 <AlertCircle className="h-12 w-12 mx-auto text-red-400 mb-4" />
-                <h2 className="text-xl font-semibold text-slate-900">Access Denied</h2>
-                <p className="text-slate-500 mt-2">This page is only accessible to administrators.</p>
+                <h2 className="text-xl font-semibold text-slate-100">Access Denied</h2>
+                <p className="text-slate-400 mt-2">This page is only accessible to administrators.</p>
             </div>
         );
     }
@@ -371,11 +371,11 @@ export default function Architecture() {
         <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-900">System Architecture</h1>
-                    <p className="text-slate-500 mt-1">End-to-end Civant data and AI pipeline</p>
+                    <h1 className="text-2xl font-bold text-slate-100">System Architecture</h1>
+                    <p className="text-slate-400 mt-1">End-to-end Civant data and AI pipeline</p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <Badge className="bg-indigo-50 text-indigo-700 border-indigo-200">
+                    <Badge className="bg-civant-teal/20 text-civant-teal border border-civant-teal/40">
                         <ShieldCheck className="h-3.5 w-3.5 mr-1" />
                         Admin
                     </Badge>
@@ -386,10 +386,10 @@ export default function Architecture() {
                 </div>
             </div>
 
-            <Card className="border-0 shadow-sm">
+            <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-lg">
-                        <Network className="h-5 w-5 text-indigo-600" />
+                        <Network className="h-5 w-5 text-civant-teal" />
                         Architecture Diagram
                     </CardTitle>
                 </CardHeader>
