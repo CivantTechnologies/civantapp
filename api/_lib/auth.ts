@@ -1,5 +1,5 @@
-import { getHeader, type RequestLike } from './http';
-import { getServerSupabase } from './supabase';
+import { getHeader, type RequestLike } from './http.js';
+import { getServerSupabase } from './supabase.js';
 
 export type CurrentUser = {
   userId: string;

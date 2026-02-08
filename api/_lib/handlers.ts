@@ -7,9 +7,9 @@ import {
   requirePrivileged,
   requireTenantAccess,
   type CurrentUser
-} from './auth';
-import { readJsonBody, type RequestLike } from './http';
-import { getServerSupabase } from './supabase';
+} from './auth.js';
+import { readJsonBody, type RequestLike } from './http.js';
+import { getServerSupabase } from './supabase.js';
 
 const CONNECTOR_MAP: Record<string, { key: string; displayName: string }> = {
   BOAMP_FR: { key: 'BOAMP_FR', displayName: 'BOAMP France' },

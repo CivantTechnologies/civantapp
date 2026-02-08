@@ -1,5 +1,5 @@
-import { getCurrentUserPayload } from '../../../../_lib/handlers';
-import { methodNotAllowed, normalizeError, sendJson, type RequestLike, type ResponseLike } from '../../../../_lib/http';
+import { getCurrentUserPayload } from '../../../../_lib/handlers.js';
+import { methodNotAllowed, normalizeError, sendJson, type RequestLike, type ResponseLike } from '../../../../_lib/http.js';
 
 export default async function handler(req: RequestLike, res: ResponseLike) {
   try {
