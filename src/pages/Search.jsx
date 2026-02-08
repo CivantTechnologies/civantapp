@@ -167,11 +167,11 @@ export default function Search() {
     
     const getSourceBadge = (source) => {
         const colors = {
-            'BOAMP_FR': 'bg-blue-50 text-blue-700 border-blue-200',
-            'TED': 'bg-purple-50 text-purple-700 border-purple-200',
-            'ETENDERS_IE': 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            'BOAMP_FR': 'bg-blue-500/15 text-blue-200 border-blue-400/40',
+            'TED': 'bg-violet-500/15 text-violet-200 border-violet-400/40',
+            'ETENDERS_IE': 'bg-emerald-500/15 text-emerald-200 border-emerald-400/40'
         };
-        return colors[source] || 'bg-slate-50 text-slate-700 border-slate-200';
+        return colors[source] || 'bg-slate-900/60 text-slate-300 border-slate-700';
     };
     
     const getCountryFlag = (country) => {
@@ -181,7 +181,7 @@ export default function Search() {
     if (loading) {
         return (
             <div className="flex items-center justify-center h-64">
-                <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+                <Loader2 className="h-8 w-8 animate-spin text-civant-teal" />
             </div>
         );
     }
@@ -190,12 +190,12 @@ export default function Search() {
         <div className="space-y-6">
             {/* Header */}
             <div>
-                <h1 className="text-2xl font-bold text-slate-900">Search Tenders</h1>
-                <p className="text-slate-500 mt-1">Find procurement opportunities matching your criteria</p>
+                <h1 className="text-2xl font-bold text-slate-100">Search Tenders</h1>
+                <p className="text-slate-400 mt-1">Find procurement opportunities matching your criteria</p>
             </div>
             
             {/* Search Bar */}
-            <Card className="border-0 shadow-sm">
+            <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
                 <CardContent className="p-4">
                     <div className="flex flex-col sm:flex-row gap-3">
                         <div className="relative flex-1">
@@ -204,18 +204,18 @@ export default function Search() {
                                 placeholder="Search by keyword or buyer..."
                                 value={keyword}
                                 onChange={(e) => setKeyword(e.target.value)}
-                                className="pl-10 bg-slate-50 border-0"
+                                className="pl-10 bg-slate-900/60 border-0"
                             />
                         </div>
                         <Button
                             variant="outline"
                             onClick={() => setShowFilters(!showFilters)}
-                            className={showFilters ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : ''}
+                            className={showFilters ? 'bg-civant-teal/20 border-civant-teal/40 text-civant-teal' : ''}
                         >
                             <Filter className="h-4 w-4 mr-2" />
                             Filters
                             {hasActiveFilters && (
-                                <span className="ml-2 w-5 h-5 rounded-full bg-indigo-600 text-white text-xs flex items-center justify-center">
+                                <span className="ml-2 w-5 h-5 rounded-full bg-civant-teal text-slate-950 text-xs flex items-center justify-center">
                                     !
                                 </span>
                             )}
@@ -224,12 +224,12 @@ export default function Search() {
                     
                     {/* Expanded Filters */}
                     {showFilters && (
-                        <div className="mt-4 pt-4 border-t border-slate-100">
+                        <div className="mt-4 pt-4 border-t border-slate-800">
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                                 <div>
-                                    <label className="text-xs font-medium text-slate-500 mb-1.5 block">Country</label>
+                                    <label className="text-xs font-medium text-slate-400 mb-1.5 block">Country</label>
                                     <Select value={country} onValueChange={setCountry}>
-                                        <SelectTrigger className="bg-slate-50 border-0">
+                                        <SelectTrigger className="bg-slate-900/60 border-0">
                                             <SelectValue placeholder="All countries" />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -241,9 +241,9 @@ export default function Search() {
                                 </div>
                                 
                                 <div>
-                                    <label className="text-xs font-medium text-slate-500 mb-1.5 block">Source</label>
+                                    <label className="text-xs font-medium text-slate-400 mb-1.5 block">Source</label>
                                     <Select value={source} onValueChange={setSource}>
-                                        <SelectTrigger className="bg-slate-50 border-0">
+                                        <SelectTrigger className="bg-slate-900/60 border-0">
                                             <SelectValue placeholder="All sources" />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -256,29 +256,29 @@ export default function Search() {
                                 </div>
                                 
                                 <div>
-                                    <label className="text-xs font-medium text-slate-500 mb-1.5 block">Buyer contains</label>
+                                    <label className="text-xs font-medium text-slate-400 mb-1.5 block">Buyer contains</label>
                                     <Input
                                         placeholder="e.g. Ministry"
                                         value={buyerSearch}
                                         onChange={(e) => setBuyerSearch(e.target.value)}
-                                        className="bg-slate-50 border-0"
+                                        className="bg-slate-900/60 border-0"
                                     />
                                 </div>
                                 
                                 <div>
-                                    <label className="text-xs font-medium text-slate-500 mb-1.5 block">CPV code</label>
+                                    <label className="text-xs font-medium text-slate-400 mb-1.5 block">CPV code</label>
                                     <Input
                                         placeholder="e.g. 45000000"
                                         value={cpvSearch}
                                         onChange={(e) => setCpvSearch(e.target.value)}
-                                        className="bg-slate-50 border-0"
+                                        className="bg-slate-900/60 border-0"
                                     />
                                 </div>
                                 
                                 <div>
-                                    <label className="text-xs font-medium text-slate-500 mb-1.5 block">Deadline within</label>
+                                    <label className="text-xs font-medium text-slate-400 mb-1.5 block">Deadline within</label>
                                     <Select value={deadlineWithin} onValueChange={setDeadlineWithin}>
-                                        <SelectTrigger className="bg-slate-50 border-0">
+                                        <SelectTrigger className="bg-slate-900/60 border-0">
                                             <SelectValue placeholder="Any time" />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -295,9 +295,9 @@ export default function Search() {
                                 </div>
 
                                 <div>
-                                    <label className="text-xs font-medium text-slate-500 mb-1.5 block">Industry</label>
+                                    <label className="text-xs font-medium text-slate-400 mb-1.5 block">Industry</label>
                                     <Select value={industry} onValueChange={setIndustry}>
-                                        <SelectTrigger className="bg-slate-50 border-0">
+                                        <SelectTrigger className="bg-slate-900/60 border-0">
                                             <SelectValue placeholder="All industries" />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -313,9 +313,9 @@ export default function Search() {
                                 </div>
 
                                 <div>
-                                    <label className="text-xs font-medium text-slate-500 mb-1.5 block">Institution Type</label>
+                                    <label className="text-xs font-medium text-slate-400 mb-1.5 block">Institution Type</label>
                                     <Select value={institutionType} onValueChange={setInstitutionType}>
-                                        <SelectTrigger className="bg-slate-50 border-0">
+                                        <SelectTrigger className="bg-slate-900/60 border-0">
                                             <SelectValue placeholder="All types" />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -330,9 +330,9 @@ export default function Search() {
                                 </div>
 
                                 <div>
-                                    <label className="text-xs font-medium text-slate-500 mb-1.5 block">Published within</label>
+                                    <label className="text-xs font-medium text-slate-400 mb-1.5 block">Published within</label>
                                     <Select value={lastTendered} onValueChange={setLastTendered}>
-                                        <SelectTrigger className="bg-slate-50 border-0">
+                                        <SelectTrigger className="bg-slate-900/60 border-0">
                                             <SelectValue placeholder="Any time" />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -362,38 +362,38 @@ export default function Search() {
             
             {/* Results count */}
             <div className="flex items-center justify-between">
-                <p className="text-sm text-slate-500">
-                    Showing <span className="font-medium text-slate-900">{filteredTenders.length}</span> tenders
+                <p className="text-sm text-slate-400">
+                    Showing <span className="font-medium text-slate-100">{filteredTenders.length}</span> tenders
                 </p>
             </div>
             
             {/* Results Table */}
-            <Card className="border-0 shadow-sm overflow-hidden">
+            <Card className="border border-civant-border bg-civant-navy/55 shadow-none overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full">
                         <thead>
-                            <tr className="bg-slate-50 border-b border-slate-100">
-                                <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-3">
+                            <tr className="bg-slate-900/60 border-b border-slate-800">
+                                <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wider px-4 py-3">
                                     Tender
                                 </th>
-                                <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-3 hidden md:table-cell">
+                                <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wider px-4 py-3 hidden md:table-cell">
                                     Buyer
                                 </th>
-                                <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-3 hidden lg:table-cell">
+                                <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wider px-4 py-3 hidden lg:table-cell">
                                     Publication
                                 </th>
-                                <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-3">
+                                <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wider px-4 py-3">
                                     Deadline
                                 </th>
-                                <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider px-4 py-3 hidden sm:table-cell">
+                                <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wider px-4 py-3 hidden sm:table-cell">
                                     Source
                                 </th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
+                        <tbody className="divide-y divide-slate-800">
                             {filteredTenders.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="px-4 py-12 text-center text-slate-500">
+                                    <td colSpan={5} className="px-4 py-12 text-center text-slate-400">
                                         <SearchIcon className="h-8 w-8 mx-auto mb-2 text-slate-300" />
                                         <p>No tenders found matching your criteria</p>
                                     </td>
@@ -407,7 +407,7 @@ export default function Search() {
                                     return (
                                         <tr 
                                             key={tender.id} 
-                                            className="hover:bg-slate-50 transition-colors cursor-pointer"
+                                            className="hover:bg-slate-900/60 transition-colors cursor-pointer"
                                             onClick={() => window.location.href = createPageUrl(`TenderDetail?id=${tender.id}`)}
                                         >
                                             <td className="px-4 py-4">
@@ -415,18 +415,18 @@ export default function Search() {
                                                     <span className="text-lg">{getCountryFlag(tender.country)}</span>
                                                     <div className="min-w-0">
                                                         <div className="flex items-center gap-2 flex-wrap">
-                                                            <p className="font-medium text-slate-900 line-clamp-2">
+                                                            <p className="font-medium text-slate-100 line-clamp-2">
                                                                 {tender.title}
                                                             </p>
                                                         </div>
                                                         <div className="flex items-center gap-2 mt-1">
                                                             {isNew && (
-                                                                <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">
+                                                                <Badge className="bg-emerald-500/15 text-emerald-200 border-emerald-400/40 text-xs">
                                                                     New
                                                                 </Badge>
                                                             )}
                                                             {isUpdated && (
-                                                                <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-xs">
+                                                                <Badge className="bg-amber-500/15 text-amber-200 border-amber-400/40 text-xs">
                                                                     Updated
                                                                 </Badge>
                                                             )}
@@ -435,12 +435,12 @@ export default function Search() {
                                                 </div>
                                             </td>
                                             <td className="px-4 py-4 hidden md:table-cell">
-                                                <p className="text-sm text-slate-600 line-clamp-2">
+                                                <p className="text-sm text-slate-300 line-clamp-2">
                                                     {tender.buyer_name || '-'}
                                                 </p>
                                             </td>
                                             <td className="px-4 py-4 hidden lg:table-cell">
-                                                <p className="text-sm text-slate-600">
+                                                <p className="text-sm text-slate-300">
                                                     {getTenderPublicationDate(tender) 
                                                         ? format(new Date(getTenderPublicationDate(tender)), 'MMM d, yyyy')
                                                         : '-'
@@ -448,7 +448,7 @@ export default function Search() {
                                                 </p>
                                             </td>
                                             <td className="px-4 py-4">
-                                                <p className="text-sm text-slate-600">
+                                                <p className="text-sm text-slate-300">
                                                     {tender.deadline_date 
                                                         ? format(new Date(tender.deadline_date), 'MMM d, yyyy')
                                                         : '-'
