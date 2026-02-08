@@ -443,9 +443,6 @@ async function main() {
   const canonicalBatch = [];
   const currentBatch = [];
 
-  const stream = fs.createReadStream(file, { encoding: 'utf8' });
-  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
-
   if (!dryRun) {
     await postRows({
       baseUrl,
@@ -466,6 +463,11 @@ async function main() {
       includeTenantHeader
     });
   }
+
+  // Start reading the file only after the ingestion run row is created.
+  // Otherwise the stream can finish before iteration begins in non-dry runs.
+  const stream = fs.createReadStream(file, { encoding: 'utf8' });
+  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
 
   const flush = async () => {
     if (!rawBatch.length && (rawOnly || !canonicalBatch.length)) return;
