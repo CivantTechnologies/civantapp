@@ -50,7 +50,7 @@ function parseCsvLine(line) {
   }
 
   out.push(current);
-  return out;
+  return { fields: out, inQuotes };
 }
 
 function clean(value) {
@@ -144,11 +144,38 @@ function makeFingerprint(parts) {
   return crypto.createHash('sha256').update(parts.filter(Boolean).join('|')).digest('hex');
 }
 
-function mapRow(record) {
-  const tenderId = clean(record['Tender ID']);
+function inferTenderId(record, title) {
+  const seed = [
+    clean(record['Contracting Authority']),
+    clean(record['Name of Client Contracting Authority']),
+    title,
+    clean(record['Notice Published Date/Contract Created Date']),
+    clean(record['Threshold Level']),
+    clean(record['Platform']),
+    clean(record['Procedure']),
+    clean(record['Notice Estimated Value (€)'])
+  ]
+    .filter(Boolean)
+    .join('|');
+
+  const digest = makeFingerprint([seed]).slice(0, 24);
+  return `INF_${digest}`;
+}
+
+function mapRow(record, options = {}) {
+  const allowInferredId = options.allowInferredId === true;
+  const rawTenderId = clean(record['Tender ID']);
   const title = clean(record['Tender/Contract Name']);
 
-  if (!tenderId || !title) return null;
+  if (!title) return null;
+
+  let tenderId = rawTenderId;
+  let inferredId = false;
+  if (!tenderId) {
+    if (!allowInferredId) return null;
+    tenderId = inferTenderId(record, title);
+    inferredId = true;
+  }
 
   const source = 'ETENDERS_IE';
   const canonicalId = `${source}:${tenderId}`;
@@ -165,6 +192,8 @@ function mapRow(record) {
 
   const baseFields = {
     tender_id: tenderId,
+    original_tender_id: rawTenderId,
+    id_inferred: inferredId,
     parent_agreement_id: clean(record['Parent Agreement ID']),
     contracting_authority: clean(record['Contracting Authority']),
     client_contracting_authority: clean(record['Name of Client Contracting Authority']),
@@ -209,6 +238,7 @@ function mapRow(record) {
     country: 'IE',
     canonical_id: canonicalId,
     source_notice_id: tenderId,
+    source_notice_id_inferred: inferredId,
     title,
     buyer_name: buyerName,
     notice_type: noticeType,
@@ -329,6 +359,8 @@ async function main() {
   const appId = String(args['app-id'] || 'civantapp');
   const tenantId = String(args['tenant-id'] || 'civant_default');
   const includeTenantHeader = args['with-tenant-header'] === 'true';
+  const allowInferredId = args['allow-inferred-id'] === 'true';
+  const onlyMissingId = args['only-missing-id'] === 'true';
   const batchSize = Math.max(10, Number(args['batch-size'] || 200));
   const limit = args.limit ? Math.max(1, Number(args.limit)) : null;
   const dryRun = args['dry-run'] === 'true';
@@ -348,8 +380,14 @@ async function main() {
 
   let headers = [];
   let lineNumber = 0;
+  let recordNumber = 0;
   let processed = 0;
   let skipped = 0;
+  let skippedNonMissing = 0;
+  let dedupedInFile = 0;
+  let malformedRecords = 0;
+  let pendingRecord = '';
+  const seenCanonicalIds = new Set();
 
   const canonicalBatch = [];
   const currentBatch = [];
@@ -388,11 +426,19 @@ async function main() {
 
   for await (const rawLine of rl) {
     lineNumber += 1;
-    if (!rawLine.trim()) continue;
+    if (!pendingRecord && !rawLine.trim()) continue;
 
-    const values = parseCsvLine(rawLine);
+    pendingRecord = pendingRecord ? `${pendingRecord}\n${rawLine}` : rawLine;
+    const parsed = parseCsvLine(pendingRecord);
+    if (parsed.inQuotes) {
+      continue;
+    }
 
-    if (lineNumber === 1) {
+    pendingRecord = '';
+    recordNumber += 1;
+    const values = parsed.fields;
+
+    if (recordNumber === 1) {
       headers = values.map((value) => String(value || '').replace(/^\uFEFF/, '').trim());
       continue;
     }
@@ -402,10 +448,25 @@ async function main() {
       row[header] = values[index] ?? '';
     });
 
-    const mapped = mapRow(row);
+    const hasTenderId = Boolean(clean(row['Tender ID']));
+    if (onlyMissingId && hasTenderId) {
+      skippedNonMissing += 1;
+      continue;
+    }
+
+    const mapped = mapRow(row, { allowInferredId });
     if (!mapped) {
       skipped += 1;
       continue;
+    }
+
+    const canonicalId = String(mapped.canonicalTender?.canonical_id || '').trim();
+    if (canonicalId) {
+      if (seenCanonicalIds.has(canonicalId)) {
+        dedupedInFile += 1;
+        continue;
+      }
+      seenCanonicalIds.add(canonicalId);
     }
 
     canonicalBatch.push(mapped.canonicalTender);
@@ -417,12 +478,16 @@ async function main() {
     }
 
     if (processed % 2000 === 0) {
-      console.log(`Processed ${processed} rows (line ${lineNumber})`);
+      console.log(`Processed ${processed} rows (record ${recordNumber}, line ${lineNumber})`);
     }
 
     if (limit && processed >= limit) {
       break;
     }
+  }
+
+  if (pendingRecord) {
+    malformedRecords += 1;
   }
 
   await flush();
@@ -431,6 +496,9 @@ async function main() {
     file,
     processed,
     skipped,
+    skipped_non_missing: skippedNonMissing,
+    deduped_in_file: dedupedInFile,
+    malformed_records: malformedRecords,
     canonical_tenders: {
       inserted: canonicalMetrics.inserted,
       duplicates: canonicalMetrics.duplicates,
