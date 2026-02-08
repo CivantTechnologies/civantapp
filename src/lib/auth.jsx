@@ -5,9 +5,21 @@ import { civant } from '@/api/civantClient';
 const AuthContext = createContext(null);
 const PROFILE_CACHE_KEY = 'civant_last_profile';
 const PROFILE_RETRY_DELAYS_MS = [0, 500, 2000, 5000];
+const AUTH_INIT_TIMEOUT_MS = 12000;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function withTimeout(promise, timeoutMs, message) {
+  let timeoutId = null;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
 }
 
 function unwrapResponse(response) {
@@ -140,7 +152,11 @@ export function AuthProvider({ children }) {
       setAuthError('');
 
       try {
-        const { data, error } = await supabase.auth.getSession();
+        const { data, error } = await withTimeout(
+          supabase.auth.getSession(),
+          AUTH_INIT_TIMEOUT_MS,
+          'Auth session check timed out. Verify Supabase URL/key and network access.'
+        );
         if (error) throw error;
         if (!mounted) return;
 
@@ -148,7 +164,11 @@ export function AuthProvider({ children }) {
         setSession(nextSession);
 
         if (nextSession?.access_token) {
-          await loadProfileWithRetry(nextSession.access_token, nextSession);
+          await withTimeout(
+            loadProfileWithRetry(nextSession.access_token, nextSession),
+            AUTH_INIT_TIMEOUT_MS,
+            'Profile check timed out. Retry to continue.'
+          );
         } else {
           clearClientAuth();
         }
@@ -173,7 +193,11 @@ export function AuthProvider({ children }) {
 
       try {
         if (nextSession?.access_token) {
-          await loadProfileWithRetry(nextSession.access_token, nextSession);
+          await withTimeout(
+            loadProfileWithRetry(nextSession.access_token, nextSession),
+            AUTH_INIT_TIMEOUT_MS,
+            'Profile check timed out. Retry to continue.'
+          );
         } else {
           clearClientAuth();
         }

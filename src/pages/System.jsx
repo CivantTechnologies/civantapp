@@ -50,7 +50,7 @@ function StatusBadge({ status }) {
 
 export default function System() {
   const { roles } = useAuth();
-  const { activeTenantId, tenants, refreshTenants } = useTenant();
+  const { activeTenantId, refreshTenants } = useTenant();
   const isSystemAllowed = Array.isArray(roles) && (roles.includes('admin') || roles.includes('creator'));
 
   const [loading, setLoading] = useState(true);

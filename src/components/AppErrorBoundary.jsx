@@ -14,7 +14,6 @@ export class AppErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
-    // eslint-disable-next-line no-console
     console.error('[Civant] Unhandled UI error:', error, info);
   }
 

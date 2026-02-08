@@ -14,9 +14,9 @@ function ConfigErrorScreen() {
           Required runtime variables are missing. Update your deployment environment and redeploy.
         </p>
         <div className="rounded-xl border border-border bg-muted/40 p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Missing variables</p>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Configuration issues</p>
           <ul className="list-disc pl-5 text-sm text-card-foreground space-y-1">
-            {runtimeConfig.missingRequired.map((key) => (
+            {runtimeConfig.issues.map((key) => (
               <li key={key}>{key}</li>
             ))}
           </ul>

@@ -21,8 +21,9 @@ const LayoutWrapper = ({ children, currentPageName }) => Layout
 
 function FullscreenLoader() {
   return (
-    <div className="fixed inset-0 flex items-center justify-center">
-      <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin" />
+    <div className="fixed inset-0 flex flex-col items-center justify-center gap-3 bg-background/90">
+      <div className="w-8 h-8 border-4 border-slate-200 border-t-teal-400 rounded-full animate-spin" />
+      <p className="text-sm text-muted-foreground">Loading Civant…</p>
     </div>
   );
 }
