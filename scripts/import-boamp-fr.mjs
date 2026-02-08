@@ -277,6 +277,7 @@ async function main() {
   const runId = String(args['run-id'] || makeRunId());
   const batchSize = Math.max(20, Number(args['batch-size'] || 120));
   const limit = args.limit ? Math.max(1, Number(args.limit)) : null;
+  const startRecord = Math.max(1, Number(args['start-record'] || 1));
   const rawOnly = args['raw-only'] === 'true';
   const dryRun = args['dry-run'] === 'true';
 
@@ -294,8 +295,10 @@ async function main() {
   let headers = [];
   let lineNumber = 0;
   let recordNumber = 0;
+  let dataRecordNumber = 0;
   let processed = 0;
   let skipped = 0;
+  let skippedBeforeStart = 0;
   let malformedRecords = 0;
   let pendingRecord = '';
   let dedupedInFile = 0;
@@ -368,6 +371,12 @@ async function main() {
       continue;
     }
 
+    dataRecordNumber += 1;
+    if (dataRecordNumber < startRecord) {
+      skippedBeforeStart += 1;
+      continue;
+    }
+
     const row = {};
     headers.forEach((header, index) => { row[header] = values[index] ?? ''; });
 
@@ -421,8 +430,10 @@ async function main() {
   await flush();
 
   const runErrors = [...rawMetrics.errors, ...canonicalMetrics.errors, ...currentMetrics.errors].slice(0, 50);
-  const metrics = {
+    const metrics = {
     total_rows: Math.max(recordNumber - 1, 0),
+    start_record: startRecord,
+    skipped_before_start: skippedBeforeStart,
     processed_rows: processed,
     skipped_missing_required: skipped,
     deduped_in_file: dedupedInFile,
@@ -454,6 +465,8 @@ async function main() {
   console.log(JSON.stringify({
     run_id: runId,
     file,
+    start_record: startRecord,
+    skipped_before_start: skippedBeforeStart,
     processed,
     skipped,
     deduped_in_file: dedupedInFile,
