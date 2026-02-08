@@ -7,7 +7,7 @@ const persistedToken = typeof window !== 'undefined'
   : '';
 const effectiveToken = token || persistedToken || '';
 const env = /** @type {any} */ (import.meta).env || {};
-const apiBaseUrl = env.VITE_API_BASE_URL || '';
+const apiBaseUrl = env.VITE_API_BASE_URL || '/api';
 
 export const civant = createClient({
   appId,
