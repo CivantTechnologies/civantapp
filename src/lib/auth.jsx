@@ -3,6 +3,12 @@ import { supabase } from '@/lib/supabaseClient';
 import { civant } from '@/api/civantClient';
 
 const AuthContext = createContext(null);
+const PROFILE_CACHE_KEY = 'civant_last_profile';
+const PROFILE_RETRY_DELAYS_MS = [0, 500, 2000, 5000];
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function unwrapResponse(response) {
   return response?.data ?? response ?? null;
@@ -15,49 +21,115 @@ function normalizeProfile(payload) {
     : [];
 
   return {
-    email: String(profile.email || ''),
-    tenant_id: String(profile.tenant_id || ''),
+    email: String(profile.email || '').trim().toLowerCase(),
+    tenant_id: String(profile.tenant_id || '').trim().toLowerCase(),
     roles
   };
 }
 
-function fallbackProfileFromSession(session) {
-  return {
-    email: String(session?.user?.email || ''),
-    tenant_id: '',
-    roles: []
-  };
+function loadCachedProfile() {
+  if (typeof window === 'undefined' || !window.sessionStorage) return null;
+
+  try {
+    const raw = window.sessionStorage.getItem(PROFILE_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return normalizeProfile(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function cacheProfile(profile) {
+  if (typeof window === 'undefined' || !window.sessionStorage) return;
+
+  if (!profile) {
+    window.sessionStorage.removeItem(PROFILE_CACHE_KEY);
+    return;
+  }
+
+  window.sessionStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(profile));
 }
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [staleProfile, setStaleProfile] = useState(loadCachedProfile);
+  const [profileStatus, setProfileStatus] = useState('idle');
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [authError, setAuthError] = useState('');
   const [authWarning, setAuthWarning] = useState('');
+  const [profileRetryCount, setProfileRetryCount] = useState(0);
 
   const clearClientAuth = () => {
     civant.auth.setToken(null, false);
+    civant.setActiveTenantId('', true, { fallbackToDefault: false });
     setProfile(null);
+    setStaleProfile(null);
+    setProfileStatus('idle');
+    setProfileRetryCount(0);
     setAuthWarning('');
+    cacheProfile(null);
   };
 
-  const loadProfile = async (accessToken, sessionSnapshot = null) => {
+  const loadProfileWithRetry = async (accessToken, sessionSnapshot = null) => {
     if (!accessToken) {
       clearClientAuth();
-      return;
+      return { ok: false, error: 'Missing access token' };
     }
 
     civant.auth.setToken(accessToken, true);
+    setProfileStatus('loading');
+    setProfileRetryCount(0);
+    setAuthWarning('');
 
-    try {
-      const payload = unwrapResponse(await civant.auth.getMyProfile());
-      setProfile(normalizeProfile(payload));
-      setAuthWarning('');
-    } catch (error) {
-      setProfile(fallbackProfileFromSession(sessionSnapshot));
-      setAuthWarning(error?.message || 'Profile data could not be loaded. Some admin features may be hidden.');
+    let lastError = null;
+    for (let attempt = 0; attempt < PROFILE_RETRY_DELAYS_MS.length; attempt += 1) {
+      if (attempt > 0) {
+        await sleep(PROFILE_RETRY_DELAYS_MS[attempt]);
+      }
+
+      setProfileRetryCount(attempt);
+
+      try {
+        const payload = unwrapResponse(await civant.auth.getMyProfile());
+        const normalized = normalizeProfile(payload);
+
+        setProfile(normalized);
+        setStaleProfile(normalized);
+        setProfileStatus('ready');
+        setProfileRetryCount(attempt);
+        setAuthWarning('');
+        cacheProfile(normalized);
+
+        return { ok: true };
+      } catch (error) {
+        lastError = error;
+      }
     }
+
+    const sessionEmail = String(sessionSnapshot?.user?.email || '').trim().toLowerCase();
+    const previousProfile = profile || staleProfile || loadCachedProfile();
+    const stale = previousProfile && (!sessionEmail || previousProfile.email === sessionEmail)
+      ? previousProfile
+      : null;
+
+    setProfile(null);
+    setStaleProfile(stale);
+    setProfileStatus('error');
+    setAuthWarning(lastError?.message || 'Unable to confirm permissions. Retry or sign out.');
+
+    return { ok: false, error: lastError?.message || 'Failed to load profile' };
+  };
+
+  const retryProfile = async () => {
+    const accessToken = session?.access_token;
+    if (!accessToken) {
+      return { ok: false, error: 'No active session' };
+    }
+
+    return loadProfileWithRetry(accessToken, session);
   };
 
   useEffect(() => {
@@ -66,6 +138,7 @@ export function AuthProvider({ children }) {
     const bootstrap = async () => {
       setIsLoadingAuth(true);
       setAuthError('');
+
       try {
         const { data, error } = await supabase.auth.getSession();
         if (error) throw error;
@@ -75,7 +148,7 @@ export function AuthProvider({ children }) {
         setSession(nextSession);
 
         if (nextSession?.access_token) {
-          await loadProfile(nextSession.access_token, nextSession);
+          await loadProfileWithRetry(nextSession.access_token, nextSession);
         } else {
           clearClientAuth();
         }
@@ -93,12 +166,14 @@ export function AuthProvider({ children }) {
 
     const { data: subscription } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
       if (!mounted) return;
+
       setSession(nextSession || null);
       setIsLoadingAuth(true);
       setAuthError('');
+
       try {
         if (nextSession?.access_token) {
-          await loadProfile(nextSession.access_token, nextSession);
+          await loadProfileWithRetry(nextSession.access_token, nextSession);
         } else {
           clearClientAuth();
         }
@@ -119,12 +194,14 @@ export function AuthProvider({ children }) {
   const loginWithPassword = async ({ email, password }) => {
     setIsLoadingAuth(true);
     setAuthError('');
+
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       setIsLoadingAuth(false);
       setAuthError(error.message || 'Login failed');
       return { ok: false, error: error.message || 'Login failed' };
     }
+
     return { ok: true };
   };
 
@@ -137,29 +214,46 @@ export function AuthProvider({ children }) {
     setIsLoadingAuth(false);
   };
 
-  const roles = profile?.roles || [];
-  const tenantId = profile?.tenant_id || '';
+  const effectiveRoles = profileStatus === 'ready' ? (profile?.roles || []) : null;
+  const tenantId = profileStatus === 'ready' ? (profile?.tenant_id || '') : null;
   const isAuthenticated = Boolean(session?.access_token);
-  const isPrivileged = roles.includes('admin') || roles.includes('creator');
+  const isPrivileged = Array.isArray(effectiveRoles) && (effectiveRoles.includes('admin') || effectiveRoles.includes('creator'));
 
   const value = useMemo(() => ({
     session,
     profile,
+    staleProfile,
+    profileStatus,
+    profileRetryCount,
     currentUser: {
-      email: profile?.email || session?.user?.email || '',
+      email: profile?.email || session?.user?.email || staleProfile?.email || '',
       tenantId,
-      roles
+      roles: effectiveRoles
     },
-    roles,
+    roles: effectiveRoles,
     tenantId,
     isPrivileged,
     isAuthenticated,
     isLoadingAuth,
     authError,
     authWarning,
+    retryProfile,
     loginWithPassword,
     logout
-  }), [session, profile, tenantId, roles.join(','), isPrivileged, isAuthenticated, isLoadingAuth, authError, authWarning]);
+  }), [
+    session,
+    profile,
+    staleProfile,
+    profileStatus,
+    profileRetryCount,
+    tenantId,
+    isPrivileged,
+    isAuthenticated,
+    isLoadingAuth,
+    authError,
+    authWarning,
+    JSON.stringify(effectiveRoles)
+  ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

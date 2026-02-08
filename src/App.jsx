@@ -8,6 +8,7 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { TenantProvider } from '@/lib/tenant';
 import Login from '@/pages/Login';
+import { Button } from '@/components/ui/button';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -49,9 +50,39 @@ function RequireAuth({ children }) {
 }
 
 function RequireSystemRole({ children }) {
-  const { isLoadingAuth, roles } = useAuth();
+  const { isLoadingAuth, profileStatus, roles, authWarning, retryProfile, logout } = useAuth();
 
   if (isLoadingAuth) return <FullscreenLoader />;
+  if (profileStatus === 'loading' || profileStatus === 'idle') {
+    return (
+      <LayoutWrapper currentPageName="System">
+        <div className="min-h-[40vh] flex items-center justify-center">
+          <div className="max-w-md rounded-xl border border-border bg-card p-8 text-center space-y-2">
+            <h1 className="text-xl font-semibold text-card-foreground">Checking permissions</h1>
+            <p className="text-sm text-muted-foreground">Validating your role for System settings.</p>
+          </div>
+        </div>
+      </LayoutWrapper>
+    );
+  }
+  if (profileStatus !== 'ready') {
+    return (
+      <LayoutWrapper currentPageName="System">
+        <div className="min-h-[40vh] flex items-center justify-center px-4">
+          <div className="max-w-md rounded-xl border border-border bg-card p-8 text-center space-y-3">
+            <h1 className="text-xl font-semibold text-card-foreground">Role check unavailable</h1>
+            <p className="text-sm text-muted-foreground">
+              {authWarning || 'Unable to confirm your permissions right now.'}
+            </p>
+            <div className="flex items-center justify-center gap-2">
+              <Button variant="secondary" onClick={() => retryProfile()}>Retry</Button>
+              <Button variant="ghost" onClick={logout}>Sign out</Button>
+            </div>
+          </div>
+        </div>
+      </LayoutWrapper>
+    );
+  }
   const allowed = Array.isArray(roles) && (roles.includes('admin') || roles.includes('creator'));
   if (!allowed) return <AccessDeniedPage />;
   return children;

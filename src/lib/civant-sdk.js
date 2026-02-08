@@ -1,7 +1,6 @@
 import axios from 'axios';
 
 const ACTIVE_TENANT_STORAGE_KEY = 'civant_active_tenant';
-const DEFAULT_TENANT_ID = 'civant_default';
 
 function normalizeValue(value) {
     const text = String(value ?? '').trim();
@@ -234,11 +233,10 @@ export const createClient = ({
         ? normalizeValue(window.localStorage.getItem(ACTIVE_TENANT_STORAGE_KEY))
         : '';
 
-    if (!activeTenantId) activeTenantId = DEFAULT_TENANT_ID;
-
-    const setActiveTenantId = (tenantId, persist = true) => {
-        const normalized = normalizeValue(tenantId).toLowerCase() || DEFAULT_TENANT_ID;
-        activeTenantId = normalized;
+    const setActiveTenantId = (tenantId, persist = true, options = {}) => {
+        const fallbackToDefault = options.fallbackToDefault !== false;
+        const normalized = normalizeValue(tenantId).toLowerCase();
+        activeTenantId = normalized || (fallbackToDefault ? 'civant_default' : '');
 
         if (typeof window !== 'undefined' && window.localStorage) {
             if (persist && activeTenantId) {
@@ -249,7 +247,7 @@ export const createClient = ({
         }
     };
 
-    const getActiveTenantId = () => activeTenantId || DEFAULT_TENANT_ID;
+    const getActiveTenantId = () => activeTenantId;
 
     const tenantHeaders = (headers = {}) => {
         const effectiveTenantId = getActiveTenantId();
@@ -306,7 +304,7 @@ export const createClient = ({
                 window.localStorage.removeItem(ACTIVE_TENANT_STORAGE_KEY);
             }
             delete http.defaults.headers.common.Authorization;
-            activeTenantId = DEFAULT_TENANT_ID;
+            activeTenantId = '';
             if (typeof window !== 'undefined') {
                 if (redirectUrl) {
                     window.location.href = redirectUrl;

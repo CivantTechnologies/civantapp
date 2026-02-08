@@ -22,7 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 export default function Layout({ children, currentPageName }) {
-  const { currentUser, roles, logout, authWarning } = useAuth();
+  const { currentUser, roles, profileStatus, logout, authWarning } = useAuth();
   const {
     tenants,
     activeTenantId,
@@ -45,7 +45,8 @@ export default function Layout({ children, currentPageName }) {
     [tenants, activeTenantId]
   );
 
-  const canAccessSystem = Array.isArray(roles) && (roles.includes('admin') || roles.includes('creator'));
+  const canAccessSystem = profileStatus === 'ready' && Array.isArray(roles) && (roles.includes('admin') || roles.includes('creator'));
+  const roleLabel = Array.isArray(roles) && roles.length ? roles.join(', ') : (profileStatus === 'ready' ? 'user' : 'Checking permissions...');
 
   const navItems = [
     { name: 'Home', page: 'Home', icon: LayoutDashboard },
@@ -212,7 +213,7 @@ export default function Layout({ children, currentPageName }) {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-card-foreground truncate">{currentUser.email || 'User'}</p>
-                <p className="text-xs text-muted-foreground truncate">{roles.join(', ') || 'user'}</p>
+                <p className="text-xs text-muted-foreground truncate">{roleLabel}</p>
               </div>
             </div>
             <Button type="button" variant="ghost" className="w-full justify-start" onClick={logout}>

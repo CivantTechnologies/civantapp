@@ -4,7 +4,6 @@ import { useAuth } from '@/lib/auth';
 
 const TenantContext = createContext(null);
 const ACTIVE_TENANT_STORAGE_KEY = 'civant_active_tenant';
-const DEFAULT_TENANT_ID = 'civant_default';
 
 function unwrapResponse(response) {
   return response?.data ?? response ?? null;
@@ -21,8 +20,9 @@ function normalizeTenants(payload) {
 }
 
 function getStoredActiveTenantId() {
-  if (typeof window === 'undefined' || !window.localStorage) return DEFAULT_TENANT_ID;
-  return String(window.localStorage.getItem(ACTIVE_TENANT_STORAGE_KEY) || DEFAULT_TENANT_ID).trim().toLowerCase();
+  if (typeof window === 'undefined' || !window.localStorage) return null;
+  const stored = String(window.localStorage.getItem(ACTIVE_TENANT_STORAGE_KEY) || '').trim().toLowerCase();
+  return stored || null;
 }
 
 function setStoredActiveTenantId(tenantId) {
@@ -36,24 +36,27 @@ function setStoredActiveTenantId(tenantId) {
 }
 
 export function TenantProvider({ children }) {
-  const { isAuthenticated, isLoadingAuth, roles, tenantId: userTenantId } = useAuth();
+  const { isAuthenticated, isLoadingAuth, profileStatus, roles, tenantId: userTenantId } = useAuth();
   const [tenants, setTenants] = useState([]);
   const [activeTenantId, setActiveTenantIdState] = useState(getStoredActiveTenantId);
   const [isLoadingTenants, setIsLoadingTenants] = useState(false);
   const [tenantError, setTenantError] = useState('');
 
-  const setActiveTenantId = (nextTenantId) => {
-    const normalized = String(nextTenantId || '').trim().toLowerCase() || DEFAULT_TENANT_ID;
-    setActiveTenantIdState(normalized);
-    setStoredActiveTenantId(normalized);
-    civant.setActiveTenantId(normalized, true);
+  const setActiveTenantId = (nextTenantId, options = {}) => {
+    const fallbackToDefault = options.fallbackToDefault !== false;
+    const normalized = String(nextTenantId || '').trim().toLowerCase();
+    const effective = normalized || (fallbackToDefault ? 'civant_default' : null);
+
+    setActiveTenantIdState(effective);
+    setStoredActiveTenantId(effective || '');
+    civant.setActiveTenantId(effective || '', true, { fallbackToDefault: false });
   };
 
   const refreshTenants = async () => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated || profileStatus !== 'ready') {
       setTenants([]);
       setTenantError('');
-      setActiveTenantId('');
+      setActiveTenantId(null, { fallbackToDefault: false });
       return [];
     }
 
@@ -66,7 +69,7 @@ export function TenantProvider({ children }) {
       setTenants(nextTenants);
 
       const existingId = getStoredActiveTenantId() || activeTenantId;
-      const hasExisting = nextTenants.some((tenant) => tenant.id === existingId);
+      const hasExisting = existingId ? nextTenants.some((tenant) => tenant.id === existingId) : false;
       const userTenant = String(userTenantId || '').trim().toLowerCase();
       const hasUserTenant = userTenant && nextTenants.some((tenant) => tenant.id === userTenant);
 
@@ -74,9 +77,9 @@ export function TenantProvider({ children }) {
         ? existingId
         : hasUserTenant
           ? userTenant
-          : (nextTenants[0]?.id || userTenant || DEFAULT_TENANT_ID);
+          : (nextTenants[0]?.id || null);
 
-      setActiveTenantId(nextActiveTenantId);
+      setActiveTenantId(nextActiveTenantId, { fallbackToDefault: false });
       return nextTenants;
     } catch (error) {
       setTenantError(error?.message || 'Failed to load tenants');
@@ -93,16 +96,16 @@ export function TenantProvider({ children }) {
 
     const createdTenantId = String(result?.tenant?.id || '').trim().toLowerCase();
     if (createdTenantId) {
-      setActiveTenantId(createdTenantId);
+      setActiveTenantId(createdTenantId, { fallbackToDefault: false });
     }
 
     return result;
   };
 
   useEffect(() => {
-    if (isLoadingAuth) return;
+    if (isLoadingAuth || profileStatus === 'loading' || profileStatus === 'idle') return;
     refreshTenants();
-  }, [isAuthenticated, isLoadingAuth]);
+  }, [isAuthenticated, isLoadingAuth, profileStatus]);
 
   const canCreateTenant = Array.isArray(roles) && roles.includes('creator');
 
