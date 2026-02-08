@@ -81,7 +81,7 @@ export default function PipelineAdmin() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+        <Loader2 className="h-8 w-8 animate-spin text-civant-teal" />
       </div>
     );
   }
@@ -90,8 +90,8 @@ export default function PipelineAdmin() {
     return (
       <div className="text-center py-12">
         <AlertCircle className="h-12 w-12 mx-auto text-red-400 mb-4" />
-        <h2 className="text-xl font-semibold text-slate-900">Access Denied</h2>
-        <p className="text-slate-500 mt-2">This page is only accessible to administrators.</p>
+        <h2 className="text-xl font-semibold text-slate-100">Access Denied</h2>
+        <p className="text-slate-400 mt-2">This page is only accessible to administrators.</p>
       </div>
     );
   }
@@ -100,8 +100,8 @@ export default function PipelineAdmin() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Pipeline Admin</h1>
-          <p className="text-slate-500 mt-1">Ingestion runs, review queue, and prediction evidence</p>
+          <h1 className="text-2xl font-bold text-slate-100">Pipeline Admin</h1>
+          <p className="text-slate-400 mt-1">Ingestion runs, review queue, and prediction evidence</p>
         </div>
         <Button variant="outline" onClick={loadData}>
           <RefreshCw className="h-4 w-4 mr-2" />
@@ -110,57 +110,57 @@ export default function PipelineAdmin() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-        <Card className="border-0 shadow-sm">
+        <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
           <CardHeader className="pb-2"><CardTitle className="text-base">Runs</CardTitle></CardHeader>
           <CardContent><p className="text-2xl font-bold">{runs.length}</p></CardContent>
         </Card>
-        <Card className="border-0 shadow-sm">
+        <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
           <CardHeader className="pb-2"><CardTitle className="text-base">Review Queue</CardTitle></CardHeader>
           <CardContent><p className="text-2xl font-bold">{queue.length}</p></CardContent>
         </Card>
-        <Card className="border-0 shadow-sm">
+        <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
           <CardHeader className="pb-2"><CardTitle className="text-base">Predictions</CardTitle></CardHeader>
           <CardContent><p className="text-2xl font-bold">{predictions.length}</p></CardContent>
         </Card>
-        <Card className="border-0 shadow-sm">
+        <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
           <CardHeader className="pb-2"><CardTitle className="text-base">Duplicate Rows</CardTitle></CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">{duplicateSummary?.total_duplicates || 0}</p>
-            <p className="text-xs text-slate-500 mt-1">In-file + DB duplicate detections</p>
+            <p className="text-xs text-slate-400 mt-1">In-file + DB duplicate detections</p>
           </CardContent>
         </Card>
       </div>
 
       {duplicateSummary && (
-        <Card className="border-0 shadow-sm">
+        <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
           <CardHeader><CardTitle>Duplicate Stats</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-            <div className="rounded-lg border border-slate-200 p-3">
-              <p className="text-slate-500">Deduped in file</p>
+            <div className="rounded-lg border border-civant-border bg-civant-navy/65 p-3">
+              <p className="text-slate-400">Deduped in file</p>
               <p className="text-lg font-semibold">{duplicateSummary.deduped_in_file || 0}</p>
             </div>
-            <div className="rounded-lg border border-slate-200 p-3">
-              <p className="text-slate-500">Recovered with inferred IDs</p>
+            <div className="rounded-lg border border-civant-border bg-civant-navy/65 p-3">
+              <p className="text-slate-400">Recovered with inferred IDs</p>
               <p className="text-lg font-semibold">{duplicateSummary.inferred_id_rows || 0}</p>
             </div>
-            <div className="rounded-lg border border-slate-200 p-3">
-              <p className="text-slate-500">Raw rows logged</p>
+            <div className="rounded-lg border border-civant-border bg-civant-navy/65 p-3">
+              <p className="text-slate-400">Raw rows logged</p>
               <p className="text-lg font-semibold">{duplicateSummary.raw_documents_logged || 0}</p>
             </div>
           </CardContent>
         </Card>
       )}
 
-      <Card className="border-0 shadow-sm">
+      <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
         <CardHeader><CardTitle>Ingestion Runs + Errors</CardTitle></CardHeader>
         <CardContent className="space-y-3">
-          {runs.length === 0 && <p className="text-slate-500">No runs yet.</p>}
+          {runs.length === 0 && <p className="text-slate-400">No runs yet.</p>}
           {runs.map((run) => (
-            <div key={run.id || run.run_id} className="rounded-lg border border-slate-200 p-3">
+            <div key={run.id || run.run_id} className="rounded-lg border border-civant-border bg-civant-navy/65 p-3">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline">{run.status}</Badge>
                 <span className="text-sm font-medium">{run.run_id}</span>
-                <span className="text-xs text-slate-500">{run.source}</span>
+                <span className="text-xs text-slate-400">{run.source}</span>
                 <Badge variant="outline">
                   duplicates: {run.duplicate_stats?.total_duplicates || 0}
                 </Badge>
@@ -168,32 +168,32 @@ export default function PipelineAdmin() {
                   raw rows: {run.duplicate_stats?.raw_rows || 0}
                 </Badge>
               </div>
-              <div className="mt-2 text-xs text-slate-600">
+              <div className="mt-2 text-xs text-slate-300">
                 processed {run.duplicate_stats?.processed_rows || 0} rows, inferred IDs {run.duplicate_stats?.inferred_id_rows || 0}
               </div>
               {!!(run.errors && run.errors.length) && (
-                <pre className="mt-2 text-xs bg-slate-50 rounded p-2 overflow-x-auto">{pretty(run.errors)}</pre>
+                <pre className="mt-2 text-xs bg-civant-navy/80 border border-civant-border rounded p-2 overflow-x-auto text-slate-200">{pretty(run.errors)}</pre>
               )}
             </div>
           ))}
         </CardContent>
       </Card>
 
-      <Card className="border-0 shadow-sm">
+      <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
         <CardHeader><CardTitle>Reconciliation Review Queue</CardTitle></CardHeader>
         <CardContent className="space-y-3">
-          {queue.length === 0 && <p className="text-slate-500">Queue is empty.</p>}
+          {queue.length === 0 && <p className="text-slate-400">Queue is empty.</p>}
           {queue.map((item) => (
-            <div key={item.id} className="rounded-lg border border-slate-200 p-3">
+            <div key={item.id} className="rounded-lg border border-civant-border bg-civant-navy/65 p-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium">{item.id}</p>
-                  <p className="text-xs text-slate-500">Status: {item.status}</p>
+                  <p className="text-xs text-slate-400">Status: {item.status}</p>
                 </div>
                 <div className="flex gap-2">
                   <Button
                     size="sm"
-                    className="bg-emerald-600 hover:bg-emerald-700"
+                    className="bg-civant-teal text-slate-950 hover:bg-civant-teal/90"
                     disabled={busyQueueId === item.id}
                     onClick={() => handleReview(item, 'approve')}
                   >
@@ -211,32 +211,32 @@ export default function PipelineAdmin() {
                   </Button>
                 </div>
               </div>
-              <pre className="mt-2 text-xs bg-slate-50 rounded p-2 overflow-x-auto">{pretty(item.candidate_json)}</pre>
-              <pre className="mt-2 text-xs bg-slate-50 rounded p-2 overflow-x-auto">{pretty(item.agent_output)}</pre>
+              <pre className="mt-2 text-xs bg-civant-navy/80 border border-civant-border rounded p-2 overflow-x-auto text-slate-200">{pretty(item.candidate_json)}</pre>
+              <pre className="mt-2 text-xs bg-civant-navy/80 border border-civant-border rounded p-2 overflow-x-auto text-slate-200">{pretty(item.agent_output)}</pre>
             </div>
           ))}
         </CardContent>
       </Card>
 
-      <Card className="border-0 shadow-sm">
+      <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
         <CardHeader><CardTitle>Predictions</CardTitle></CardHeader>
         <CardContent className="space-y-3">
-          {predictions.length === 0 && <p className="text-slate-500">No predictions yet.</p>}
+          {predictions.length === 0 && <p className="text-slate-400">No predictions yet.</p>}
           {predictions.map((prediction) => (
-            <div key={prediction.id} className="rounded-lg border border-slate-200 p-3 flex items-center justify-between">
+            <div key={prediction.id} className="rounded-lg border border-civant-border bg-civant-navy/65 p-3 flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium">{prediction.category} / {prediction.cpv_family}</p>
-                <p className="text-xs text-slate-500">Probability {Math.round((prediction.probability || 0) * 100)}%</p>
+                <p className="text-xs text-slate-400">Probability {Math.round((prediction.probability || 0) * 100)}%</p>
               </div>
               <Button size="sm" variant="outline" onClick={() => openPrediction(prediction.id)}>View breakdown</Button>
             </div>
           ))}
 
           {selectedPrediction && (
-            <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
-              <p className="font-medium text-indigo-900">Selected prediction: {selectedPrediction.id}</p>
-              <pre className="mt-2 text-xs bg-white rounded p-2 overflow-x-auto">{pretty(selectedPrediction.confidence_breakdown)}</pre>
-              <pre className="mt-2 text-xs bg-white rounded p-2 overflow-x-auto">{pretty(selectedPrediction.evidence)}</pre>
+            <div className="rounded-lg border border-civant-teal/40 bg-civant-teal/10 p-3">
+              <p className="font-medium text-civant-teal">Selected prediction: {selectedPrediction.id}</p>
+              <pre className="mt-2 text-xs bg-civant-navy/80 border border-civant-border rounded p-2 overflow-x-auto text-slate-200">{pretty(selectedPrediction.confidence_breakdown)}</pre>
+              <pre className="mt-2 text-xs bg-civant-navy/80 border border-civant-border rounded p-2 overflow-x-auto text-slate-200">{pretty(selectedPrediction.evidence)}</pre>
             </div>
           )}
         </CardContent>
