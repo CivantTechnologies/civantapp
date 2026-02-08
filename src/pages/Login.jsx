@@ -68,9 +68,8 @@ export default function Login() {
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <div className="flex items-center gap-3 mb-1">
-            <img src="/favicon.svg" alt="Civant logo" className="h-9 w-9 rounded-lg" />
-            <span className="text-lg font-semibold text-card-foreground">Civant</span>
+          <div className="mb-2 flex justify-center">
+            <img src="/civant-logo.jpg" alt="Civant logo" className="h-auto w-52 rounded-md border border-border/60" />
           </div>
           <CardTitle>Log in</CardTitle>
         </CardHeader>
