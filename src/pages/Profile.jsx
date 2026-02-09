@@ -1,26 +1,103 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { UserRound, Save, Loader2, Upload } from 'lucide-react';
+import { UserRound, Save, Loader2, Upload, X } from 'lucide-react';
 import { civant } from '@/api/civantClient';
 import { useAuth } from '@/lib/auth';
-import { Page, PageHeader, PageTitle, PageDescription, PageBody, Card, CardHeader, CardTitle, CardContent, Button, Input, Badge } from '@/components/ui';
+import {
+  Page,
+  PageHeader,
+  PageTitle,
+  PageDescription,
+  PageBody,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+  Button,
+  Input,
+  Badge
+} from '@/components/ui';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
+const PROFILE_DRAFT_VERSION = 1;
+const PROFILE_DRAFT_PREFIX = 'civant_profile_draft_v1';
+const MAX_AVATAR_SIZE_BYTES = 1024 * 1024;
+
+const phoneCodeOptions = [
+  { code: '+353', label: 'Ireland (+353)' },
+  { code: '+33', label: 'France (+33)' },
+  { code: '+34', label: 'Spain (+34)' },
+  { code: '+44', label: 'United Kingdom (+44)' },
+  { code: '+49', label: 'Germany (+49)' },
+  { code: '+39', label: 'Italy (+39)' },
+  { code: '+31', label: 'Netherlands (+31)' },
+  { code: '+32', label: 'Belgium (+32)' },
+  { code: '+351', label: 'Portugal (+351)' },
+  { code: '+45', label: 'Denmark (+45)' },
+  { code: '+46', label: 'Sweden (+46)' },
+  { code: '+47', label: 'Norway (+47)' },
+  { code: '+1', label: 'US/Canada (+1)' }
+];
+
+const countryOptions = [
+  'Ireland',
+  'France',
+  'Spain',
+  'United Kingdom',
+  'Germany',
+  'Italy',
+  'Portugal',
+  'Belgium',
+  'Netherlands',
+  'Luxembourg',
+  'Denmark',
+  'Sweden',
+  'Norway',
+  'Finland',
+  'Austria',
+  'Poland',
+  'Czech Republic',
+  'Romania',
+  'United States',
+  'Other'
+];
 
 const tenderTypeOptions = [
   'IT & Software',
+  'AI, Data & Analytics',
+  'Cybersecurity',
   'Construction & Infrastructure',
   'Healthcare & Medical',
   'Transport & Logistics',
   'Energy & Utilities',
   'Consulting & Professional Services',
   'Education & Training',
-  'Facilities & Maintenance'
+  'Facilities & Maintenance',
+  'Telecoms',
+  'Food & Catering',
+  'Environmental Services',
+  'Security Services',
+  'Legal Services',
+  'Manufacturing & Industrial Equipment'
 ];
 
 const noticeTypeOptions = ['Tender', 'Award', 'Corrigendum', 'PIN', 'Contract notice'];
 const contractTypeOptions = ['Supplies', 'Services', 'Works', 'Framework', 'Concession'];
-const regionOptions = ['Ireland', 'France', 'EU-wide', 'Nordics', 'DACH', 'Benelux', 'UK'];
+const regionOptions = [
+  'Ireland',
+  'France',
+  'Spain',
+  'EU-wide',
+  'United Kingdom',
+  'Nordics',
+  'DACH',
+  'Benelux',
+  'Iberia',
+  'Italy',
+  'Central Europe'
+];
 
 function ensureArray(value) {
   if (Array.isArray(value)) return value.filter(Boolean).map((v) => String(v));
@@ -31,12 +108,92 @@ function ensureArray(value) {
     .filter(Boolean);
 }
 
+function getProfileDraftKey(email) {
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  if (!cleanEmail) return '';
+  return `${PROFILE_DRAFT_PREFIX}_${cleanEmail}`;
+}
+
+function readProfileDraft(storageKey) {
+  if (typeof window === 'undefined' || !window.localStorage || !storageKey) return null;
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.version !== PROFILE_DRAFT_VERSION || !parsed.form) return null;
+    return parsed.form;
+  } catch {
+    return null;
+  }
+}
+
+function writeProfileDraft(storageKey, form) {
+  if (typeof window === 'undefined' || !window.localStorage || !storageKey) return;
+  try {
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        version: PROFILE_DRAFT_VERSION,
+        updated_at: new Date().toISOString(),
+        form
+      })
+    );
+  } catch {
+    // ignore localStorage quota errors to avoid blocking profile edits
+  }
+}
+
+function clearProfileDraft(storageKey) {
+  if (typeof window === 'undefined' || !window.localStorage || !storageKey) return;
+  try {
+    window.localStorage.removeItem(storageKey);
+  } catch {
+    // no-op
+  }
+}
+
+function splitPhoneNumber(value) {
+  const source = String(value || '').trim();
+  if (!source) {
+    return {
+      phone_country_code: '+353',
+      phone_number_local: ''
+    };
+  }
+  const matchedCode = phoneCodeOptions
+    .map((option) => option.code)
+    .sort((a, b) => b.length - a.length)
+    .find((code) => source.startsWith(code));
+
+  if (!matchedCode) {
+    return {
+      phone_country_code: '+353',
+      phone_number_local: source
+    };
+  }
+
+  return {
+    phone_country_code: matchedCode,
+    phone_number_local: source.slice(matchedCode.length).trim().replace(/^\s+/, '')
+  };
+}
+
+function composePhoneNumber(code, number) {
+  const cleanCode = String(code || '').trim();
+  const cleanNumber = String(number || '').trim();
+  if (!cleanCode && !cleanNumber) return '';
+  if (!cleanCode) return cleanNumber;
+  if (!cleanNumber) return cleanCode;
+  return `${cleanCode} ${cleanNumber}`;
+}
+
 const defaultForm = {
   first_name: '',
   last_name: '',
   birth_date: '',
   email: '',
-  phone_number: '',
+  phone_country_code: '+353',
+  phone_number_local: '',
   country: '',
   company: '',
   industry: '',
@@ -47,7 +204,6 @@ const defaultForm = {
   cpv_interest_codes: '',
   preferred_notice_types: [],
   preferred_contract_types: [],
-  budget_range: '',
   notification_frequency: 'daily',
   language: 'en',
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Dublin',
@@ -57,14 +213,41 @@ const defaultForm = {
   bio: ''
 };
 
+function normalizeForm(value) {
+  const input = value || {};
+  return {
+    ...defaultForm,
+    ...input,
+    tender_interest_types: ensureArray(input.tender_interest_types),
+    procurement_regions: ensureArray(input.procurement_regions),
+    preferred_notice_types: ensureArray(input.preferred_notice_types),
+    preferred_contract_types: ensureArray(input.preferred_contract_types),
+    cpv_interest_codes: Array.isArray(input.cpv_interest_codes)
+      ? ensureArray(input.cpv_interest_codes).join(', ')
+      : String(input.cpv_interest_codes || '')
+  };
+}
+
+function addUniqueOption(list, value) {
+  const current = ensureArray(list);
+  if (current.includes(value)) return current;
+  return [...current, value];
+}
+
+function removeOption(list, value) {
+  return ensureArray(list).filter((item) => item !== value);
+}
+
 export default function Profile() {
   const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [saveNotice, setSaveNotice] = useState('');
+  const [avatarError, setAvatarError] = useState('');
   const [profileId, setProfileId] = useState('');
   const [userId, setUserId] = useState('');
+  const [draftStorageKey, setDraftStorageKey] = useState('');
   const [form, setForm] = useState(defaultForm);
 
   const displayName = useMemo(() => [form.first_name, form.last_name].filter(Boolean).join(' ').trim(), [form.first_name, form.last_name]);
@@ -75,14 +258,18 @@ export default function Profile() {
     const load = async () => {
       setLoading(true);
       setSaveError('');
+      setSaveNotice('');
+      setAvatarError('');
 
       try {
         const me = await civant.auth.me();
         const effectiveUserId = String(me?.userId || me?.user_id || '').trim();
         const effectiveEmail = String(currentUser?.email || me?.email || '').trim().toLowerCase();
+        const nextDraftStorageKey = getProfileDraftKey(effectiveEmail);
         if (!mounted) return;
 
         setUserId(effectiveUserId);
+        setDraftStorageKey(nextDraftStorageKey);
 
         const query = effectiveUserId ? { user_id: effectiveUserId } : { email: effectiveEmail };
         const rows = await civant.entities.UserProfile.filter(query, '-created_at', 1);
@@ -90,40 +277,46 @@ export default function Profile() {
 
         if (!mounted) return;
 
-        if (!row) {
-          setForm((prev) => ({
-            ...prev,
-            email: effectiveEmail
-          }));
-          setProfileId('');
-        } else {
-          setProfileId(String(row.id || ''));
-          setForm({
-            first_name: row.first_name || '',
-            last_name: row.last_name || '',
-            birth_date: row.birth_date || '',
-            email: row.email || effectiveEmail,
-            phone_number: row.phone_number || '',
-            country: row.country || '',
-            company: row.company || '',
-            industry: row.industry || '',
-            job_title: row.job_title || '',
-            role_focus: row.role_focus || '',
-            tender_interest_types: ensureArray(row.tender_interest_types),
-            procurement_regions: ensureArray(row.procurement_regions),
-            cpv_interest_codes: ensureArray(row.cpv_interest_codes).join(', '),
-            preferred_notice_types: ensureArray(row.preferred_notice_types),
-            preferred_contract_types: ensureArray(row.preferred_contract_types),
-            budget_range: row.budget_range || '',
-            notification_frequency: row.notification_frequency || 'daily',
-            language: row.language || 'en',
-            timezone: row.timezone || defaultForm.timezone,
-            avatar_url: row.avatar_url || '',
-            linkedin_url: row.linkedin_url || '',
-            website_url: row.website_url || '',
-            bio: row.bio || ''
+        const existingPhone = splitPhoneNumber(row?.phone_number || '');
+        const baseForm = normalizeForm({
+          first_name: row?.first_name || '',
+          last_name: row?.last_name || '',
+          birth_date: row?.birth_date || '',
+          email: row?.email || effectiveEmail,
+          phone_country_code: existingPhone.phone_country_code,
+          phone_number_local: existingPhone.phone_number_local,
+          country: row?.country || '',
+          company: row?.company || '',
+          industry: row?.industry || '',
+          job_title: row?.job_title || '',
+          role_focus: row?.role_focus || '',
+          tender_interest_types: ensureArray(row?.tender_interest_types),
+          procurement_regions: ensureArray(row?.procurement_regions),
+          cpv_interest_codes: ensureArray(row?.cpv_interest_codes).join(', '),
+          preferred_notice_types: ensureArray(row?.preferred_notice_types),
+          preferred_contract_types: ensureArray(row?.preferred_contract_types),
+          notification_frequency: row?.notification_frequency || 'daily',
+          language: row?.language || 'en',
+          timezone: row?.timezone || defaultForm.timezone,
+          avatar_url: row?.avatar_url || '',
+          linkedin_url: row?.linkedin_url || '',
+          website_url: row?.website_url || '',
+          bio: row?.bio || ''
+        });
+
+        const draft = readProfileDraft(nextDraftStorageKey);
+        if (draft) {
+          const restored = normalizeForm({
+            ...baseForm,
+            ...draft,
+            email: String(draft.email || baseForm.email || effectiveEmail).trim().toLowerCase()
           });
+          setForm(restored);
+          setSaveNotice('Unsaved draft restored.');
+        } else {
+          setForm(baseForm);
         }
+        setProfileId(String(row?.id || ''));
       } catch (error) {
         if (!mounted) return;
         setSaveError(error?.message || 'Failed to load your profile.');
@@ -138,6 +331,16 @@ export default function Profile() {
     };
   }, [currentUser?.email]);
 
+  useEffect(() => {
+    if (loading || !draftStorageKey) return;
+    const timeout = window.setTimeout(() => {
+      writeProfileDraft(draftStorageKey, form);
+    }, 150);
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [draftStorageKey, form, loading]);
+
   const setField = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
 
   const toggleOption = (key, value) => {
@@ -146,6 +349,47 @@ export default function Profile() {
       const next = list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
       return { ...prev, [key]: next };
     });
+  };
+
+  const addOption = (key, value) => {
+    setForm((prev) => ({
+      ...prev,
+      [key]: addUniqueOption(prev[key], value)
+    }));
+  };
+
+  const removeSelectedOption = (key, value) => {
+    setForm((prev) => ({
+      ...prev,
+      [key]: removeOption(prev[key], value)
+    }));
+  };
+
+  const onAvatarFileChange = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setAvatarError('');
+    if (!file.type.startsWith('image/')) {
+      setAvatarError('Please upload an image file (PNG, JPG, WEBP).');
+      event.target.value = '';
+      return;
+    }
+    if (file.size > MAX_AVATAR_SIZE_BYTES) {
+      setAvatarError('Profile picture must be 1 MB or smaller.');
+      event.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setField('avatar_url', String(reader.result || ''));
+    };
+    reader.onerror = () => {
+      setAvatarError('Could not read this image. Try another file.');
+    };
+    reader.readAsDataURL(file);
+    event.target.value = '';
   };
 
   const onSave = async (event) => {
@@ -161,7 +405,7 @@ export default function Profile() {
         first_name: form.first_name || null,
         last_name: form.last_name || null,
         birth_date: form.birth_date || null,
-        phone_number: form.phone_number || null,
+        phone_number: composePhoneNumber(form.phone_country_code, form.phone_number_local) || null,
         country: form.country || null,
         company: form.company || null,
         industry: form.industry || null,
@@ -172,7 +416,7 @@ export default function Profile() {
         cpv_interest_codes: ensureArray(form.cpv_interest_codes),
         preferred_notice_types: ensureArray(form.preferred_notice_types),
         preferred_contract_types: ensureArray(form.preferred_contract_types),
-        budget_range: form.budget_range || null,
+        budget_range: null,
         notification_frequency: form.notification_frequency || null,
         language: form.language || null,
         timezone: form.timezone || null,
@@ -189,6 +433,8 @@ export default function Profile() {
         const created = await civant.entities.UserProfile.create(payload);
         setProfileId(String(created?.id || ''));
       }
+
+      clearProfileDraft(draftStorageKey || getProfileDraftKey(payload.email));
       setSaveNotice('Profile saved.');
     } catch (error) {
       setSaveError(error?.message || 'Failed to save profile.');
@@ -222,8 +468,8 @@ export default function Profile() {
               <CardTitle>Identity</CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
-              <div className="flex items-center gap-4">
-                <div className="h-16 w-16 rounded-full border border-border bg-muted/50 overflow-hidden flex items-center justify-center">
+              <div className="flex items-start gap-4">
+                <div className="h-16 w-16 rounded-full border border-border bg-muted/50 overflow-hidden flex items-center justify-center shrink-0">
                   {form.avatar_url ? (
                     <img src={form.avatar_url} alt="Profile avatar" className="h-full w-full object-cover" />
                   ) : (
@@ -231,19 +477,35 @@ export default function Profile() {
                   )}
                 </div>
                 <div className="flex-1">
-                  <Label htmlFor="avatar_url">Profile Picture URL</Label>
-                  <div className="mt-1 flex gap-2">
-                    <Input
-                      id="avatar_url"
-                      value={form.avatar_url}
-                      onChange={(event) => setField('avatar_url', event.target.value)}
-                      placeholder="https://..."
+                  <Label htmlFor="avatar_upload">Profile Picture</Label>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    <input
+                      id="avatar_upload"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      className="hidden"
+                      onChange={onAvatarFileChange}
                     />
-                    <Button type="button" variant="secondary">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        const element = document.getElementById('avatar_upload');
+                        element?.click();
+                      }}
+                    >
                       <Upload className="h-4 w-4 mr-1" />
-                      Link
+                      Upload image
                     </Button>
+                    {form.avatar_url && (
+                      <Button type="button" variant="ghost" onClick={() => setField('avatar_url', '')}>
+                        <X className="h-4 w-4 mr-1" />
+                        Remove
+                      </Button>
+                    )}
                   </div>
+                  <p className="mt-1 text-xs text-muted-foreground">Max file size: 1 MB.</p>
+                  {avatarError && <p className="mt-1 text-xs text-red-400">{avatarError}</p>}
                 </div>
               </div>
 
@@ -265,12 +527,41 @@ export default function Profile() {
                   <Input id="email" type="email" value={form.email} onChange={(e) => setField('email', e.target.value)} />
                 </div>
                 <div>
-                  <Label htmlFor="phone_number">Phone Number</Label>
-                  <Input id="phone_number" value={form.phone_number} onChange={(e) => setField('phone_number', e.target.value)} />
+                  <Label>Phone Number</Label>
+                  <div className="mt-1 grid grid-cols-[220px_1fr] gap-2">
+                    <Select value={form.phone_country_code} onValueChange={(value) => setField('phone_country_code', value)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Code" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {phoneCodeOptions.map((option) => (
+                          <SelectItem key={option.code} value={option.code}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      value={form.phone_number_local}
+                      onChange={(e) => setField('phone_number_local', e.target.value)}
+                      placeholder="871234567"
+                    />
+                  </div>
                 </div>
                 <div>
-                  <Label htmlFor="country">Country</Label>
-                  <Input id="country" value={form.country} onChange={(e) => setField('country', e.target.value)} placeholder="e.g. Ireland" />
+                  <Label>Country</Label>
+                  <Select value={form.country || undefined} onValueChange={(value) => setField('country', value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select country" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {countryOptions.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             </CardContent>
@@ -296,10 +587,6 @@ export default function Profile() {
               <div>
                 <Label htmlFor="role_focus">Role Focus</Label>
                 <Input id="role_focus" value={form.role_focus} onChange={(e) => setField('role_focus', e.target.value)} placeholder="e.g. Procurement manager" />
-              </div>
-              <div>
-                <Label htmlFor="budget_range">Typical Budget Range</Label>
-                <Input id="budget_range" value={form.budget_range} onChange={(e) => setField('budget_range', e.target.value)} placeholder="e.g. €100k - €2M" />
               </div>
               <div>
                 <Label htmlFor="notification_frequency">Notification Frequency</Label>
@@ -331,36 +618,93 @@ export default function Profile() {
             <CardContent className="space-y-5">
               <div>
                 <Label>Type of Tenders Interested In</Label>
-                <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {tenderTypeOptions.map((option) => (
-                    <label key={option} className="flex items-center gap-2 rounded-md border border-border px-3 py-2 cursor-pointer">
-                      <Checkbox
-                        checked={form.tender_interest_types.includes(option)}
-                        onCheckedChange={() => toggleOption('tender_interest_types', option)}
-                      />
-                      <span className="text-sm text-card-foreground">{option}</span>
-                    </label>
-                  ))}
+                <div className="mt-2 grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Available categories</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {tenderTypeOptions.map((option) => {
+                        const selected = form.tender_interest_types.includes(option);
+                        return (
+                          <button
+                            key={option}
+                            type="button"
+                            disabled={selected}
+                            onClick={() => addOption('tender_interest_types', option)}
+                            className={`rounded-full border px-3 py-1.5 text-xs transition ${
+                              selected
+                                ? 'border-primary/40 bg-primary/20 text-primary cursor-not-allowed'
+                                : 'border-border text-muted-foreground hover:border-primary/50 hover:text-primary'
+                            }`}
+                          >
+                            {selected ? 'Selected' : 'Add'} {option}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Selected categories</p>
+                    {form.tender_interest_types.length ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {form.tender_interest_types.map((option) => (
+                          <Badge key={option} variant="outline" className="gap-1 py-1">
+                            {option}
+                            <button type="button" onClick={() => removeSelectedOption('tender_interest_types', option)} aria-label={`Remove ${option}`}>
+                              <X className="h-3 w-3" />
+                            </button>
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm text-muted-foreground">Select categories from the left panel.</p>
+                    )}
+                  </div>
                 </div>
               </div>
 
               <div>
                 <Label>Preferred Procurement Regions</Label>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {regionOptions.map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      onClick={() => toggleOption('procurement_regions', option)}
-                      className={`rounded-full border px-3 py-1 text-sm ${
-                        form.procurement_regions.includes(option)
-                          ? 'border-primary/50 bg-primary/20 text-primary'
-                          : 'border-border text-muted-foreground'
-                      }`}
-                    >
-                      {option}
-                    </button>
-                  ))}
+                <div className="mt-2 grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Available regions</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {regionOptions.map((option) => {
+                        const selected = form.procurement_regions.includes(option);
+                        return (
+                          <button
+                            key={option}
+                            type="button"
+                            disabled={selected}
+                            onClick={() => addOption('procurement_regions', option)}
+                            className={`rounded-full border px-3 py-1.5 text-xs transition ${
+                              selected
+                                ? 'border-primary/40 bg-primary/20 text-primary cursor-not-allowed'
+                                : 'border-border text-muted-foreground hover:border-primary/50 hover:text-primary'
+                            }`}
+                          >
+                            {selected ? 'Selected' : 'Add'} {option}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Selected regions</p>
+                    {form.procurement_regions.length ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {form.procurement_regions.map((option) => (
+                          <Badge key={option} variant="outline" className="gap-1 py-1">
+                            {option}
+                            <button type="button" onClick={() => removeSelectedOption('procurement_regions', option)} aria-label={`Remove ${option}`}>
+                              <X className="h-3 w-3" />
+                            </button>
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm text-muted-foreground">Select regions from the left panel.</p>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -410,17 +754,6 @@ export default function Profile() {
                 <Label htmlFor="bio">Additional Notes</Label>
                 <Textarea id="bio" value={form.bio} onChange={(e) => setField('bio', e.target.value)} rows={4} />
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Recommended Extra Fields</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-wrap gap-2">
-              {['Bid role', 'Preferred deal size', 'Target regions', 'CPV watchlist', 'Notification cadence', 'Language/timezone'].map((item) => (
-                <Badge key={item} variant="outline">{item}</Badge>
-              ))}
             </CardContent>
           </Card>
 
