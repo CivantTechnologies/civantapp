@@ -56,3 +56,7 @@ Use this quick checklist before escalating production issues.
 6. In DevTools Network, filter for failed requests and inspect the exact URL:
    - Treat first-party failures (`https://civantapp.vercel.app/...`) as app issues
    - Ignore third-party extension URLs when validating app health
+
+## Ingestion Runbooks
+
+- Spain CODICE/PLACSP: `docs/placsp-ingestion.md`

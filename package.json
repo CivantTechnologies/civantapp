@@ -14,6 +14,11 @@
     "typecheck:deno": "npx --yes deno check functions/*.ts functions/pipeline/*.ts",
     "audit:full": "npm run lint && npm run typecheck && npm run typecheck:api && npm run typecheck:deno && npm test && npm run build && npm audit",
     "import:boamp": "node scripts/import-boamp-fr.mjs",
+    "import:etenders": "node scripts/import-etenders-ireland.mjs",
+    "import:placsp": "node scripts/import-placsp-es.mjs",
+    "import:placsp:backfill": "node scripts/import-placsp-es.mjs --mode backfill",
+    "import:placsp:incremental": "node scripts/import-placsp-es.mjs --mode incremental",
+    "import:placsp:check": "node scripts/import-placsp-es.mjs --mode check-current",
     "preview": "vite preview"
   },
   "dependencies": {
