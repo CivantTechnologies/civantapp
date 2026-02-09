@@ -4,6 +4,9 @@ import fs from 'node:fs';
 import readline from 'node:readline';
 import crypto from 'node:crypto';
 
+const REQUEST_TIMEOUT_MS = 30000;
+const MAX_HTTP_RETRIES = 4;
+
 function parseArgs(argv) {
   const args = {};
   for (let i = 2; i < argv.length; i += 1) {
@@ -19,6 +22,15 @@ function parseArgs(argv) {
     i += 1;
   }
   return args;
+}
+
+function writeJsonFile(path, value) {
+  if (!path) return;
+  try {
+    fs.writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  } catch {
+    // best effort status reporting
+  }
 }
 
 function makeRunId(prefix = 'boamp_csv') {
@@ -188,12 +200,32 @@ function mapRow(record) {
 async function postRows({ baseUrl, appId, tenantId, table, rows, includeTenantHeader }) {
   const headers = { 'content-type': 'application/json' };
   if (includeTenantHeader && tenantId) headers['x-tenant-id'] = tenantId;
+  let response = null;
+  let lastError = null;
 
-  const response = await fetch(`${baseUrl}/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(table)}`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(rows)
-  });
+  for (let attempt = 1; attempt <= MAX_HTTP_RETRIES; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      response = await fetch(`${baseUrl}/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(table)}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(rows),
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+      break;
+    } catch (error) {
+      clearTimeout(timer);
+      lastError = error;
+      if (attempt < MAX_HTTP_RETRIES) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+        continue;
+      }
+      throw error;
+    }
+  }
+  if (!response) throw lastError || new Error('Request failed');
 
   const text = await response.text();
   const payload = text
@@ -214,12 +246,31 @@ async function postRows({ baseUrl, appId, tenantId, table, rows, includeTenantHe
 async function putEntityById({ baseUrl, appId, tenantId, table, id, payload, includeTenantHeader }) {
   const headers = { 'content-type': 'application/json' };
   if (includeTenantHeader && tenantId) headers['x-tenant-id'] = tenantId;
-
-  const response = await fetch(`${baseUrl}/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(table)}/${encodeURIComponent(id)}`, {
-    method: 'PUT',
-    headers,
-    body: JSON.stringify(payload)
-  });
+  let response = null;
+  let lastError = null;
+  for (let attempt = 1; attempt <= MAX_HTTP_RETRIES; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      response = await fetch(`${baseUrl}/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(table)}/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+      break;
+    } catch (error) {
+      clearTimeout(timer);
+      lastError = error;
+      if (attempt < MAX_HTTP_RETRIES) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+        continue;
+      }
+      throw error;
+    }
+  }
+  if (!response) throw lastError || new Error('Request failed');
 
   const text = await response.text();
   const parsed = text
@@ -234,6 +285,11 @@ async function putEntityById({ baseUrl, appId, tenantId, table, id, payload, inc
 function isDuplicateError(message) {
   const text = String(message || '').toLowerCase();
   return text.includes('duplicate key') || text.includes('already exists') || text.includes('conflict');
+}
+
+function isIngestionRunDuplicateError(message) {
+  const text = String(message || '').toLowerCase();
+  return isDuplicateError(text) && text.includes('ingestion_runs');
 }
 
 async function insertBatchWithFallback({ baseUrl, appId, tenantId, table, rows, metrics, includeTenantHeader }) {
@@ -280,6 +336,7 @@ async function main() {
   const startRecord = Math.max(1, Number(args['start-record'] || 1));
   const rawOnly = args['raw-only'] === 'true';
   const dryRun = args['dry-run'] === 'true';
+  const statusFile = String(args['status-file'] || '/tmp/boamp-import-status.json');
 
   if (!fs.existsSync(file)) {
     console.error(`File not found: ${file}`);
@@ -306,27 +363,105 @@ async function main() {
   const rawBatch = [];
   const canonicalBatch = [];
   const currentBatch = [];
+  let lastProgressAt = Date.now();
+  let flushCount = 0;
+
+  const emitStatus = (phase = 'running') => {
+    writeJsonFile(statusFile, {
+      phase,
+      run_id: runId,
+      file,
+      start_record: startRecord,
+      record_number: recordNumber,
+      line_number: lineNumber,
+      processed,
+      skipped,
+      skipped_before_start: skippedBeforeStart,
+      deduped_in_file: dedupedInFile,
+      raw_inserted: rawMetrics.inserted,
+      canonical_inserted: canonicalMetrics.inserted,
+      current_inserted: currentMetrics.inserted,
+      raw_failed: rawMetrics.failed,
+      canonical_failed: canonicalMetrics.failed,
+      current_failed: currentMetrics.failed,
+      updated_at: new Date().toISOString()
+    });
+  };
+
+  const updateRunProgress = async (status = 'running') => {
+    if (dryRun) return;
+    try {
+      await putEntityById({
+        baseUrl,
+        appId,
+        tenantId,
+        table: 'ingestion_runs',
+        id: runId,
+        payload: {
+          status,
+          metrics: {
+            processed_rows: processed,
+            skipped_missing_required: skipped,
+            skipped_before_start: skippedBeforeStart,
+            deduped_in_file: dedupedInFile,
+            raw_rows: rawMetrics.inserted,
+            canonical_inserted: canonicalMetrics.inserted,
+            current_inserted: currentMetrics.inserted,
+            raw_failed: rawMetrics.failed,
+            canonical_failed: canonicalMetrics.failed,
+            current_failed: currentMetrics.failed
+          },
+          errors: [...rawMetrics.errors, ...canonicalMetrics.errors, ...currentMetrics.errors].slice(0, 25),
+          cursor: `record:${recordNumber}:line:${lineNumber}`,
+          finished_at: null
+        },
+        includeTenantHeader
+      });
+    } catch {
+      // best effort progress update
+    }
+  };
 
   if (!dryRun) {
-    await postRows({
-      baseUrl,
-      appId,
-      tenantId,
-      table: 'ingestion_runs',
-      rows: [{
-        run_id: runId,
-        source,
-        cursor: sourceCursor,
-        status: 'running',
-        metrics: {},
-        errors: [],
-        started_at: startedAt,
-        finished_at: null,
-        tenant_id: tenantId
-      }],
-      includeTenantHeader
-    });
+    try {
+      await postRows({
+        baseUrl,
+        appId,
+        tenantId,
+        table: 'ingestion_runs',
+        rows: [{
+          run_id: runId,
+          source,
+          cursor: sourceCursor,
+          status: 'running',
+          metrics: {},
+          errors: [],
+          started_at: startedAt,
+          finished_at: null,
+          tenant_id: tenantId
+        }],
+        includeTenantHeader
+      });
+    } catch (error) {
+      if (!isIngestionRunDuplicateError(error?.message)) {
+        throw error;
+      }
+      await putEntityById({
+        baseUrl,
+        appId,
+        tenantId,
+        table: 'ingestion_runs',
+        id: runId,
+        payload: {
+          status: 'running',
+          cursor: sourceCursor,
+          finished_at: null
+        },
+        includeTenantHeader
+      });
+    }
   }
+  emitStatus('started');
 
   const stream = fs.createReadStream(file, { encoding: 'utf8' });
   const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
@@ -352,6 +487,10 @@ async function main() {
     } else {
       canonicalBatch.length = 0;
       currentBatch.length = 0;
+    }
+    flushCount += 1;
+    if (flushCount % 10 === 0) {
+      await updateRunProgress('running');
     }
   };
 
@@ -419,15 +558,23 @@ async function main() {
 
     if (rawBatch.length >= batchSize || canonicalBatch.length >= batchSize) {
       await flush();
+      emitStatus('running');
     }
-    if (processed % 2000 === 0 && processed > 0) {
+    if (processed % 500 === 0 && processed > 0) {
       console.log(`Processed ${processed} rows (record ${recordNumber}, line ${lineNumber})`);
+      lastProgressAt = Date.now();
+      emitStatus('running');
+    } else if (Date.now() - lastProgressAt > 60000) {
+      console.log(`Heartbeat: processed ${processed} rows (record ${recordNumber}, line ${lineNumber})`);
+      lastProgressAt = Date.now();
+      emitStatus('running');
     }
     if (limit && processed >= limit) break;
   }
 
   if (pendingRecord) malformedRecords += 1;
   await flush();
+  emitStatus('finalizing');
 
   const runErrors = [...rawMetrics.errors, ...canonicalMetrics.errors, ...currentMetrics.errors].slice(0, 50);
     const metrics = {
@@ -475,9 +622,17 @@ async function main() {
     TendersCurrent: currentMetrics,
     errors: runErrors
   }, null, 2));
+  emitStatus('completed');
 }
 
 main().catch((error) => {
+  const args = parseArgs(process.argv);
+  const statusFile = String(args['status-file'] || '/tmp/boamp-import-status.json');
+  writeJsonFile(statusFile, {
+    phase: 'failed',
+    error: error instanceof Error ? error.message : String(error),
+    updated_at: new Date().toISOString()
+  });
   console.error(error);
   process.exit(1);
 });
