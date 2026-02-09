@@ -20,10 +20,15 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Slider } from '@/components/ui/slider';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const PROFILE_DRAFT_VERSION = 1;
 const PROFILE_DRAFT_PREFIX = 'civant_profile_draft_v1';
-const MAX_AVATAR_SIZE_BYTES = 1024 * 1024;
+const MAX_AVATAR_SIZE_BYTES = 10 * 1024 * 1024;
+const AVATAR_OUTPUT_SIZE = 512;
+const AVATAR_ZOOM_MIN = 1;
+const AVATAR_ZOOM_MAX = 3;
 
 const phoneCodeOptions = [
   { code: '+353', label: 'Ireland (+353)' },
@@ -238,6 +243,56 @@ function removeOption(list, value) {
   return ensureArray(list).filter((item) => item !== value);
 }
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function loadImageFromDataUrl(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Could not load this image.'));
+    image.src = dataUrl;
+  });
+}
+
+function renderCroppedAvatar(dataUrl, zoom, offsetX, offsetY) {
+  return loadImageFromDataUrl(dataUrl).then((image) => {
+    const sourceWidth = image.naturalWidth || image.width;
+    const sourceHeight = image.naturalHeight || image.height;
+    const sourceCropSize = Math.min(sourceWidth, sourceHeight) / clamp(zoom, AVATAR_ZOOM_MIN, AVATAR_ZOOM_MAX);
+
+    const maxOffsetX = (sourceWidth - sourceCropSize) / 2;
+    const maxOffsetY = (sourceHeight - sourceCropSize) / 2;
+
+    const centerX = sourceWidth / 2 + clamp(offsetX, -1, 1) * maxOffsetX;
+    const centerY = sourceHeight / 2 + clamp(offsetY, -1, 1) * maxOffsetY;
+
+    const sourceX = clamp(centerX - sourceCropSize / 2, 0, sourceWidth - sourceCropSize);
+    const sourceY = clamp(centerY - sourceCropSize / 2, 0, sourceHeight - sourceCropSize);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = AVATAR_OUTPUT_SIZE;
+    canvas.height = AVATAR_OUTPUT_SIZE;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Could not prepare avatar crop canvas.');
+
+    context.drawImage(
+      image,
+      sourceX,
+      sourceY,
+      sourceCropSize,
+      sourceCropSize,
+      0,
+      0,
+      AVATAR_OUTPUT_SIZE,
+      AVATAR_OUTPUT_SIZE
+    );
+
+    return canvas.toDataURL('image/jpeg', 0.9);
+  });
+}
+
 export default function Profile() {
   const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -245,6 +300,12 @@ export default function Profile() {
   const [saveError, setSaveError] = useState('');
   const [saveNotice, setSaveNotice] = useState('');
   const [avatarError, setAvatarError] = useState('');
+  const [avatarCropOpen, setAvatarCropOpen] = useState(false);
+  const [avatarCropSource, setAvatarCropSource] = useState('');
+  const [avatarZoom, setAvatarZoom] = useState(1);
+  const [avatarOffsetX, setAvatarOffsetX] = useState(0);
+  const [avatarOffsetY, setAvatarOffsetY] = useState(0);
+  const [avatarApplying, setAvatarApplying] = useState(false);
   const [profileId, setProfileId] = useState('');
   const [userId, setUserId] = useState('');
   const [draftStorageKey, setDraftStorageKey] = useState('');
@@ -376,20 +437,46 @@ export default function Profile() {
       return;
     }
     if (file.size > MAX_AVATAR_SIZE_BYTES) {
-      setAvatarError('Profile picture must be 1 MB or smaller.');
+      setAvatarError('Profile picture must be 10 MB or smaller.');
       event.target.value = '';
       return;
     }
 
     const reader = new FileReader();
     reader.onload = () => {
-      setField('avatar_url', String(reader.result || ''));
+      const source = String(reader.result || '');
+      if (!source) {
+        setAvatarError('Could not read this image. Try another file.');
+        return;
+      }
+      setAvatarCropSource(source);
+      setAvatarZoom(1);
+      setAvatarOffsetX(0);
+      setAvatarOffsetY(0);
+      setAvatarCropOpen(true);
     };
     reader.onerror = () => {
       setAvatarError('Could not read this image. Try another file.');
     };
     reader.readAsDataURL(file);
     event.target.value = '';
+  };
+
+  const applyAvatarCrop = async () => {
+    if (!avatarCropSource) return;
+    setAvatarApplying(true);
+    setAvatarError('');
+    try {
+      const cropped = await renderCroppedAvatar(avatarCropSource, avatarZoom, avatarOffsetX, avatarOffsetY);
+      setField('avatar_url', cropped);
+      setSaveNotice('Profile picture updated.');
+      setAvatarCropOpen(false);
+      setAvatarCropSource('');
+    } catch (error) {
+      setAvatarError(error?.message || 'Could not crop this image. Try another file.');
+    } finally {
+      setAvatarApplying(false);
+    }
   };
 
   const onSave = async (event) => {
@@ -504,7 +591,7 @@ export default function Profile() {
                       </Button>
                     )}
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">Max file size: 1 MB.</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Max file size: 10 MB.</p>
                   {avatarError && <p className="mt-1 text-xs text-red-400">{avatarError}</p>}
                 </div>
               </div>
@@ -771,6 +858,99 @@ export default function Profile() {
             </Button>
           </div>
         </form>
+
+        <Dialog
+          open={avatarCropOpen}
+          onOpenChange={(open) => {
+            setAvatarCropOpen(open);
+            if (!open) {
+              setAvatarApplying(false);
+            }
+          }}
+        >
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>Crop profile picture</DialogTitle>
+              <DialogDescription>Use zoom and position to frame your avatar, then apply crop.</DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="mx-auto h-56 w-56 overflow-hidden rounded-full border border-border bg-muted/20">
+                {avatarCropSource ? (
+                  <img
+                    src={avatarCropSource}
+                    alt="Avatar crop preview"
+                    className="h-full w-full object-cover"
+                    style={{
+                      transform: `translate(${avatarOffsetX * 40}px, ${avatarOffsetY * 40}px) scale(${avatarZoom})`
+                    }}
+                  />
+                ) : (
+                  <div className="h-full w-full" />
+                )}
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Zoom</span>
+                    <span>{avatarZoom.toFixed(2)}x</span>
+                  </div>
+                  <Slider
+                    min={AVATAR_ZOOM_MIN}
+                    max={AVATAR_ZOOM_MAX}
+                    step={0.01}
+                    value={[avatarZoom]}
+                    onValueChange={(value) => setAvatarZoom(value[0] || 1)}
+                  />
+                </div>
+                <div>
+                  <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Horizontal</span>
+                    <span>{Math.round(avatarOffsetX * 100)}%</span>
+                  </div>
+                  <Slider
+                    min={-1}
+                    max={1}
+                    step={0.01}
+                    value={[avatarOffsetX]}
+                    onValueChange={(value) => setAvatarOffsetX(value[0] || 0)}
+                  />
+                </div>
+                <div>
+                  <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Vertical</span>
+                    <span>{Math.round(avatarOffsetY * 100)}%</span>
+                  </div>
+                  <Slider
+                    min={-1}
+                    max={1}
+                    step={0.01}
+                    value={[avatarOffsetY]}
+                    onValueChange={(value) => setAvatarOffsetY(value[0] || 0)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setAvatarCropOpen(false);
+                }}
+                disabled={avatarApplying}
+              >
+                Cancel
+              </Button>
+              <Button type="button" onClick={applyAvatarCrop} disabled={avatarApplying || !avatarCropSource}>
+                {avatarApplying ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Apply crop
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </PageBody>
     </Page>
   );
