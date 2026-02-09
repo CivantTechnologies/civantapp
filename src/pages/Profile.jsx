@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { UserRound, Save, Loader2, Upload, X } from 'lucide-react';
 import { civant } from '@/api/civantClient';
 import { useAuth } from '@/lib/auth';
@@ -27,6 +27,7 @@ const PROFILE_DRAFT_VERSION = 1;
 const PROFILE_DRAFT_PREFIX = 'civant_profile_draft_v1';
 const MAX_AVATAR_SIZE_BYTES = 10 * 1024 * 1024;
 const AVATAR_OUTPUT_SIZE = 512;
+const AVATAR_PREVIEW_SIZE = 320;
 const AVATAR_ZOOM_MIN = 1;
 const AVATAR_ZOOM_MAX = 3;
 
@@ -256,40 +257,64 @@ function loadImageFromDataUrl(dataUrl) {
   });
 }
 
-function renderCroppedAvatar(dataUrl, zoom, offsetX, offsetY) {
-  return loadImageFromDataUrl(dataUrl).then((image) => {
-    const sourceWidth = image.naturalWidth || image.width;
-    const sourceHeight = image.naturalHeight || image.height;
-    const sourceCropSize = Math.min(sourceWidth, sourceHeight) / clamp(zoom, AVATAR_ZOOM_MIN, AVATAR_ZOOM_MAX);
+function getAvatarMaxTranslate(imageSize, zoom, viewportSize = AVATAR_PREVIEW_SIZE) {
+  const width = Number(imageSize?.width || 0);
+  const height = Number(imageSize?.height || 0);
+  if (!width || !height) return { x: 0, y: 0 };
 
-    const maxOffsetX = (sourceWidth - sourceCropSize) / 2;
-    const maxOffsetY = (sourceHeight - sourceCropSize) / 2;
+  const normalizedZoom = clamp(zoom, AVATAR_ZOOM_MIN, AVATAR_ZOOM_MAX);
+  const baseScale = Math.max(viewportSize / width, viewportSize / height);
+  const renderedWidth = width * baseScale * normalizedZoom;
+  const renderedHeight = height * baseScale * normalizedZoom;
 
-    const centerX = sourceWidth / 2 + clamp(offsetX, -1, 1) * maxOffsetX;
-    const centerY = sourceHeight / 2 + clamp(offsetY, -1, 1) * maxOffsetY;
+  return {
+    x: Math.max(0, (renderedWidth - viewportSize) / 2),
+    y: Math.max(0, (renderedHeight - viewportSize) / 2)
+  };
+}
 
-    const sourceX = clamp(centerX - sourceCropSize / 2, 0, sourceWidth - sourceCropSize);
-    const sourceY = clamp(centerY - sourceCropSize / 2, 0, sourceHeight - sourceCropSize);
+function clampAvatarTranslate(translate, imageSize, zoom, viewportSize = AVATAR_PREVIEW_SIZE) {
+  const max = getAvatarMaxTranslate(imageSize, zoom, viewportSize);
+  return {
+    x: clamp(Number(translate?.x || 0), -max.x, max.x),
+    y: clamp(Number(translate?.y || 0), -max.y, max.y)
+  };
+}
 
+function renderCroppedAvatar(imageSource, imageSize, zoom, translate) {
+  return loadImageFromDataUrl(imageSource).then((image) => {
+    const sourceWidth = Number(imageSize?.width || image.naturalWidth || image.width);
+    const sourceHeight = Number(imageSize?.height || image.naturalHeight || image.height);
+    if (!sourceWidth || !sourceHeight) {
+      throw new Error('Could not read avatar image size.');
+    }
+
+    const normalizedZoom = clamp(zoom, AVATAR_ZOOM_MIN, AVATAR_ZOOM_MAX);
     const canvas = document.createElement('canvas');
     canvas.width = AVATAR_OUTPUT_SIZE;
     canvas.height = AVATAR_OUTPUT_SIZE;
     const context = canvas.getContext('2d');
     if (!context) throw new Error('Could not prepare avatar crop canvas.');
 
-    context.drawImage(
-      image,
-      sourceX,
-      sourceY,
-      sourceCropSize,
-      sourceCropSize,
-      0,
-      0,
-      AVATAR_OUTPUT_SIZE,
-      AVATAR_OUTPUT_SIZE
-    );
+    const baseScale = Math.max(AVATAR_OUTPUT_SIZE / sourceWidth, AVATAR_OUTPUT_SIZE / sourceHeight);
+    const drawWidth = sourceWidth * baseScale * normalizedZoom;
+    const drawHeight = sourceHeight * baseScale * normalizedZoom;
+    const translateScale = AVATAR_OUTPUT_SIZE / AVATAR_PREVIEW_SIZE;
+    const maxTranslate = {
+      x: Math.max(0, (drawWidth - AVATAR_OUTPUT_SIZE) / 2),
+      y: Math.max(0, (drawHeight - AVATAR_OUTPUT_SIZE) / 2)
+    };
+    const drawTranslate = {
+      x: clamp(Number(translate?.x || 0) * translateScale, -maxTranslate.x, maxTranslate.x),
+      y: clamp(Number(translate?.y || 0) * translateScale, -maxTranslate.y, maxTranslate.y)
+    };
 
-    return canvas.toDataURL('image/jpeg', 0.9);
+    const drawX = (AVATAR_OUTPUT_SIZE - drawWidth) / 2 + drawTranslate.x;
+    const drawY = (AVATAR_OUTPUT_SIZE - drawHeight) / 2 + drawTranslate.y;
+
+    context.clearRect(0, 0, AVATAR_OUTPUT_SIZE, AVATAR_OUTPUT_SIZE);
+    context.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+    return canvas.toDataURL('image/jpeg', 0.88);
   });
 }
 
@@ -303,13 +328,16 @@ export default function Profile() {
   const [avatarCropOpen, setAvatarCropOpen] = useState(false);
   const [avatarCropSource, setAvatarCropSource] = useState('');
   const [avatarZoom, setAvatarZoom] = useState(1);
-  const [avatarOffsetX, setAvatarOffsetX] = useState(0);
-  const [avatarOffsetY, setAvatarOffsetY] = useState(0);
+  const [avatarTranslate, setAvatarTranslate] = useState({ x: 0, y: 0 });
+  const [avatarImageSize, setAvatarImageSize] = useState({ width: 0, height: 0 });
   const [avatarApplying, setAvatarApplying] = useState(false);
+  const [avatarDragging, setAvatarDragging] = useState(false);
   const [profileId, setProfileId] = useState('');
   const [userId, setUserId] = useState('');
   const [draftStorageKey, setDraftStorageKey] = useState('');
   const [form, setForm] = useState(defaultForm);
+  const avatarObjectUrlRef = useRef('');
+  const avatarDragRef = useRef(null);
 
   const displayName = useMemo(() => [form.first_name, form.last_name].filter(Boolean).join(' ').trim(), [form.first_name, form.last_name]);
 
@@ -404,6 +432,22 @@ export default function Profile() {
 
   const setField = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
 
+  const releaseAvatarObjectUrl = () => {
+    if (!avatarObjectUrlRef.current) return;
+    try {
+      URL.revokeObjectURL(avatarObjectUrlRef.current);
+    } catch {
+      // no-op
+    }
+    avatarObjectUrlRef.current = '';
+  };
+
+  useEffect(() => {
+    return () => {
+      releaseAvatarObjectUrl();
+    };
+  }, []);
+
   const toggleOption = (key, value) => {
     setForm((prev) => {
       const list = ensureArray(prev[key]);
@@ -426,6 +470,35 @@ export default function Profile() {
     }));
   };
 
+  const openAvatarCropper = (source) => {
+    if (!source) return;
+    setAvatarCropSource(source);
+    setAvatarZoom(1);
+    setAvatarTranslate({ x: 0, y: 0 });
+    setAvatarImageSize({ width: 0, height: 0 });
+    setAvatarCropOpen(true);
+    setAvatarDragging(false);
+    avatarDragRef.current = null;
+  };
+
+  const closeAvatarCropper = () => {
+    setAvatarCropOpen(false);
+    setAvatarCropSource('');
+    setAvatarZoom(1);
+    setAvatarTranslate({ x: 0, y: 0 });
+    setAvatarImageSize({ width: 0, height: 0 });
+    setAvatarApplying(false);
+    setAvatarDragging(false);
+    avatarDragRef.current = null;
+    releaseAvatarObjectUrl();
+  };
+
+  const updateAvatarZoom = (nextZoom) => {
+    const safeZoom = clamp(nextZoom, AVATAR_ZOOM_MIN, AVATAR_ZOOM_MAX);
+    setAvatarZoom(safeZoom);
+    setAvatarTranslate((prev) => clampAvatarTranslate(prev, avatarImageSize, safeZoom));
+  };
+
   const onAvatarFileChange = (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -442,24 +515,66 @@ export default function Profile() {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const source = String(reader.result || '');
-      if (!source) {
-        setAvatarError('Could not read this image. Try another file.');
-        return;
-      }
-      setAvatarCropSource(source);
-      setAvatarZoom(1);
-      setAvatarOffsetX(0);
-      setAvatarOffsetY(0);
-      setAvatarCropOpen(true);
-    };
-    reader.onerror = () => {
-      setAvatarError('Could not read this image. Try another file.');
-    };
-    reader.readAsDataURL(file);
+    releaseAvatarObjectUrl();
+    try {
+      const objectUrl = URL.createObjectURL(file);
+      avatarObjectUrlRef.current = objectUrl;
+      openAvatarCropper(objectUrl);
+    } catch {
+      setAvatarError('Could not prepare this image. Try another file.');
+    }
     event.target.value = '';
+  };
+
+  const onAvatarCropPreviewLoad = (event) => {
+    const image = event.currentTarget;
+    const nextSize = {
+      width: Number(image.naturalWidth || image.width || 0),
+      height: Number(image.naturalHeight || image.height || 0)
+    };
+    setAvatarImageSize(nextSize);
+    setAvatarTranslate((prev) => clampAvatarTranslate(prev, nextSize, avatarZoom));
+  };
+
+  const onAvatarDragStart = (event) => {
+    if (!avatarCropSource) return;
+    event.preventDefault();
+    avatarDragRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: avatarTranslate.x,
+      originY: avatarTranslate.y
+    };
+    setAvatarDragging(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const onAvatarDragMove = (event) => {
+    const drag = avatarDragRef.current;
+    if (!drag) return;
+    event.preventDefault();
+    const nextTranslate = {
+      x: drag.originX + (event.clientX - drag.startX),
+      y: drag.originY + (event.clientY - drag.startY)
+    };
+    setAvatarTranslate(clampAvatarTranslate(nextTranslate, avatarImageSize, avatarZoom));
+  };
+
+  const onAvatarDragEnd = (event) => {
+    if (!avatarDragRef.current) return;
+    avatarDragRef.current = null;
+    setAvatarDragging(false);
+    try {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    } catch {
+      // no-op
+    }
+  };
+
+  const onAvatarWheel = (event) => {
+    event.preventDefault();
+    const delta = Number(event.deltaY || 0);
+    updateAvatarZoom(avatarZoom - delta * 0.0035);
   };
 
   const applyAvatarCrop = async () => {
@@ -467,15 +582,33 @@ export default function Profile() {
     setAvatarApplying(true);
     setAvatarError('');
     try {
-      const cropped = await renderCroppedAvatar(avatarCropSource, avatarZoom, avatarOffsetX, avatarOffsetY);
+      const cropped = await renderCroppedAvatar(avatarCropSource, avatarImageSize, avatarZoom, avatarTranslate);
       setField('avatar_url', cropped);
       setSaveNotice('Profile picture updated.');
-      setAvatarCropOpen(false);
-      setAvatarCropSource('');
+      closeAvatarCropper();
     } catch (error) {
       setAvatarError(error?.message || 'Could not crop this image. Try another file.');
-    } finally {
       setAvatarApplying(false);
+    }
+  };
+
+  const triggerAvatarUpload = () => {
+    const element = document.getElementById('avatar_upload');
+    element?.click();
+  };
+
+  const startEditingCurrentAvatar = () => {
+    if (!form.avatar_url) return;
+    setAvatarError('');
+    releaseAvatarObjectUrl();
+    openAvatarCropper(form.avatar_url);
+  };
+
+  const onRemoveAvatar = () => {
+    setField('avatar_url', '');
+    setSaveNotice('Profile picture removed.');
+    if (avatarCropOpen) {
+      closeAvatarCropper();
     }
   };
 
@@ -573,25 +706,27 @@ export default function Profile() {
                       className="hidden"
                       onChange={onAvatarFileChange}
                     />
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => {
-                        const element = document.getElementById('avatar_upload');
-                        element?.click();
-                      }}
-                    >
-                      <Upload className="h-4 w-4 mr-1" />
-                      Upload image
-                    </Button>
-                    {form.avatar_url && (
-                      <Button type="button" variant="ghost" onClick={() => setField('avatar_url', '')}>
-                        <X className="h-4 w-4 mr-1" />
-                        Remove
+                    {!form.avatar_url ? (
+                      <Button type="button" variant="secondary" onClick={triggerAvatarUpload}>
+                        <Upload className="h-4 w-4 mr-1" />
+                        Upload image
                       </Button>
+                    ) : (
+                      <>
+                        <Button type="button" variant="secondary" onClick={startEditingCurrentAvatar}>
+                          Edit image
+                        </Button>
+                        <Button type="button" variant="ghost" onClick={onRemoveAvatar}>
+                          <X className="h-4 w-4 mr-1" />
+                          Remove
+                        </Button>
+                      </>
                     )}
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">Max file size: 10 MB.</p>
+                  {form.avatar_url && (
+                    <p className="mt-1 text-xs text-muted-foreground">Remove first if you want to upload a different photo.</p>
+                  )}
                   {avatarError && <p className="mt-1 text-xs text-red-400">{avatarError}</p>}
                 </div>
               </div>
@@ -859,30 +994,35 @@ export default function Profile() {
           </div>
         </form>
 
-        <Dialog
-          open={avatarCropOpen}
-          onOpenChange={(open) => {
-            setAvatarCropOpen(open);
-            if (!open) {
-              setAvatarApplying(false);
-            }
-          }}
-        >
+        <Dialog open={avatarCropOpen} onOpenChange={(open) => (!open ? closeAvatarCropper() : setAvatarCropOpen(true))}>
           <DialogContent className="max-w-xl">
             <DialogHeader>
               <DialogTitle>Crop profile picture</DialogTitle>
-              <DialogDescription>Use zoom and position to frame your avatar, then apply crop.</DialogDescription>
+              <DialogDescription>Drag the image with mouse or trackpad to position it. Use zoom if needed.</DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4">
-              <div className="mx-auto h-56 w-56 overflow-hidden rounded-full border border-border bg-muted/20">
+              <div
+                className={`mx-auto overflow-hidden rounded-full border border-border bg-muted/20 touch-none select-none ${
+                  avatarDragging ? 'cursor-grabbing' : 'cursor-grab'
+                }`}
+                style={{ width: AVATAR_PREVIEW_SIZE, height: AVATAR_PREVIEW_SIZE }}
+                onPointerDown={onAvatarDragStart}
+                onPointerMove={onAvatarDragMove}
+                onPointerUp={onAvatarDragEnd}
+                onPointerCancel={onAvatarDragEnd}
+                onWheel={onAvatarWheel}
+              >
                 {avatarCropSource ? (
                   <img
                     src={avatarCropSource}
                     alt="Avatar crop preview"
                     className="h-full w-full object-cover"
+                    draggable={false}
+                    onLoad={onAvatarCropPreviewLoad}
                     style={{
-                      transform: `translate(${avatarOffsetX * 40}px, ${avatarOffsetY * 40}px) scale(${avatarZoom})`
+                      transform: `translate(${avatarTranslate.x}px, ${avatarTranslate.y}px) scale(${avatarZoom})`,
+                      transformOrigin: 'center center'
                     }}
                   />
                 ) : (
@@ -901,35 +1041,10 @@ export default function Profile() {
                     max={AVATAR_ZOOM_MAX}
                     step={0.01}
                     value={[avatarZoom]}
-                    onValueChange={(value) => setAvatarZoom(value[0] || 1)}
+                    onValueChange={(value) => updateAvatarZoom(value[0] || 1)}
                   />
                 </div>
-                <div>
-                  <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Horizontal</span>
-                    <span>{Math.round(avatarOffsetX * 100)}%</span>
-                  </div>
-                  <Slider
-                    min={-1}
-                    max={1}
-                    step={0.01}
-                    value={[avatarOffsetX]}
-                    onValueChange={(value) => setAvatarOffsetX(value[0] || 0)}
-                  />
-                </div>
-                <div>
-                  <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Vertical</span>
-                    <span>{Math.round(avatarOffsetY * 100)}%</span>
-                  </div>
-                  <Slider
-                    min={-1}
-                    max={1}
-                    step={0.01}
-                    value={[avatarOffsetY]}
-                    onValueChange={(value) => setAvatarOffsetY(value[0] || 0)}
-                  />
-                </div>
+                <p className="text-xs text-muted-foreground">Tip: scroll/pinch and drag directly on the image to frame it.</p>
               </div>
             </div>
 
@@ -937,9 +1052,7 @@ export default function Profile() {
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => {
-                  setAvatarCropOpen(false);
-                }}
+                onClick={closeAvatarCropper}
                 disabled={avatarApplying}
               >
                 Cancel
