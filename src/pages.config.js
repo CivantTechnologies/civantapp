@@ -7,6 +7,7 @@ import Insights from './pages/Insights';
 import Integrations from './pages/Integrations';
 import PipelineAdmin from './pages/PipelineAdmin';
 import Predictions from './pages/Predictions';
+import Profile from './pages/Profile';
 import Search from './pages/Search';
 import System from './pages/System';
 import TenderDetail from './pages/TenderDetail';
@@ -23,6 +24,7 @@ export const PAGES = {
     "Integrations": Integrations,
     "PipelineAdmin": PipelineAdmin,
     "Predictions": Predictions,
+    "Profile": Profile,
     "Search": Search,
     "System": System,
     "TenderDetail": TenderDetail,

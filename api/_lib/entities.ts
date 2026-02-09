@@ -14,7 +14,8 @@ const INGESTION_RUNS_FIELD_MAP: Record<string, string> = {
 };
 
 const ENTITY_TABLE_MAP: Record<string, string> = {
-  User: 'users'
+  User: 'users',
+  UserProfile: 'user_profiles'
 };
 
 const TENANT_SCOPED_TABLES = new Set([
@@ -35,6 +36,7 @@ const TENANT_SCOPED_TABLES = new Set([
   'support_access_grants',
   'support_access_audit',
   'users',
+  'user_profiles',
   'Competitors',
   'Alerts',
   'AlertEvents'
