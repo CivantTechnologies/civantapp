@@ -50,6 +50,58 @@ npm run import:placsp:backfill -- \
   --status-file /tmp/placsp-es-backfill-status.json
 ```
 
+## Recommended block strategy (safer restart model)
+
+For large historical runs, use the block manager. It runs multiple year ranges in sequence with retries, per-block checkpoint files, and a health report every 5 minutes.
+
+Start (detached):
+
+```bash
+npm run import:placsp:block:start -- \
+  --api-base https://civantapp.vercel.app \
+  --app-id civantapp \
+  --tenant-id civant_default \
+  --download-dir /Users/davidmanrique/Downloads/placsp_zips \
+  --batch-size 120
+```
+
+Monitor:
+
+```bash
+npm run import:placsp:block:monitor
+```
+
+Live monitor:
+
+```bash
+npm run import:placsp:block:monitor -- --watch true --watch-seconds 15
+```
+
+Pause safely:
+
+```bash
+npm run import:placsp:block:pause -- --reason "network maintenance"
+```
+
+Stop safely:
+
+```bash
+npm run import:placsp:block:stop -- --reason "manual stop"
+```
+
+Restart from saved progress:
+
+```bash
+npm run import:placsp:block:restart -- --reason "resume after interruption"
+```
+
+Operational files written by the block manager:
+
+- `/tmp/placsp-es-block-manager-status.json` (global state)
+- `/tmp/placsp-es-block-reports.log` (5-minute health reports)
+- `/tmp/placsp-es-block-manager.log` (manager runtime log)
+- `/tmp/placsp-es-backfill-block-<block>-*.json` (per-block status/checkpoint/control)
+
 Resume an interrupted backfill from a parsed record number:
 
 ```bash
@@ -121,5 +173,6 @@ npm run import:placsp:check -- \
 
 - Backfill is archive-driven and dedupes by `(canonical_id, version_fingerprint)` in-process.
 - Canonical/current duplicates are handled with id-based update fallback.
+- ZIP archives are the preferred ingestion input for PLACSP in this implementation.
 - Use `--insecure-tls true` only for temporary TLS issues in controlled environments.
 - Keep backfill and heavy BOAMP imports separate to avoid local resource contention.

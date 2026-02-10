@@ -19,6 +19,11 @@
     "import:placsp:backfill": "node scripts/import-placsp-es.mjs --mode backfill",
     "import:placsp:incremental": "node scripts/import-placsp-es.mjs --mode incremental",
     "import:placsp:check": "node scripts/import-placsp-es.mjs --mode check-current",
+    "import:placsp:block:start": "node scripts/placsp-block-manager.mjs start",
+    "import:placsp:block:monitor": "node scripts/placsp-block-manager.mjs monitor",
+    "import:placsp:block:pause": "node scripts/placsp-block-manager.mjs pause",
+    "import:placsp:block:stop": "node scripts/placsp-block-manager.mjs stop",
+    "import:placsp:block:restart": "node scripts/placsp-block-manager.mjs restart",
     "preview": "vite preview"
   },
   "dependencies": {

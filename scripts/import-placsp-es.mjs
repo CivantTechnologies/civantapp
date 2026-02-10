@@ -12,6 +12,8 @@ const DEFAULT_ZIP_PREFIX = 'https://contrataciondelsectorpublico.gob.es/sindicac
 const DEFAULT_DOWNLOAD_DIR = '/tmp/placsp-es-zips';
 const DEFAULT_STATUS_FILE = '/tmp/placsp-es-import-status.json';
 const DEFAULT_CHECKPOINT_FILE = '/tmp/placsp-es-checkpoint.json';
+const DEFAULT_CONTROL_FILE = '/tmp/placsp-es-control.json';
+const DEFAULT_PID_FILE = '/tmp/placsp-es-import.pid';
 const REQUEST_TIMEOUT_MS = 45000;
 const MAX_HTTP_RETRIES = 5;
 
@@ -49,6 +51,8 @@ Core options:
   --batch-size <n>                Default: 120
   --status-file <path>            Default: ${DEFAULT_STATUS_FILE}
   --checkpoint-file <path>        Default: ${DEFAULT_CHECKPOINT_FILE}
+  --control-file <path>           Default: ${DEFAULT_CONTROL_FILE}
+  --pid-file <path>               Default: ${DEFAULT_PID_FILE}
   --insecure-tls <bool>           Default: false
 
 Backfill options:
@@ -75,6 +79,10 @@ Examples:
   node scripts/import-placsp-es.mjs --mode backfill --historical-from-year 2012
   node scripts/import-placsp-es.mjs --mode incremental
   node scripts/import-placsp-es.mjs --mode check-current --repair true --lookback-days 30
+
+Safe controls while running:
+  echo '{"action":"pause","reason":"maintenance"}' > ${DEFAULT_CONTROL_FILE}
+  echo '{"action":"stop","reason":"manual stop"}' > ${DEFAULT_CONTROL_FILE}
 `);
 }
 
@@ -91,6 +99,40 @@ function readJsonFile(filePath) {
   if (!filePath || !fs.existsSync(filePath)) return null;
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function unlinkIfExists(filePath) {
+  if (!filePath) return;
+  try {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch {
+    // best effort
+  }
+}
+
+function readControlInstruction(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return null;
+  try {
+    const raw = fs.readFileSync(filePath, 'utf8').trim();
+    if (!raw) return null;
+
+    if (raw.startsWith('{')) {
+      const parsed = JSON.parse(raw);
+      const action = clean(parsed.action)?.toLowerCase();
+      if (!action) return null;
+      if (!['pause', 'stop'].includes(action)) return null;
+      return {
+        action,
+        reason: clean(parsed.reason) || null
+      };
+    }
+
+    const action = clean(raw)?.toLowerCase();
+    if (!action || !['pause', 'stop'].includes(action)) return null;
+    return { action, reason: null };
   } catch {
     return null;
   }
@@ -879,7 +921,8 @@ async function runIngestion({
   startRecord,
   sourceIterator,
   checkpointFile,
-  checkpointPayload
+  checkpointPayload,
+  controlFile
 }) {
   const source = 'PLACSP_ES';
   const startedAt = new Date().toISOString();
@@ -901,6 +944,54 @@ async function runIngestion({
   const seenVersionKeys = new Set();
   let flushCount = 0;
   let lastHeartbeatAt = Date.now();
+  let requestedAction = null;
+
+  const onSignalStop = () => {
+    requestedAction = 'stop';
+  };
+
+  process.on('SIGTERM', onSignalStop);
+  process.on('SIGINT', onSignalStop);
+
+  const buildMetrics = () => ({
+    mode,
+    parsed_records: parsedRecords,
+    processed_rows: processed,
+    skipped_before_start: skippedBeforeStart,
+    deduped_in_run: dedupedInRun,
+    pages,
+    feeds,
+    raw_rows: rawMetrics.inserted,
+    canonical_inserted: canonicalMetrics.inserted,
+    canonical_updated: canonicalMetrics.updated,
+    current_inserted: currentMetrics.inserted,
+    current_updated: currentMetrics.updated,
+    raw_failed: rawMetrics.failed,
+    canonical_failed: canonicalMetrics.failed,
+    current_failed: currentMetrics.failed,
+    max_entry_updated: maxEntryUpdatedIso
+  });
+
+  const buildRunErrors = () =>
+    [...rawMetrics.errors, ...canonicalMetrics.errors, ...currentMetrics.errors].slice(0, 100);
+
+  const writeCheckpointSnapshot = () => {
+    if (!checkpointFile) return;
+    writeJsonFile(checkpointFile, {
+      ...(checkpointPayload || {}),
+      run_id: runId,
+      mode,
+      max_entry_updated: maxEntryUpdatedIso,
+      processed,
+      parsed_records: parsedRecords,
+      skipped_before_start: skippedBeforeStart,
+      deduped_in_run: dedupedInRun,
+      pages,
+      feeds,
+      cursor: lastCursor,
+      updated_at: new Date().toISOString()
+    });
+  };
 
   const emitStatus = (phase = 'running') => {
     writeJsonFile(statusFile, {
@@ -927,7 +1018,7 @@ async function runIngestion({
     });
   };
 
-  const updateRunProgress = async (status = 'running') => {
+  const updateRunProgress = async ({ status = 'running', finishedAt = null } = {}) => {
     try {
       await putEntityById({
         baseUrl,
@@ -937,27 +1028,10 @@ async function runIngestion({
         id: runId,
         payload: {
           status,
-          metrics: {
-            mode,
-            parsed_records: parsedRecords,
-            processed_rows: processed,
-            skipped_before_start: skippedBeforeStart,
-            deduped_in_run: dedupedInRun,
-            pages,
-            feeds,
-            raw_rows: rawMetrics.inserted,
-            canonical_inserted: canonicalMetrics.inserted,
-            canonical_updated: canonicalMetrics.updated,
-            current_inserted: currentMetrics.inserted,
-            current_updated: currentMetrics.updated,
-            raw_failed: rawMetrics.failed,
-            canonical_failed: canonicalMetrics.failed,
-            current_failed: currentMetrics.failed,
-            max_entry_updated: maxEntryUpdatedIso
-          },
-          errors: [...rawMetrics.errors, ...canonicalMetrics.errors, ...currentMetrics.errors].slice(0, 50),
+          metrics: buildMetrics(),
+          errors: buildRunErrors().slice(0, 50),
           cursor: lastCursor,
-          finished_at: null
+          finished_at: finishedAt
         },
         includeTenantHeader
       });
@@ -1005,6 +1079,7 @@ async function runIngestion({
   }
 
   emitStatus('started');
+  writeCheckpointSnapshot();
 
   const flush = async () => {
     if (!rawBatch.length && !canonicalBatch.length && !currentBatch.length) return;
@@ -1049,134 +1124,15 @@ async function runIngestion({
 
     flushCount += 1;
     if (flushCount % 8 === 0) {
-      await updateRunProgress('running');
+      await updateRunProgress({ status: 'running', finishedAt: null });
+      writeCheckpointSnapshot();
     }
   };
 
-  for await (const feedChunk of sourceIterator) {
-    feeds += 1;
-    pages = Math.max(pages, Number(feedChunk.page || 0));
-
-    for (const mapped of feedChunk.entries) {
-      parsedRecords += 1;
-
-      if (parsedRecords < startRecord) {
-        skippedBeforeStart += 1;
-        continue;
-      }
-
-      const versionKey = `${mapped.canonicalId}:${mapped.versionFingerprint}`;
-      if (seenVersionKeys.has(versionKey)) {
-        dedupedInRun += 1;
-        continue;
-      }
-      seenVersionKeys.add(versionKey);
-
-      const rawRow = {
-        ...mapped.rawDocument,
-        id: `${runId}:${String(parsedRecords).padStart(10, '0')}`,
-        run_id: runId
-      };
-
-      rawBatch.push(rawRow);
-      canonicalBatch.push(mapped.canonicalTender);
-      currentBatch.push(mapped.currentTender);
-      processed += 1;
-
-      if (mapped.entryUpdated) {
-        if (!maxEntryUpdatedIso) maxEntryUpdatedIso = mapped.entryUpdated;
-        else {
-          const currentMs = parseDate(maxEntryUpdatedIso).ms;
-          const candidateMs = parseDate(mapped.entryUpdated).ms;
-          if (candidateMs && currentMs && candidateMs > currentMs) {
-            maxEntryUpdatedIso = mapped.entryUpdated;
-          }
-        }
-      }
-
-      lastCursor = JSON.stringify({
-        mode,
-        feed: feedChunk.feedUrl,
-        page: feedChunk.page || null,
-        parsed_records: parsedRecords,
-        processed,
-        max_entry_updated: maxEntryUpdatedIso
-      });
-
-      if (rawBatch.length >= batchSize || canonicalBatch.length >= batchSize || currentBatch.length >= batchSize) {
-        await flush();
-        emitStatus('running');
-      }
-
-      if (processed % 500 === 0) {
-        console.log(`[${mode}] processed ${processed} rows (parsed ${parsedRecords})`);
-        emitStatus('running');
-        lastHeartbeatAt = Date.now();
-      } else if (Date.now() - lastHeartbeatAt > 60000) {
-        console.log(`[${mode}] heartbeat processed ${processed} rows (parsed ${parsedRecords})`);
-        emitStatus('running');
-        lastHeartbeatAt = Date.now();
-      }
-    }
-  }
-
-  await flush();
-  emitStatus('finalizing');
-
-  const runErrors = [...rawMetrics.errors, ...canonicalMetrics.errors, ...currentMetrics.errors].slice(0, 100);
-  const metrics = {
-    mode,
-    parsed_records: parsedRecords,
-    processed_rows: processed,
-    skipped_before_start: skippedBeforeStart,
-    deduped_in_run: dedupedInRun,
-    pages,
-    feeds,
-    raw_rows: rawMetrics.inserted,
-    canonical_inserted: canonicalMetrics.inserted,
-    canonical_updated: canonicalMetrics.updated,
-    current_inserted: currentMetrics.inserted,
-    current_updated: currentMetrics.updated,
-    raw_failed: rawMetrics.failed,
-    canonical_failed: canonicalMetrics.failed,
-    current_failed: currentMetrics.failed,
-    max_entry_updated: maxEntryUpdatedIso
-  };
-
-  await putEntityById({
-    baseUrl,
-    appId,
-    tenantId,
-    table: 'ingestion_runs',
-    id: runId,
-    payload: {
-      status: runErrors.length ? 'completed_with_errors' : 'completed',
-      metrics,
-      errors: runErrors,
-      cursor: lastCursor || `${mode}:completed`,
-      finished_at: new Date().toISOString()
-    },
-    includeTenantHeader
-  });
-
-  if (checkpointFile && checkpointPayload) {
-    writeJsonFile(checkpointFile, {
-      ...checkpointPayload,
-      run_id: runId,
-      mode,
-      max_entry_updated: maxEntryUpdatedIso,
-      processed,
-      parsed_records: parsedRecords,
-      cursor: lastCursor,
-      updated_at: new Date().toISOString()
-    });
-  }
-
-  emitStatus('completed');
-
-  return {
+  const finalizeResult = (status) => ({
     run_id: runId,
     mode,
+    status,
     parsed_records: parsedRecords,
     processed,
     skipped_before_start: skippedBeforeStart,
@@ -1187,8 +1143,139 @@ async function runIngestion({
     raw_documents: rawMetrics,
     canonical_tenders: canonicalMetrics,
     TendersCurrent: currentMetrics,
-    errors: runErrors
+    errors: buildRunErrors()
+  });
+
+  const maybeHandleControl = async () => {
+    const fileInstruction = readControlInstruction(controlFile);
+    if (!requestedAction && fileInstruction?.action) {
+      requestedAction = fileInstruction.action;
+    }
+    if (!requestedAction) return null;
+
+    await flush();
+    const terminalStatus = requestedAction === 'pause' ? 'paused' : 'stopped';
+    const finishedAt = new Date().toISOString();
+    const statusCursor = lastCursor || `${mode}:${terminalStatus}`;
+    lastCursor = statusCursor;
+
+    await updateRunProgress({ status: terminalStatus, finishedAt });
+    emitStatus(terminalStatus);
+    writeCheckpointSnapshot();
+    if (fileInstruction) unlinkIfExists(controlFile);
+    return finalizeResult(terminalStatus);
   };
+
+  try {
+    for await (const feedChunk of sourceIterator) {
+      feeds += 1;
+      pages = Math.max(pages, Number(feedChunk.page || 0));
+
+      const requestedBeforeChunk = await maybeHandleControl();
+      if (requestedBeforeChunk) return requestedBeforeChunk;
+
+      for (const mapped of feedChunk.entries) {
+        parsedRecords += 1;
+
+        if (parsedRecords < startRecord) {
+          skippedBeforeStart += 1;
+          if (parsedRecords % 1000 === 0) {
+            writeCheckpointSnapshot();
+          }
+          continue;
+        }
+
+        const versionKey = `${mapped.canonicalId}:${mapped.versionFingerprint}`;
+        if (seenVersionKeys.has(versionKey)) {
+          dedupedInRun += 1;
+          continue;
+        }
+        seenVersionKeys.add(versionKey);
+
+        const rawRow = {
+          ...mapped.rawDocument,
+          id: `${runId}:${String(parsedRecords).padStart(10, '0')}`,
+          run_id: runId
+        };
+
+        rawBatch.push(rawRow);
+        canonicalBatch.push(mapped.canonicalTender);
+        currentBatch.push(mapped.currentTender);
+        processed += 1;
+
+        if (mapped.entryUpdated) {
+          if (!maxEntryUpdatedIso) maxEntryUpdatedIso = mapped.entryUpdated;
+          else {
+            const currentMs = parseDate(maxEntryUpdatedIso).ms;
+            const candidateMs = parseDate(mapped.entryUpdated).ms;
+            if (candidateMs && currentMs && candidateMs > currentMs) {
+              maxEntryUpdatedIso = mapped.entryUpdated;
+            }
+          }
+        }
+
+        lastCursor = JSON.stringify({
+          mode,
+          feed: feedChunk.feedUrl,
+          page: feedChunk.page || null,
+          parsed_records: parsedRecords,
+          processed,
+          max_entry_updated: maxEntryUpdatedIso
+        });
+
+        if (rawBatch.length >= batchSize || canonicalBatch.length >= batchSize || currentBatch.length >= batchSize) {
+          await flush();
+          emitStatus('running');
+          const requestedAfterFlush = await maybeHandleControl();
+          if (requestedAfterFlush) return requestedAfterFlush;
+        }
+
+        if (processed % 500 === 0) {
+          console.log(`[${mode}] processed ${processed} rows (parsed ${parsedRecords})`);
+          emitStatus('running');
+          writeCheckpointSnapshot();
+          lastHeartbeatAt = Date.now();
+          const requestedAfterHeartbeat = await maybeHandleControl();
+          if (requestedAfterHeartbeat) return requestedAfterHeartbeat;
+        } else if (Date.now() - lastHeartbeatAt > 60000) {
+          console.log(`[${mode}] heartbeat processed ${processed} rows (parsed ${parsedRecords})`);
+          emitStatus('running');
+          writeCheckpointSnapshot();
+          lastHeartbeatAt = Date.now();
+          const requestedAfterHeartbeat = await maybeHandleControl();
+          if (requestedAfterHeartbeat) return requestedAfterHeartbeat;
+        }
+      }
+    }
+
+    await flush();
+    emitStatus('finalizing');
+
+    const runErrors = buildRunErrors();
+    const completedStatus = runErrors.length ? 'completed_with_errors' : 'completed';
+    await putEntityById({
+      baseUrl,
+      appId,
+      tenantId,
+      table: 'ingestion_runs',
+      id: runId,
+      payload: {
+        status: completedStatus,
+        metrics: buildMetrics(),
+        errors: runErrors,
+        cursor: lastCursor || `${mode}:completed`,
+        finished_at: new Date().toISOString()
+      },
+      includeTenantHeader
+    });
+
+    writeCheckpointSnapshot();
+    emitStatus('completed');
+    return finalizeResult(completedStatus);
+  } finally {
+    process.off('SIGTERM', onSignalStop);
+    process.off('SIGINT', onSignalStop);
+  }
 }
 
 async function runCheckCurrent({
@@ -1333,141 +1420,166 @@ async function main() {
   const runId = String(args['run-id'] || makeRunId(mode === 'check-current' ? 'placsp_es_check' : 'placsp_es'));
   const statusFile = String(args['status-file'] || DEFAULT_STATUS_FILE);
   const checkpointFile = String(args['checkpoint-file'] || DEFAULT_CHECKPOINT_FILE);
+  const controlFile = String(args['control-file'] || DEFAULT_CONTROL_FILE);
+  const pidFile = String(args['pid-file'] || DEFAULT_PID_FILE);
   const insecureTls = parseBoolean(args['insecure-tls'], false);
+
+  writeJsonFile(pidFile, {
+    pid: process.pid,
+    run_id: runId,
+    mode,
+    started_at: new Date().toISOString(),
+    status_file: statusFile,
+    checkpoint_file: checkpointFile,
+    control_file: controlFile
+  });
 
   if (insecureTls) {
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
   }
 
-  if (mode === 'incremental') {
-    const feedUrl = String(args['feed-url'] || DEFAULT_FEED_URL);
-    const checkpoint = readJsonFile(checkpointFile) || {};
-    const lookbackMinutes = parsePositiveInt(args['lookback-minutes'], 90);
-    const maxPages = parsePositiveInt(args['max-pages'], 120);
-    const explicitSince = clean(args['since-iso']);
-    const sinceIso = explicitSince || applyLookbackIso(checkpoint.max_entry_updated, lookbackMinutes);
+  try {
+    if (mode === 'incremental') {
+      const feedUrl = String(args['feed-url'] || DEFAULT_FEED_URL);
+      const checkpoint = readJsonFile(checkpointFile) || {};
+      const lookbackMinutes = parsePositiveInt(args['lookback-minutes'], 90);
+      const maxPages = parsePositiveInt(args['max-pages'], 120);
+      const explicitSince = clean(args['since-iso']);
+      const sinceIso = explicitSince || applyLookbackIso(checkpoint.max_entry_updated, lookbackMinutes);
 
-    const status = { pages: 0, current_feed_url: feedUrl };
-    const sourceIterator = iterateFeedChain({
-      feedUrl,
-      sinceIso,
-      maxPages,
-      tenantId,
-      modeLabel: 'incremental',
-      status,
-      shouldStopOnOld: true
-    });
+      const status = { pages: 0, current_feed_url: feedUrl };
+      const sourceIterator = iterateFeedChain({
+        feedUrl,
+        sinceIso,
+        maxPages,
+        tenantId,
+        modeLabel: 'incremental',
+        status,
+        shouldStopOnOld: true
+      });
 
-    const result = await runIngestion({
-      mode: 'incremental',
-      baseUrl,
-      appId,
-      tenantId,
-      includeTenantHeader,
-      batchSize,
-      runId,
-      statusFile,
-      startRecord: Math.max(1, parsePositiveInt(args['start-record'], 1)),
-      sourceIterator,
-      checkpointFile,
-      checkpointPayload: {
-        source: 'PLACSP_ES',
-        feed_url: feedUrl,
-        since_iso: sinceIso,
-        lookback_minutes: lookbackMinutes,
-        max_pages: maxPages
-      }
-    });
+      const result = await runIngestion({
+        mode: 'incremental',
+        baseUrl,
+        appId,
+        tenantId,
+        includeTenantHeader,
+        batchSize,
+        runId,
+        statusFile,
+        startRecord: Math.max(1, parsePositiveInt(args['start-record'], 1)),
+        sourceIterator,
+        checkpointFile,
+        checkpointPayload: {
+          source: 'PLACSP_ES',
+          feed_url: feedUrl,
+          since_iso: sinceIso,
+          lookback_minutes: lookbackMinutes,
+          max_pages: maxPages
+        },
+        controlFile
+      });
 
-    console.log(JSON.stringify(result, null, 2));
-    return;
-  }
-
-  if (mode === 'backfill') {
-    const fromYear = parsePositiveInt(args['historical-from-year'], 2012);
-    const toYear = parsePositiveInt(args['historical-to-year'], new Date().getUTCFullYear());
-    const includeMonthlyCurrentYear = parseBoolean(args['include-monthly-current-year'], true);
-    const downloadDir = String(args['download-dir'] || DEFAULT_DOWNLOAD_DIR);
-    const maxArchives = parsePositiveInt(args['max-archives'], Number.MAX_SAFE_INTEGER);
-    const maxFilesPerArchive = parsePositiveInt(args['max-files-per-archive'], Number.MAX_SAFE_INTEGER);
-    const startRecord = Math.max(1, parsePositiveInt(args['start-record'], 1));
-
-    const explicitZips = parseZipList(args.zip);
-    const zipItems = explicitZips.length
-      ? explicitZips
-      : buildHistoricalZipUrls({ fromYear, toYear, includeMonthlyCurrentYear });
-
-    if (!zipItems.length) {
-      throw new Error('No ZIP sources resolved for backfill mode');
+      console.log(JSON.stringify(result, null, 2));
+      return;
     }
 
-    const sourceIterator = iterateZipSources({
-      zipItems,
-      downloadDir,
-      maxArchives,
-      maxFilesPerArchive,
-      tenantId
-    });
+    if (mode === 'backfill') {
+      const fromYear = parsePositiveInt(args['historical-from-year'], 2012);
+      const toYear = parsePositiveInt(args['historical-to-year'], new Date().getUTCFullYear());
+      const includeMonthlyCurrentYear = parseBoolean(args['include-monthly-current-year'], true);
+      const downloadDir = String(args['download-dir'] || DEFAULT_DOWNLOAD_DIR);
+      const maxArchives = parsePositiveInt(args['max-archives'], Number.MAX_SAFE_INTEGER);
+      const maxFilesPerArchive = parsePositiveInt(args['max-files-per-archive'], Number.MAX_SAFE_INTEGER);
+      const startRecord = Math.max(1, parsePositiveInt(args['start-record'], 1));
 
-    const result = await runIngestion({
-      mode: 'backfill',
-      baseUrl,
-      appId,
-      tenantId,
-      includeTenantHeader,
-      batchSize,
-      runId,
-      statusFile,
-      startRecord,
-      sourceIterator,
-      checkpointFile: null,
-      checkpointPayload: null
-    });
+      const explicitZips = parseZipList(args.zip);
+      const zipItems = explicitZips.length
+        ? explicitZips
+        : buildHistoricalZipUrls({ fromYear, toYear, includeMonthlyCurrentYear });
 
-    console.log(JSON.stringify({
-      ...result,
-      zip_sources_count: zipItems.length,
-      zip_sources: zipItems.slice(0, 20)
-    }, null, 2));
-    return;
+      if (!zipItems.length) {
+        throw new Error('No ZIP sources resolved for backfill mode');
+      }
+
+      const sourceIterator = iterateZipSources({
+        zipItems,
+        downloadDir,
+        maxArchives,
+        maxFilesPerArchive,
+        tenantId
+      });
+
+      const result = await runIngestion({
+        mode: 'backfill',
+        baseUrl,
+        appId,
+        tenantId,
+        includeTenantHeader,
+        batchSize,
+        runId,
+        statusFile,
+        startRecord,
+        sourceIterator,
+        checkpointFile,
+        checkpointPayload: {
+          source: 'PLACSP_ES',
+          historical_from_year: fromYear,
+          historical_to_year: toYear,
+          include_monthly_current_year: includeMonthlyCurrentYear
+        },
+        controlFile
+      });
+
+      console.log(JSON.stringify({
+        ...result,
+        zip_sources_count: zipItems.length,
+        zip_sources: zipItems.slice(0, 20)
+      }, null, 2));
+      return;
+    }
+
+    if (mode === 'check-current') {
+      const feedUrl = String(args['feed-url'] || DEFAULT_FEED_URL);
+      const lookbackDays = parsePositiveInt(args['lookback-days'], 14);
+      const sinceIso = clean(args['since-iso']) || new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString();
+      const maxPages = parsePositiveInt(args['max-pages'], 120);
+      const repair = parseBoolean(args.repair, false);
+
+      const result = await runCheckCurrent({
+        baseUrl,
+        appId,
+        tenantId,
+        includeTenantHeader,
+        feedUrl,
+        maxPages,
+        sinceIso,
+        repair,
+        batchSize,
+        runId,
+        statusFile
+      });
+
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    throw new Error(`Unsupported mode: ${mode}`);
+  } finally {
+    unlinkIfExists(pidFile);
   }
-
-  if (mode === 'check-current') {
-    const feedUrl = String(args['feed-url'] || DEFAULT_FEED_URL);
-    const lookbackDays = parsePositiveInt(args['lookback-days'], 14);
-    const sinceIso = clean(args['since-iso']) || new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString();
-    const maxPages = parsePositiveInt(args['max-pages'], 120);
-    const repair = parseBoolean(args.repair, false);
-
-    const result = await runCheckCurrent({
-      baseUrl,
-      appId,
-      tenantId,
-      includeTenantHeader,
-      feedUrl,
-      maxPages,
-      sinceIso,
-      repair,
-      batchSize,
-      runId,
-      statusFile
-    });
-
-    console.log(JSON.stringify(result, null, 2));
-    return;
-  }
-
-  throw new Error(`Unsupported mode: ${mode}`);
 }
 
 main().catch((error) => {
   const args = parseArgs(process.argv);
   const statusFile = String(args['status-file'] || DEFAULT_STATUS_FILE);
+  const pidFile = String(args['pid-file'] || DEFAULT_PID_FILE);
   writeJsonFile(statusFile, {
     phase: 'failed',
     error: error instanceof Error ? error.message : String(error),
     updated_at: new Date().toISOString()
   });
+  unlinkIfExists(pidFile);
   console.error(error);
   process.exit(1);
 });
