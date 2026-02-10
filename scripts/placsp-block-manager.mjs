@@ -21,7 +21,8 @@ const DEFAULT_APP_ID = 'civantapp';
 const DEFAULT_TENANT_ID = 'civant_default';
 const DEFAULT_BATCH_SIZE = 120;
 const DEFAULT_REPORT_INTERVAL_MS = 5 * 60 * 1000;
-const DEFAULT_STALL_THRESHOLD_MS = 20 * 60 * 1000;
+const DEFAULT_WARNING_THRESHOLD_MS = 3 * 60 * 1000;
+const DEFAULT_STALL_THRESHOLD_MS = 10 * 60 * 1000;
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_POLL_MS = 5000;
 
@@ -233,6 +234,7 @@ Shared options:
   --blocks <spec>               Comma list, e.g. 2012-2016,2017-2020,2021-2023,2024-2026:monthly
   --max-retries <n>             Default: ${DEFAULT_MAX_RETRIES}
   --report-every-minutes <n>    Default: ${DEFAULT_REPORT_INTERVAL_MS / 60000}
+  --warning-threshold-minutes <n> Default: ${DEFAULT_WARNING_THRESHOLD_MS / 60000}
   --stall-threshold-minutes <n> Default: ${DEFAULT_STALL_THRESHOLD_MS / 60000}
 
 Operational files:
@@ -276,6 +278,7 @@ function createInitialState(options, blocks) {
       batch_size: options.batchSize,
       max_retries: options.maxRetries,
       report_every_minutes: options.reportEveryMs / 60000,
+      warning_threshold_minutes: options.warningThresholdMs / 60000,
       stall_threshold_minutes: options.stallThresholdMs / 60000
     },
     current_block_index: null,
@@ -378,6 +381,8 @@ async function runBlockAttempt({
   let lastReportAt = 0;
   let previousProcessed = null;
   let previousProcessedAt = null;
+  let lastStatusUpdatedAt = null;
+  let lastWarningMarker = null;
   let forcedStopByStall = false;
 
   state.current_block_index = blockIndex;
@@ -421,12 +426,47 @@ async function runBlockAttempt({
     }
 
     const now = Date.now();
-    if (now - lastReportAt >= options.reportEveryMs) {
-      const status = readJson(files.statusFile) || {};
-      const processed = Number(status.processed || 0);
-      const updatedAt = clean(status.updated_at);
-      const statusAgeMs = formatStatusAgeMs(status);
+    const status = readJson(files.statusFile) || {};
+    const processed = Number(status.processed || 0);
+    const updatedAt = clean(status.updated_at);
+    const statusAgeMs = formatStatusAgeMs(status);
+    const statusMarker = updatedAt || '__no_status_updated_at__';
 
+    if (updatedAt && updatedAt !== lastStatusUpdatedAt) {
+      lastStatusUpdatedAt = updatedAt;
+      lastWarningMarker = null;
+    }
+
+    if (
+      statusAgeMs !== null &&
+      statusAgeMs >= options.warningThresholdMs &&
+      lastWarningMarker !== statusMarker
+    ) {
+      appendLine(reportLogFile, reportLine('stall-warning', {
+        key: block.key,
+        attempt,
+        status_age_seconds: Math.round(statusAgeMs / 1000),
+        warning_threshold_seconds: Math.round(options.warningThresholdMs / 1000),
+        status_updated_at: updatedAt
+      }));
+      lastWarningMarker = statusMarker;
+    }
+
+    if (statusAgeMs !== null && statusAgeMs >= options.stallThresholdMs && !forcedStopByStall) {
+      writeJson(files.controlFile, {
+        action: 'stop',
+        reason: `stall detected: status stale for ${Math.round(statusAgeMs / 60000)} minutes`
+      });
+      forcedStopByStall = true;
+      appendLine(reportLogFile, reportLine('stall-stop-triggered', {
+        key: block.key,
+        attempt,
+        status_age_minutes: Math.round(statusAgeMs / 60000),
+        stall_threshold_minutes: Math.round(options.stallThresholdMs / 60000)
+      }));
+    }
+
+    if (now - lastReportAt >= options.reportEveryMs) {
       let rowsPerMinute = null;
       if (Number.isFinite(processed) && Number.isFinite(previousProcessed) && previousProcessedAt) {
         const deltaRows = processed - previousProcessed;
@@ -456,19 +496,6 @@ async function runBlockAttempt({
       state.last_report_at = nowIso();
       persistState(state, managerStatusFile);
       lastReportAt = now;
-
-      if (statusAgeMs !== null && statusAgeMs > options.stallThresholdMs && !forcedStopByStall) {
-        writeJson(files.controlFile, {
-          action: 'stop',
-          reason: `stall detected: status stale for ${Math.round(statusAgeMs / 60000)} minutes`
-        });
-        forcedStopByStall = true;
-        appendLine(reportLogFile, reportLine('stall-stop-triggered', {
-          key: block.key,
-          attempt,
-          status_age_minutes: Math.round(statusAgeMs / 60000)
-        }));
-      }
     }
   }
 
@@ -539,6 +566,11 @@ async function runManager(options) {
   persistState(state, options.managerStatusFile);
   appendLine(options.reportLogFile, reportLine('manager-start', {
     pid: process.pid,
+    policy: {
+      report_every_minutes: options.reportEveryMs / 60000,
+      warning_threshold_minutes: options.warningThresholdMs / 60000,
+      stall_threshold_minutes: options.stallThresholdMs / 60000
+    },
     blocks: state.blocks.map((block) => ({
       key: block.key,
       from_year: block.fromYear,
@@ -795,6 +827,20 @@ async function monitorLoop(options, watchSeconds) {
 }
 
 function parseOptions(args) {
+  const reportEveryMinutes = Math.max(
+    1,
+    parsePositiveInt(args['report-every-minutes'], DEFAULT_REPORT_INTERVAL_MS / 60000)
+  );
+  const warningThresholdMinutes = Math.max(
+    1,
+    parsePositiveInt(args['warning-threshold-minutes'], DEFAULT_WARNING_THRESHOLD_MS / 60000)
+  );
+  const parsedStallThresholdMinutes = parsePositiveInt(
+    args['stall-threshold-minutes'],
+    DEFAULT_STALL_THRESHOLD_MS / 60000
+  );
+  const stallThresholdMinutes = Math.max(warningThresholdMinutes + 1, parsedStallThresholdMinutes);
+
   return {
     apiBase: clean(args['api-base']) || DEFAULT_API_BASE,
     appId: clean(args['app-id']) || DEFAULT_APP_ID,
@@ -803,8 +849,9 @@ function parseOptions(args) {
     batchSize: Math.max(20, parsePositiveInt(args['batch-size'], DEFAULT_BATCH_SIZE)),
     blocks: clean(args.blocks) || null,
     maxRetries: parsePositiveInt(args['max-retries'], DEFAULT_MAX_RETRIES),
-    reportEveryMs: Math.max(1, parsePositiveInt(args['report-every-minutes'], DEFAULT_REPORT_INTERVAL_MS / 60000)) * 60000,
-    stallThresholdMs: Math.max(5, parsePositiveInt(args['stall-threshold-minutes'], DEFAULT_STALL_THRESHOLD_MS / 60000)) * 60000,
+    reportEveryMs: reportEveryMinutes * 60000,
+    warningThresholdMs: warningThresholdMinutes * 60000,
+    stallThresholdMs: stallThresholdMinutes * 60000,
     managerStatusFile: clean(args['manager-status-file']) || DEFAULT_MANAGER_STATUS_FILE,
     managerControlFile: clean(args['manager-control-file']) || DEFAULT_MANAGER_CONTROL_FILE,
     managerPidFile: clean(args['manager-pid-file']) || DEFAULT_MANAGER_PID_FILE,

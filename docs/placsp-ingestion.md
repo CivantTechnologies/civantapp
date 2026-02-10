@@ -53,6 +53,7 @@ npm run import:placsp:backfill -- \
 ## Recommended block strategy (safer restart model)
 
 For large historical runs, use the block manager. It runs multiple year ranges in sequence with retries, per-block checkpoint files, and a health report every 5 minutes.
+By default it now raises a stall warning after 3 minutes of no status activity, then triggers a safe stop after 10 minutes.
 
 Start (detached):
 
@@ -62,7 +63,9 @@ npm run import:placsp:block:start -- \
   --app-id civantapp \
   --tenant-id civant_default \
   --download-dir /Users/davidmanrique/Downloads/placsp_zips \
-  --batch-size 120
+  --batch-size 120 \
+  --warning-threshold-minutes 3 \
+  --stall-threshold-minutes 10
 ```
 
 Monitor:
