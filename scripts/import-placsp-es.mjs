@@ -3,9 +3,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
+import { promisify } from 'node:util';
 
 const DEFAULT_FEED_URL = 'https://contrataciondelsectorpublico.gob.es/sindicacion/sindicacion_643/licitacionesPerfilesContratanteCompleto3.atom';
 const DEFAULT_ZIP_PREFIX = 'https://contrataciondelsectorpublico.gob.es/sindicacion/sindicacion_643/licitacionesPerfilesContratanteCompleto3_';
@@ -16,6 +17,11 @@ const DEFAULT_CONTROL_FILE = '/tmp/placsp-es-control.json';
 const DEFAULT_PID_FILE = '/tmp/placsp-es-import.pid';
 const REQUEST_TIMEOUT_MS = 45000;
 const MAX_HTTP_RETRIES = 5;
+const SOURCE_WAIT_HEARTBEAT_MS = 15000;
+const ZIP_EXEC_TIMEOUT_MS = 120000;
+const DEBUG_INGEST = String(process.env.PLACSP_DEBUG || '').toLowerCase() === 'true';
+
+const execFileAsync = promisify(execFile);
 
 function parseArgs(argv) {
   const args = {};
@@ -150,6 +156,16 @@ function clean(value) {
   if (!text) return null;
   if (text.toLowerCase() === 'null') return null;
   return text;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function debugLog(event, payload = null) {
+  if (!DEBUG_INGEST) return;
+  const line = payload ? `${event} ${JSON.stringify(payload)}` : event;
+  console.log(`[placsp-debug] ${new Date().toISOString()} ${line}`);
 }
 
 function decodeXmlEntities(value) {
@@ -423,18 +439,19 @@ async function fetchText(url) {
         },
         signal: controller.signal
       });
-      clearTimeout(timer);
       if (!response.ok) {
         const text = await response.text();
         throw new Error(`HTTP ${response.status}: ${text.slice(0, 300)}`);
       }
-      return await response.text();
+      const text = await response.text();
+      return text;
     } catch (error) {
-      clearTimeout(timer);
       lastError = error;
       if (attempt < MAX_HTTP_RETRIES) {
         await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
       }
+    } finally {
+      clearTimeout(timer);
     }
   }
   throw lastError || new Error(`Failed to fetch ${url}`);
@@ -457,7 +474,6 @@ async function downloadToFile(url, destination) {
         },
         signal: controller.signal
       });
-      clearTimeout(timer);
       if (!response.ok || !response.body) {
         const text = await response.text();
         throw new Error(`HTTP ${response.status}: ${text.slice(0, 300)}`);
@@ -466,7 +482,6 @@ async function downloadToFile(url, destination) {
       await pipeline(Readable.fromWeb(response.body), file);
       return destination;
     } catch (error) {
-      clearTimeout(timer);
       lastError = error;
       if (fs.existsSync(destination)) {
         try { fs.unlinkSync(destination); } catch {
@@ -476,25 +491,35 @@ async function downloadToFile(url, destination) {
       if (attempt < MAX_HTTP_RETRIES) {
         await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
       }
+    } finally {
+      clearTimeout(timer);
     }
   }
   throw lastError || new Error(`Download failed: ${url}`);
 }
 
-function listZipAtomEntries(zipPath) {
-  const text = execFileSync('unzip', ['-Z1', zipPath], { encoding: 'utf8', maxBuffer: 1024 * 1024 * 64 });
-  return text
+async function listZipAtomEntries(zipPath) {
+  const { stdout } = await execFileAsync('unzip', ['-Z1', zipPath], {
+    encoding: 'utf8',
+    maxBuffer: 1024 * 1024 * 64,
+    timeout: ZIP_EXEC_TIMEOUT_MS,
+    killSignal: 'SIGKILL'
+  });
+  return stdout
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.toLowerCase().endsWith('.atom'))
     .sort((a, b) => a.localeCompare(b));
 }
 
-function readZipEntry(zipPath, entryName) {
-  return execFileSync('unzip', ['-p', zipPath, entryName], {
+async function readZipEntry(zipPath, entryName) {
+  const { stdout } = await execFileAsync('unzip', ['-p', zipPath, entryName], {
     encoding: 'utf8',
-    maxBuffer: 1024 * 1024 * 256
+    maxBuffer: 1024 * 1024 * 256,
+    timeout: ZIP_EXEC_TIMEOUT_MS,
+    killSignal: 'SIGKILL'
   });
+  return stdout;
 }
 
 function parseBoolean(value, fallback = false) {
@@ -522,21 +547,32 @@ function isIngestionRunDuplicateError(message) {
 }
 
 async function postRows({ baseUrl, appId, tenantId, table, rows, includeTenantHeader }) {
-  const headers = { 'content-type': 'application/json' };
+  const headers = { 'content-type': 'application/json', prefer: 'return=minimal' };
   if (includeTenantHeader && tenantId) headers['x-tenant-id'] = tenantId;
+  const requestBody = JSON.stringify(rows);
 
   let lastError = null;
   for (let attempt = 1; attempt <= MAX_HTTP_RETRIES; attempt += 1) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const startedAt = Date.now();
     try {
+      debugLog('postRows-attempt-start', { table, attempt, rows: rows.length, body_bytes: Buffer.byteLength(requestBody) });
       const response = await fetch(`${baseUrl}/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(table)}`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(rows),
+        body: requestBody,
         signal: controller.signal
       });
-      clearTimeout(timer);
+      debugLog('postRows-attempt-response', { table, attempt, status: response.status, ms: Date.now() - startedAt });
+      if (response.ok) {
+        if (response.body) {
+          try { await response.body.cancel(); } catch {
+            // best effort
+          }
+        }
+        return { ok: true };
+      }
 
       const text = await response.text();
       const payload = text
@@ -544,38 +580,58 @@ async function postRows({ baseUrl, appId, tenantId, table, rows, includeTenantHe
             try { return JSON.parse(text); } catch { return { raw: text }; }
           })()
         : null;
-
-      if (!response.ok) {
-        throw new Error(payload?.error || payload?.message || `HTTP ${response.status}`);
-      }
-      return payload;
+      debugLog('postRows-attempt-failed-status', {
+        table,
+        attempt,
+        status: response.status,
+        ms: Date.now() - startedAt,
+        message: payload?.error || payload?.message || `HTTP ${response.status}`
+      });
+      throw new Error(payload?.error || payload?.message || `HTTP ${response.status}`);
     } catch (error) {
-      clearTimeout(timer);
+      const message = String(error?.message || error);
+      debugLog('postRows-attempt-error', { table, attempt, ms: Date.now() - startedAt, message });
       lastError = error;
+      if (isDuplicateError(message)) {
+        break;
+      }
       if (attempt < MAX_HTTP_RETRIES) {
         await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
       }
+    } finally {
+      clearTimeout(timer);
     }
   }
   throw lastError || new Error(`Failed POST ${table}`);
 }
 
 async function putEntityById({ baseUrl, appId, tenantId, table, id, payload, includeTenantHeader }) {
-  const headers = { 'content-type': 'application/json' };
+  const headers = { 'content-type': 'application/json', prefer: 'return=minimal' };
   if (includeTenantHeader && tenantId) headers['x-tenant-id'] = tenantId;
+  const requestBody = JSON.stringify(payload);
 
   let lastError = null;
   for (let attempt = 1; attempt <= MAX_HTTP_RETRIES; attempt += 1) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const startedAt = Date.now();
     try {
+      debugLog('putEntity-attempt-start', { table, id, attempt, body_bytes: Buffer.byteLength(requestBody) });
       const response = await fetch(`${baseUrl}/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(table)}/${encodeURIComponent(id)}`, {
         method: 'PUT',
         headers,
-        body: JSON.stringify(payload),
+        body: requestBody,
         signal: controller.signal
       });
-      clearTimeout(timer);
+      debugLog('putEntity-attempt-response', { table, id, attempt, status: response.status, ms: Date.now() - startedAt });
+      if (response.ok) {
+        if (response.body) {
+          try { await response.body.cancel(); } catch {
+            // best effort
+          }
+        }
+        return { ok: true };
+      }
 
       const text = await response.text();
       const parsed = text
@@ -583,14 +639,27 @@ async function putEntityById({ baseUrl, appId, tenantId, table, id, payload, inc
             try { return JSON.parse(text); } catch { return { raw: text }; }
           })()
         : null;
-      if (!response.ok) throw new Error(parsed?.error || parsed?.message || `HTTP ${response.status}`);
-      return parsed;
+      debugLog('putEntity-attempt-failed-status', {
+        table,
+        id,
+        attempt,
+        status: response.status,
+        ms: Date.now() - startedAt,
+        message: parsed?.error || parsed?.message || `HTTP ${response.status}`
+      });
+      throw new Error(parsed?.error || parsed?.message || `HTTP ${response.status}`);
     } catch (error) {
-      clearTimeout(timer);
+      const message = String(error?.message || error);
+      debugLog('putEntity-attempt-error', { table, id, attempt, ms: Date.now() - startedAt, message });
       lastError = error;
+      if (isDuplicateError(message)) {
+        break;
+      }
       if (attempt < MAX_HTTP_RETRIES) {
         await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
       }
+    } finally {
+      clearTimeout(timer);
     }
   }
   throw lastError || new Error(`Failed PUT ${table}/${id}`);
@@ -608,16 +677,22 @@ async function fetchEntitiesPage({ baseUrl, appId, tenantId, table, query = {}, 
   const headers = {};
   if (includeTenantHeader && tenantId) headers['x-tenant-id'] = tenantId;
 
-  const response = await fetch(url, { method: 'GET', headers });
-  const text = await response.text();
-  const parsed = text
-    ? (() => {
-        try { return JSON.parse(text); } catch { return { raw: text }; }
-      })()
-    : null;
-  if (!response.ok) throw new Error(parsed?.error || parsed?.message || `HTTP ${response.status}`);
-  if (!Array.isArray(parsed)) return [];
-  return parsed;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { method: 'GET', headers, signal: controller.signal });
+    const text = await response.text();
+    const parsed = text
+      ? (() => {
+          try { return JSON.parse(text); } catch { return { raw: text }; }
+        })()
+      : null;
+    if (!response.ok) throw new Error(parsed?.error || parsed?.message || `HTTP ${response.status}`);
+    if (!Array.isArray(parsed)) return [];
+    return parsed;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function loadSourceIdSet({ baseUrl, appId, tenantId, table, fieldName, includeTenantHeader, source }) {
@@ -803,6 +878,81 @@ function safeFileNameFromUrl(url) {
   return base.replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
+function makeFeedKey(feedUrl) {
+  const text = clean(feedUrl);
+  if (!text) return null;
+  const marker = '.zip:';
+  const splitAt = text.toLowerCase().lastIndexOf(marker);
+  if (splitAt === -1) return path.basename(text);
+  const zipPart = text.slice(0, splitAt + 4);
+  const atomPart = text.slice(splitAt + 5);
+  return `${path.basename(zipPart)}:${atomPart}`;
+}
+
+function zipItemBaseName(item) {
+  const remote = normalizeUrl(item);
+  if (remote) return safeFileNameFromUrl(remote);
+  return path.basename(String(item));
+}
+
+function parseBackfillCursor(cursorValue) {
+  if (!cursorValue) return null;
+  let parsed = cursorValue;
+  if (typeof cursorValue === 'string') {
+    try {
+      parsed = JSON.parse(cursorValue);
+    } catch {
+      return null;
+    }
+  }
+  if (!parsed || parsed.mode !== 'backfill') return null;
+  const feed = clean(parsed.feed);
+  if (!feed) return null;
+  const feedKey = makeFeedKey(feed);
+  if (!feedKey) return null;
+  const archiveIndex = parsePositiveInt(parsed.archive_index, 0);
+  const atomIndex = parsePositiveInt(parsed.atom_index, 0);
+  const entryIndex = parsePositiveInt(parsed.entry_index_in_feed, 0);
+  return {
+    feed,
+    feedKey,
+    archiveIndex: archiveIndex > 0 ? archiveIndex : null,
+    atomIndex: atomIndex > 0 ? atomIndex : null,
+    entryIndex: entryIndex > 0 ? entryIndex : null
+  };
+}
+
+function resolveBackfillResumePlan({ zipItems, startRecordArg, checkpoint }) {
+  const plan = {
+    effectiveStartRecord: Math.max(1, startRecordArg),
+    startArchiveIndex: 1,
+    startFeedKey: null,
+    startEntryIndex: 1,
+    usedCursorResume: false
+  };
+
+  if (plan.effectiveStartRecord <= 1) return plan;
+
+  const cursor = parseBackfillCursor(checkpoint?.cursor);
+  if (!cursor) return plan;
+
+  let archiveIndex = cursor.archiveIndex;
+  if (!archiveIndex) {
+    const [archiveBase] = cursor.feedKey.split(':');
+    const found = zipItems.findIndex((item) => zipItemBaseName(item) === archiveBase);
+    archiveIndex = found >= 0 ? found + 1 : null;
+  }
+
+  if (!archiveIndex) return plan;
+
+  plan.effectiveStartRecord = 1;
+  plan.startArchiveIndex = archiveIndex;
+  plan.startFeedKey = cursor.feedKey;
+  plan.startEntryIndex = (cursor.entryIndex || 0) + 1;
+  plan.usedCursorResume = true;
+  return plan;
+}
+
 function applyLookbackIso(iso, lookbackMinutes) {
   const parsed = parseDate(iso);
   if (!parsed.ms) return null;
@@ -860,8 +1010,19 @@ async function* iterateFeedChain({ feedUrl, sinceIso, maxPages, tenantId, modeLa
   }
 }
 
-async function* iterateZipSources({ zipItems, downloadDir, maxArchives, maxFilesPerArchive, tenantId, startArchiveIndex = 0 }) {
+async function* iterateZipSources({
+  zipItems,
+  downloadDir,
+  maxArchives,
+  maxFilesPerArchive,
+  tenantId,
+  startArchiveIndex = 1,
+  startFeedKey = null,
+  startEntryIndex = 1
+}) {
   let archiveIndex = 0;
+  let resumeFeedPending = Boolean(startFeedKey);
+  let resumeEntryOffset = Math.max(1, Number(startEntryIndex || 1));
 
   for (const item of zipItems) {
     archiveIndex += 1;
@@ -877,13 +1038,16 @@ async function* iterateZipSources({ zipItems, downloadDir, maxArchives, maxFiles
       throw new Error(`ZIP file not found: ${zipPath}`);
     }
 
-    const atomEntries = listZipAtomEntries(zipPath);
+    const atomEntries = await listZipAtomEntries(zipPath);
     let atomIndex = 0;
     for (const atomEntryName of atomEntries) {
       atomIndex += 1;
       if (atomIndex > maxFilesPerArchive) break;
 
-      const xml = readZipEntry(zipPath, atomEntryName);
+      const feedKey = `${path.basename(zipPath)}:${atomEntryName}`;
+      if (resumeFeedPending && feedKey !== startFeedKey) continue;
+
+      const xml = await readZipEntry(zipPath, atomEntryName);
       const parsedFeed = parseFeedDocument(xml, `${zipPath}:${atomEntryName}`);
       const feedUpdated = parseDate(parsedFeed.feedUpdated).iso;
 
@@ -897,13 +1061,21 @@ async function* iterateZipSources({ zipItems, downloadDir, maxArchives, maxFiles
         if (mapped) parsedEntries.push(mapped);
       }
 
+      let entries = parsedEntries;
+      if (resumeFeedPending && feedKey === startFeedKey) {
+        entries = parsedEntries.slice(Math.max(0, resumeEntryOffset - 1));
+        resumeFeedPending = false;
+        resumeEntryOffset = 1;
+      }
+
       yield {
         archiveIndex,
         atomIndex,
+        feedKey,
         feedUrl: `${zipPath}:${atomEntryName}`,
         feedUpdated,
         nextLink: parsedFeed.nextLink,
-        entries: parsedEntries
+        entries
       };
     }
   }
@@ -938,6 +1110,8 @@ async function runIngestion({
   let feeds = 0;
   let lastCursor = null;
   let maxEntryUpdatedIso = null;
+  let activity = 'initializing';
+  let lastProgressAt = new Date().toISOString();
   const rawBatch = [];
   const canonicalBatch = [];
   const currentBatch = [];
@@ -945,6 +1119,7 @@ async function runIngestion({
   let flushCount = 0;
   let lastHeartbeatAt = Date.now();
   let requestedAction = null;
+  let heartbeatTimer = null;
 
   const onSignalStop = () => {
     requestedAction = 'stop';
@@ -952,6 +1127,10 @@ async function runIngestion({
 
   process.on('SIGTERM', onSignalStop);
   process.on('SIGINT', onSignalStop);
+
+  const markProgress = () => {
+    lastProgressAt = new Date().toISOString();
+  };
 
   const buildMetrics = () => ({
     mode,
@@ -989,6 +1168,8 @@ async function runIngestion({
       pages,
       feeds,
       cursor: lastCursor,
+      activity,
+      progress_at: lastProgressAt,
       updated_at: new Date().toISOString()
     });
   };
@@ -1005,6 +1186,8 @@ async function runIngestion({
       pages,
       feeds,
       cursor: lastCursor,
+      activity,
+      progress_at: lastProgressAt,
       raw_inserted: rawMetrics.inserted,
       canonical_inserted: canonicalMetrics.inserted,
       canonical_updated: canonicalMetrics.updated,
@@ -1085,6 +1268,9 @@ async function runIngestion({
     if (!rawBatch.length && !canonicalBatch.length && !currentBatch.length) return;
 
     if (rawBatch.length) {
+      activity = `flush:raw_documents:${rawBatch.length}`;
+      emitStatus('running');
+      writeCheckpointSnapshot();
       await insertBatchWithFallback({
         baseUrl,
         appId,
@@ -1094,9 +1280,13 @@ async function runIngestion({
         metrics: rawMetrics,
         includeTenantHeader
       });
+      markProgress();
     }
 
     if (canonicalBatch.length) {
+      activity = `flush:canonical_tenders:${canonicalBatch.length}`;
+      emitStatus('running');
+      writeCheckpointSnapshot();
       await insertBatchWithUpsertById({
         baseUrl,
         appId,
@@ -1107,9 +1297,13 @@ async function runIngestion({
         metrics: canonicalMetrics,
         includeTenantHeader
       });
+      markProgress();
     }
 
     if (currentBatch.length) {
+      activity = `flush:TendersCurrent:${currentBatch.length}`;
+      emitStatus('running');
+      writeCheckpointSnapshot();
       await insertBatchWithUpsertById({
         baseUrl,
         appId,
@@ -1120,6 +1314,7 @@ async function runIngestion({
         metrics: currentMetrics,
         includeTenantHeader
       });
+      markProgress();
     }
 
     flushCount += 1;
@@ -1154,6 +1349,7 @@ async function runIngestion({
     if (!requestedAction) return null;
 
     await flush();
+    activity = requestedAction === 'pause' ? 'paused' : 'stopped';
     const terminalStatus = requestedAction === 'pause' ? 'paused' : 'stopped';
     const finishedAt = new Date().toISOString();
     const statusCursor = lastCursor || `${mode}:${terminalStatus}`;
@@ -1166,21 +1362,62 @@ async function runIngestion({
     return finalizeResult(terminalStatus);
   };
 
-  try {
-    for await (const feedChunk of sourceIterator) {
-      feeds += 1;
-      pages = Math.max(pages, Number(feedChunk.page || 0));
+    try {
+      const iterator = sourceIterator[Symbol.asyncIterator]();
+      heartbeatTimer = setInterval(() => {
+        if (requestedAction) return;
+        emitStatus('running');
+        writeCheckpointSnapshot();
+      }, SOURCE_WAIT_HEARTBEAT_MS);
+      if (typeof heartbeatTimer.unref === 'function') heartbeatTimer.unref();
 
-      const requestedBeforeChunk = await maybeHandleControl();
-      if (requestedBeforeChunk) return requestedBeforeChunk;
+      while (true) {
+        activity = 'waiting:source-next';
+        const nextPromise = iterator.next();
+        let nextChunkResult = null;
 
-      for (const mapped of feedChunk.entries) {
-        parsedRecords += 1;
+        while (!nextChunkResult) {
+          const raceResult = await Promise.race([
+            nextPromise.then((value) => ({ type: 'next', value })).catch((error) => ({ type: 'error', error })),
+            sleep(SOURCE_WAIT_HEARTBEAT_MS).then(() => ({ type: 'tick' }))
+          ]);
 
-        if (parsedRecords < startRecord) {
-          skippedBeforeStart += 1;
-          if (parsedRecords % 1000 === 0) {
+          if (raceResult.type === 'tick') {
+            activity = 'waiting:source-next';
+            const requestedDuringWait = await maybeHandleControl();
+            if (requestedDuringWait) return requestedDuringWait;
+            continue;
+        }
+
+        if (raceResult.type === 'error') {
+          throw raceResult.error;
+        }
+
+        nextChunkResult = raceResult.value;
+      }
+
+      if (nextChunkResult.done) break;
+
+        const feedChunk = nextChunkResult.value;
+        activity = `processing:${feedChunk.feedKey || makeFeedKey(feedChunk.feedUrl) || 'feed'}`;
+        feeds += 1;
+        pages = Math.max(pages, Number(feedChunk.page || 0));
+        markProgress();
+
+        const requestedBeforeChunk = await maybeHandleControl();
+        if (requestedBeforeChunk) return requestedBeforeChunk;
+
+        for (let entryIndex = 0; entryIndex < feedChunk.entries.length; entryIndex += 1) {
+          const mapped = feedChunk.entries[entryIndex];
+          parsedRecords += 1;
+          if (parsedRecords % 50 === 0) markProgress();
+
+          if (parsedRecords < startRecord) {
+            skippedBeforeStart += 1;
+          if (Date.now() - lastHeartbeatAt > 30000) {
+            emitStatus('running');
             writeCheckpointSnapshot();
+            lastHeartbeatAt = Date.now();
           }
           continue;
         }
@@ -1202,6 +1439,7 @@ async function runIngestion({
         canonicalBatch.push(mapped.canonicalTender);
         currentBatch.push(mapped.currentTender);
         processed += 1;
+        markProgress();
 
         if (mapped.entryUpdated) {
           if (!maxEntryUpdatedIso) maxEntryUpdatedIso = mapped.entryUpdated;
@@ -1217,6 +1455,10 @@ async function runIngestion({
         lastCursor = JSON.stringify({
           mode,
           feed: feedChunk.feedUrl,
+          feed_key: feedChunk.feedKey || makeFeedKey(feedChunk.feedUrl),
+          archive_index: feedChunk.archiveIndex || null,
+          atom_index: feedChunk.atomIndex || null,
+          entry_index_in_feed: entryIndex + 1,
           page: feedChunk.page || null,
           parsed_records: parsedRecords,
           processed,
@@ -1249,6 +1491,7 @@ async function runIngestion({
     }
 
     await flush();
+    activity = 'finalizing';
     emitStatus('finalizing');
 
     const runErrors = buildRunErrors();
@@ -1270,9 +1513,14 @@ async function runIngestion({
     });
 
     writeCheckpointSnapshot();
+    activity = 'completed';
     emitStatus('completed');
     return finalizeResult(completedStatus);
   } finally {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
     process.off('SIGTERM', onSignalStop);
     process.off('SIGINT', onSignalStop);
   }
@@ -1491,7 +1739,7 @@ async function main() {
       const downloadDir = String(args['download-dir'] || DEFAULT_DOWNLOAD_DIR);
       const maxArchives = parsePositiveInt(args['max-archives'], Number.MAX_SAFE_INTEGER);
       const maxFilesPerArchive = parsePositiveInt(args['max-files-per-archive'], Number.MAX_SAFE_INTEGER);
-      const startRecord = Math.max(1, parsePositiveInt(args['start-record'], 1));
+      const startRecordArg = Math.max(1, parsePositiveInt(args['start-record'], 1));
 
       const explicitZips = parseZipList(args.zip);
       const zipItems = explicitZips.length
@@ -1502,12 +1750,22 @@ async function main() {
         throw new Error('No ZIP sources resolved for backfill mode');
       }
 
+      const checkpoint = readJsonFile(checkpointFile) || {};
+      const resumePlan = resolveBackfillResumePlan({
+        zipItems,
+        startRecordArg,
+        checkpoint
+      });
+
       const sourceIterator = iterateZipSources({
         zipItems,
         downloadDir,
         maxArchives,
         maxFilesPerArchive,
-        tenantId
+        tenantId,
+        startArchiveIndex: resumePlan.startArchiveIndex,
+        startFeedKey: resumePlan.startFeedKey,
+        startEntryIndex: resumePlan.startEntryIndex
       });
 
       const result = await runIngestion({
@@ -1519,14 +1777,18 @@ async function main() {
         batchSize,
         runId,
         statusFile,
-        startRecord,
+        startRecord: resumePlan.effectiveStartRecord,
         sourceIterator,
         checkpointFile,
         checkpointPayload: {
           source: 'PLACSP_ES',
           historical_from_year: fromYear,
           historical_to_year: toYear,
-          include_monthly_current_year: includeMonthlyCurrentYear
+          include_monthly_current_year: includeMonthlyCurrentYear,
+          resume_by_cursor: resumePlan.usedCursorResume,
+          start_archive_index: resumePlan.startArchiveIndex,
+          start_feed_key: resumePlan.startFeedKey,
+          start_entry_index: resumePlan.startEntryIndex
         },
         controlFile
       });

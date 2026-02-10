@@ -54,6 +54,7 @@ npm run import:placsp:backfill -- \
 
 For large historical runs, use the block manager. It runs multiple year ranges in sequence with retries, per-block checkpoint files, and a health report every 5 minutes.
 By default it now raises a stall warning after 3 minutes of no status activity, then triggers a safe stop after 10 minutes. Stall-triggered stops auto-restart from the latest checkpoint within the same manager run.
+If the importer does not exit after stall-stop, the manager force-kills it after a 2-minute grace period and retries from checkpoint.
 
 Start (detached):
 
@@ -65,7 +66,8 @@ npm run import:placsp:block:start -- \
   --download-dir /Users/davidmanrique/Downloads/placsp_zips \
   --batch-size 120 \
   --warning-threshold-minutes 3 \
-  --stall-threshold-minutes 10
+  --stall-threshold-minutes 10 \
+  --stall-kill-grace-minutes 2
 ```
 
 Monitor:

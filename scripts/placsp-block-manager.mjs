@@ -23,6 +23,7 @@ const DEFAULT_BATCH_SIZE = 120;
 const DEFAULT_REPORT_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_WARNING_THRESHOLD_MS = 3 * 60 * 1000;
 const DEFAULT_STALL_THRESHOLD_MS = 10 * 60 * 1000;
+const DEFAULT_STALL_KILL_GRACE_MS = 2 * 60 * 1000;
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_POLL_MS = 5000;
 
@@ -178,10 +179,10 @@ function buildBlockFiles(blockPrefix, blockKey) {
   };
 }
 
-function formatStatusAgeMs(status) {
-  const updatedAt = clean(status?.updated_at);
-  if (!updatedAt) return null;
-  const ms = Date.parse(updatedAt);
+function formatStatusAgeMs(status, field = 'updated_at') {
+  const value = clean(status?.[field]);
+  if (!value) return null;
+  const ms = Date.parse(value);
   if (!Number.isFinite(ms)) return null;
   return Date.now() - ms;
 }
@@ -190,7 +191,7 @@ function extractNextStartRecord(checkpointFile, fallback) {
   const checkpoint = readJson(checkpointFile);
   const parsed = Number(checkpoint?.parsed_records || checkpoint?.processed || 0);
   if (Number.isFinite(parsed) && parsed > 0) {
-    return Math.max(1, parsed + 1);
+    return Math.max(1, fallback, parsed + 1);
   }
   return fallback;
 }
@@ -236,6 +237,7 @@ Shared options:
   --report-every-minutes <n>    Default: ${DEFAULT_REPORT_INTERVAL_MS / 60000}
   --warning-threshold-minutes <n> Default: ${DEFAULT_WARNING_THRESHOLD_MS / 60000}
   --stall-threshold-minutes <n> Default: ${DEFAULT_STALL_THRESHOLD_MS / 60000}
+  --stall-kill-grace-minutes <n> Default: ${DEFAULT_STALL_KILL_GRACE_MS / 60000}
 
 Operational files:
   --manager-status-file <path>  Default: ${DEFAULT_MANAGER_STATUS_FILE}
@@ -279,7 +281,8 @@ function createInitialState(options, blocks) {
       max_retries: options.maxRetries,
       report_every_minutes: options.reportEveryMs / 60000,
       warning_threshold_minutes: options.warningThresholdMs / 60000,
-      stall_threshold_minutes: options.stallThresholdMs / 60000
+      stall_threshold_minutes: options.stallThresholdMs / 60000,
+      stall_kill_grace_minutes: options.stallKillGraceMs / 60000
     },
     current_block_index: null,
     current_block: null,
@@ -382,8 +385,10 @@ async function runBlockAttempt({
   let previousProcessed = null;
   let previousProcessedAt = null;
   let lastStatusUpdatedAt = null;
+  let lastProgressUpdatedAt = null;
   let lastWarningMarker = null;
   let forcedStopByStall = false;
+  let forcedKillByStall = false;
 
   state.current_block_index = blockIndex;
   state.current_block = {
@@ -429,41 +434,78 @@ async function runBlockAttempt({
     const status = readJson(files.statusFile) || {};
     const processed = Number(status.processed || 0);
     const updatedAt = clean(status.updated_at);
+    const progressAt = clean(status.progress_at) || updatedAt;
     const statusAgeMs = formatStatusAgeMs(status);
-    const statusMarker = updatedAt || '__no_status_updated_at__';
+    const progressAgeMs = formatStatusAgeMs(status, 'progress_at') ?? statusAgeMs;
+    const progressMarker = progressAt || '__no_progress_at__';
 
     if (updatedAt && updatedAt !== lastStatusUpdatedAt) {
       lastStatusUpdatedAt = updatedAt;
+    }
+    if (progressAt && progressAt !== lastProgressUpdatedAt) {
+      lastProgressUpdatedAt = progressAt;
       lastWarningMarker = null;
     }
 
     if (
-      statusAgeMs !== null &&
-      statusAgeMs >= options.warningThresholdMs &&
-      lastWarningMarker !== statusMarker
+      progressAgeMs !== null &&
+      progressAgeMs >= options.warningThresholdMs &&
+      lastWarningMarker !== progressMarker
     ) {
       appendLine(reportLogFile, reportLine('stall-warning', {
         key: block.key,
         attempt,
-        status_age_seconds: Math.round(statusAgeMs / 1000),
+        progress_age_seconds: Math.round(progressAgeMs / 1000),
         warning_threshold_seconds: Math.round(options.warningThresholdMs / 1000),
+        progress_at: progressAt,
+        status_age_seconds: statusAgeMs === null ? null : Math.round(statusAgeMs / 1000),
         status_updated_at: updatedAt
       }));
-      lastWarningMarker = statusMarker;
+      lastWarningMarker = progressMarker;
     }
 
-    if (statusAgeMs !== null && statusAgeMs >= options.stallThresholdMs && !forcedStopByStall) {
+    if (progressAgeMs !== null && progressAgeMs >= options.stallThresholdMs && !forcedStopByStall) {
       writeJson(files.controlFile, {
         action: 'stop',
-        reason: `stall detected: status stale for ${Math.round(statusAgeMs / 60000)} minutes`
+        reason: `stall detected: no progress for ${Math.round(progressAgeMs / 60000)} minutes`
       });
       forcedStopByStall = true;
       appendLine(reportLogFile, reportLine('stall-stop-triggered', {
         key: block.key,
         attempt,
-        status_age_minutes: Math.round(statusAgeMs / 60000),
+        progress_age_minutes: Math.round(progressAgeMs / 60000),
         stall_threshold_minutes: Math.round(options.stallThresholdMs / 60000)
       }));
+    }
+
+    if (
+      forcedStopByStall &&
+      !forcedKillByStall &&
+      progressAgeMs !== null &&
+      progressAgeMs >= options.stallThresholdMs + options.stallKillGraceMs
+    ) {
+      forcedKillByStall = true;
+      appendLine(reportLogFile, reportLine('stall-force-kill', {
+        key: block.key,
+        attempt,
+        progress_age_minutes: Math.round(progressAgeMs / 60000),
+        kill_grace_minutes: Math.round(options.stallKillGraceMs / 60000),
+        pid: childPid
+      }));
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        // best effort
+      }
+      setTimeout(() => {
+        try {
+          if (child.exitCode === null && child.signalCode === null) {
+            child.kill('SIGKILL');
+          }
+        } catch {
+          // best effort
+        }
+      }, 10000).unref();
     }
 
     if (now - lastReportAt >= options.reportEveryMs) {
@@ -483,6 +525,9 @@ async function runBlockAttempt({
         parsed_records: status.parsed_records || 0,
         processed,
         cursor: status.cursor || null,
+        activity: status.activity || null,
+        progress_at: progressAt,
+        progress_age_seconds: progressAgeMs === null ? null : Math.round(progressAgeMs / 1000),
         rows_per_minute: rowsPerMinute,
         status_updated_at: updatedAt,
         status_age_seconds: statusAgeMs === null ? null : Math.round(statusAgeMs / 1000),
@@ -567,6 +612,9 @@ async function runManager(options) {
   if (!fs.existsSync(IMPORTER_SCRIPT)) {
     throw new Error(`Importer not found: ${IMPORTER_SCRIPT}`);
   }
+
+  // Drop stale control instructions from previous sessions.
+  unlinkIfExists(options.managerControlFile);
 
   if (options.fresh) {
     unlinkIfExists(options.managerStatusFile);
@@ -903,6 +951,10 @@ function parseOptions(args) {
     DEFAULT_STALL_THRESHOLD_MS / 60000
   );
   const stallThresholdMinutes = Math.max(warningThresholdMinutes + 1, parsedStallThresholdMinutes);
+  const stallKillGraceMinutes = Math.max(
+    1,
+    parsePositiveInt(args['stall-kill-grace-minutes'], DEFAULT_STALL_KILL_GRACE_MS / 60000)
+  );
 
   return {
     apiBase: clean(args['api-base']) || DEFAULT_API_BASE,
@@ -915,6 +967,7 @@ function parseOptions(args) {
     reportEveryMs: reportEveryMinutes * 60000,
     warningThresholdMs: warningThresholdMinutes * 60000,
     stallThresholdMs: stallThresholdMinutes * 60000,
+    stallKillGraceMs: stallKillGraceMinutes * 60000,
     managerStatusFile: clean(args['manager-status-file']) || DEFAULT_MANAGER_STATUS_FILE,
     managerControlFile: clean(args['manager-control-file']) || DEFAULT_MANAGER_CONTROL_FILE,
     managerPidFile: clean(args['manager-pid-file']) || DEFAULT_MANAGER_PID_FILE,

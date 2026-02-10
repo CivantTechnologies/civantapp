@@ -286,6 +286,8 @@ export async function createEntity(req: DynamicRequest) {
   const tableName = resolveTableName(entityName);
   const payload = (req.body && typeof req.body === 'object') ? req.body : {};
   const tenantId = resolveTenantFromHeader(req);
+  const preferHeader = String(getHeader(req, 'prefer') || '').toLowerCase();
+  const returnMinimal = preferHeader.includes('return=minimal');
   const supabase = getServerSupabase() as any;
 
   const bodyWithTenant = (() => {
@@ -308,7 +310,32 @@ export async function createEntity(req: DynamicRequest) {
     return payload;
   })();
 
-  const { data, error } = await supabase.from(tableName as any).insert(bodyWithTenant).select('*').limit(1);
+  const writeOperation = (() => {
+    if (tableName === 'raw_documents') {
+      return supabase
+        .from(tableName as any)
+        .insert(bodyWithTenant, { onConflict: 'checksum', ignoreDuplicates: true });
+    }
+    if (tableName === 'canonical_tenders') {
+      return supabase
+        .from(tableName as any)
+        .upsert(bodyWithTenant, { onConflict: 'canonical_id' });
+    }
+    if (tableName === 'TendersCurrent') {
+      return supabase
+        .from(tableName as any)
+        .upsert(bodyWithTenant, { onConflict: 'tender_id' });
+    }
+    return supabase.from(tableName as any).insert(bodyWithTenant);
+  })();
+
+  if (returnMinimal) {
+    const { error } = await writeOperation;
+    if (error) throw Object.assign(new Error(error.message), { status: 500 });
+    return { ok: true };
+  }
+
+  const { data, error } = await writeOperation.select('*').limit(1);
   if (error) throw Object.assign(new Error(error.message), { status: 500 });
 
   if (Array.isArray(data) && data.length > 0) return normalizeEntityRow(tableName, data[0]);
@@ -373,12 +400,20 @@ export async function updateEntityById(req: DynamicRequest) {
 
   const payload = (req.body && typeof req.body === 'object') ? req.body : {};
   const tenantId = resolveTenantFromHeader(req);
+  const preferHeader = String(getHeader(req, 'prefer') || '').toLowerCase();
+  const returnMinimal = preferHeader.includes('return=minimal');
   const supabase = getServerSupabase() as any;
 
   let qb = supabase.from(tableName as any).update(payload);
   qb = applyIdFilter(qb, tableName, id);
   if (tenantId && TENANT_SCOPED_TABLES.has(tableName)) {
     qb = qb.eq('tenant_id', tenantId);
+  }
+
+  if (returnMinimal) {
+    const { error } = await qb;
+    if (error) throw Object.assign(new Error(error.message), { status: 500 });
+    return { ok: true };
   }
 
   const { data, error } = await qb.select('*').limit(1);
