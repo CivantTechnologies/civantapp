@@ -521,16 +521,46 @@ async function runBlockAttempt({
   }));
 
   if (phase === 'paused') {
-    return { outcome: 'paused', nextStartRecord, phase, status, checkpoint };
+    return {
+      outcome: 'paused',
+      nextStartRecord,
+      phase,
+      status,
+      checkpoint,
+      autoStoppedByStall: forcedStopByStall
+    };
   }
   if (phase === 'stopped') {
-    return { outcome: 'stopped', nextStartRecord, phase, status, checkpoint };
+    return {
+      outcome: 'stopped',
+      nextStartRecord,
+      phase,
+      status,
+      checkpoint,
+      autoStoppedByStall: forcedStopByStall
+    };
   }
   if (phase === 'completed' || phase === 'completed_with_errors') {
-    return { outcome: phase, nextStartRecord, phase, status, checkpoint };
+    return {
+      outcome: phase,
+      nextStartRecord,
+      phase,
+      status,
+      checkpoint,
+      autoStoppedByStall: forcedStopByStall
+    };
   }
 
-  return { outcome: 'failed', nextStartRecord, phase, status, checkpoint, exitCode, signalCode };
+  return {
+    outcome: 'failed',
+    nextStartRecord,
+    phase,
+    status,
+    checkpoint,
+    exitCode,
+    signalCode,
+    autoStoppedByStall: forcedStopByStall
+  };
 }
 
 async function runManager(options) {
@@ -636,6 +666,39 @@ async function runManager(options) {
             next_start_record: result.nextStartRecord
           }));
           unlinkIfExists(options.managerControlFile);
+          return;
+        }
+
+        if (result.outcome === 'stopped' && result.autoStoppedByStall) {
+          block.status = 'retrying';
+          block.last_error = 'auto-stopped on stall threshold; retrying from checkpoint';
+          persistState(state, options.managerStatusFile);
+
+          if (attempt < options.maxRetries) {
+            const waitMs = Math.min(30000, Math.max(5000, attempt * 5000));
+            appendLine(options.reportLogFile, reportLine('block-auto-restart', {
+              key: block.key,
+              attempt,
+              wait_ms: waitMs,
+              next_start_record: result.nextStartRecord,
+              reason: block.last_error
+            }));
+            await sleep(waitMs);
+            startRecord = Math.max(1, result.nextStartRecord);
+            continue;
+          }
+
+          block.status = 'failed';
+          block.finished_at = nowIso();
+          state.phase = 'failed';
+          state.last_error = `Block ${block.key} exhausted retries after repeated stall auto-stops`;
+          state.completed_at = nowIso();
+          persistState(state, options.managerStatusFile);
+          appendLine(options.reportLogFile, reportLine('manager-failed', {
+            key: block.key,
+            attempts: options.maxRetries,
+            error: block.last_error
+          }));
           return;
         }
 

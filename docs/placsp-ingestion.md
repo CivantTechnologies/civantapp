@@ -53,7 +53,7 @@ npm run import:placsp:backfill -- \
 ## Recommended block strategy (safer restart model)
 
 For large historical runs, use the block manager. It runs multiple year ranges in sequence with retries, per-block checkpoint files, and a health report every 5 minutes.
-By default it now raises a stall warning after 3 minutes of no status activity, then triggers a safe stop after 10 minutes.
+By default it now raises a stall warning after 3 minutes of no status activity, then triggers a safe stop after 10 minutes. Stall-triggered stops auto-restart from the latest checkpoint within the same manager run.
 
 Start (detached):
 
