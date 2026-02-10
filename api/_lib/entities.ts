@@ -314,7 +314,7 @@ export async function createEntity(req: DynamicRequest) {
     if (tableName === 'raw_documents') {
       return supabase
         .from(tableName as any)
-        .insert(bodyWithTenant, { onConflict: 'checksum', ignoreDuplicates: true });
+        .upsert(bodyWithTenant, { onConflict: 'checksum', ignoreDuplicates: true });
     }
     if (tableName === 'canonical_tenders') {
       return supabase
