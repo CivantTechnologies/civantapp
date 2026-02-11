@@ -93,6 +93,33 @@ const tenderTypeOptions = [
 
 const noticeTypeOptions = ['Tender', 'Award', 'Corrigendum', 'PIN', 'Contract notice'];
 const contractTypeOptions = ['Supplies', 'Services', 'Works', 'Framework', 'Concession'];
+const notificationFrequencyOptions = [
+  { value: 'immediate', label: 'Immediate' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' }
+];
+const languageOptions = [
+  { value: 'en', label: 'English' },
+  { value: 'es', label: 'Spanish' },
+  { value: 'fr', label: 'French' },
+  { value: 'de', label: 'German' },
+  { value: 'it', label: 'Italian' },
+  { value: 'pt', label: 'Portuguese' }
+];
+const timezoneOptions = [
+  'Europe/Dublin',
+  'Europe/Paris',
+  'Europe/Madrid',
+  'Europe/London',
+  'Europe/Berlin',
+  'Europe/Rome',
+  'Europe/Lisbon',
+  'Europe/Brussels',
+  'UTC',
+  'America/New_York',
+  'America/Chicago',
+  'America/Los_Angeles'
+];
 const regionOptions = [
   'Ireland',
   'France',
@@ -230,6 +257,9 @@ function normalizeForm(value) {
     procurement_regions: ensureArray(input.procurement_regions),
     preferred_notice_types: ensureArray(input.preferred_notice_types),
     preferred_contract_types: ensureArray(input.preferred_contract_types),
+    notification_frequency: normalizeNotificationFrequency(input.notification_frequency || defaultForm.notification_frequency),
+    language: normalizeLanguage(input.language || defaultForm.language),
+    timezone: normalizeTimezone(input.timezone || defaultForm.timezone),
     cpv_interest_codes: Array.isArray(input.cpv_interest_codes)
       ? ensureArray(input.cpv_interest_codes).join(', ')
       : String(input.cpv_interest_codes || '')
@@ -248,6 +278,32 @@ function removeOption(list, value) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function normalizeNotificationFrequency(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'immediate' || normalized === 'daily' || normalized === 'weekly') {
+    return normalized;
+  }
+  return 'daily';
+}
+
+function normalizeLanguage(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'eng') return 'en';
+  if (normalized === 'spa') return 'es';
+  if (normalized === 'fre' || normalized === 'fra') return 'fr';
+  if (normalized === 'ger' || normalized === 'deu') return 'de';
+  if (normalized === 'ita') return 'it';
+  if (normalized === 'por') return 'pt';
+  if (languageOptions.some((option) => option.value === normalized)) return normalized;
+  return 'en';
+}
+
+function normalizeTimezone(value) {
+  const normalized = String(value || '').trim();
+  if (timezoneOptions.includes(normalized)) return normalized;
+  return defaultForm.timezone;
 }
 
 function loadImageFromDataUrl(dataUrl) {
@@ -732,15 +788,48 @@ export default function Profile() {
               </div>
               <div>
                 <Label htmlFor="notification_frequency">Notification Frequency</Label>
-                <Input id="notification_frequency" value={form.notification_frequency} onChange={(e) => setField('notification_frequency', e.target.value)} placeholder="immediate, daily, weekly" />
+                <Select value={form.notification_frequency} onValueChange={(value) => setField('notification_frequency', value)}>
+                  <SelectTrigger id="notification_frequency">
+                    <SelectValue placeholder="Select frequency" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {notificationFrequencyOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label htmlFor="language">Language</Label>
-                <Input id="language" value={form.language} onChange={(e) => setField('language', e.target.value)} />
+                <Select value={form.language} onValueChange={(value) => setField('language', value)}>
+                  <SelectTrigger id="language">
+                    <SelectValue placeholder="Select language" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {languageOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label htmlFor="timezone">Timezone</Label>
-                <Input id="timezone" value={form.timezone} onChange={(e) => setField('timezone', e.target.value)} />
+                <Select value={form.timezone} onValueChange={(value) => setField('timezone', value)}>
+                  <SelectTrigger id="timezone">
+                    <SelectValue placeholder="Select timezone" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {timezoneOptions.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label htmlFor="linkedin_url">LinkedIn URL</Label>
