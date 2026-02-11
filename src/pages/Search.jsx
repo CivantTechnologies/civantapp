@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { civant } from '@/api/civantClient';
 import { createPageUrl } from '../utils';
+import { useLocation } from 'react-router-dom';
 import { 
     Search as SearchIcon, 
     Filter,
@@ -15,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { format, subDays, isAfter, addDays } from 'date-fns';
 
 export default function Search() {
+    const location = useLocation();
     const [tenders, setTenders] = useState([]);
     const [filteredTenders, setFilteredTenders] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -34,6 +36,40 @@ export default function Search() {
     useEffect(() => {
         loadTenders();
     }, []);
+
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const allowedCountries = new Set(['all', 'FR', 'IE']);
+        const allowedSources = new Set(['all', 'BOAMP_FR', 'TED', 'ETENDERS_IE']);
+        const allowedDeadlineWithin = new Set(['all', '7', '14', '30', '60', '90', '180', '365']);
+        const allowedIndustry = new Set(['all', 'construction', 'it', 'health', 'transport', 'consulting', 'food']);
+        const allowedInstitutionType = new Set(['all', 'ministry', 'local', 'health', 'education', 'transport']);
+        const allowedLastTendered = new Set(['all', '1', '7', '30', '90', '180', '365']);
+
+        const readFilter = (key, fallback = 'all') => params.get(key) || fallback;
+
+        setKeyword(params.get('keyword') || '');
+        setBuyerSearch(params.get('buyer') || '');
+        setCpvSearch(params.get('cpv') || '');
+
+        const nextCountry = readFilter('country');
+        setCountry(allowedCountries.has(nextCountry) ? nextCountry : 'all');
+
+        const nextSource = readFilter('source');
+        setSource(allowedSources.has(nextSource) ? nextSource : 'all');
+
+        const nextDeadlineWithin = readFilter('deadlineWithin');
+        setDeadlineWithin(allowedDeadlineWithin.has(nextDeadlineWithin) ? nextDeadlineWithin : 'all');
+
+        const nextIndustry = readFilter('industry');
+        setIndustry(allowedIndustry.has(nextIndustry) ? nextIndustry : 'all');
+
+        const nextInstitutionType = readFilter('institutionType');
+        setInstitutionType(allowedInstitutionType.has(nextInstitutionType) ? nextInstitutionType : 'all');
+
+        const nextLastTendered = readFilter('lastTendered');
+        setLastTendered(allowedLastTendered.has(nextLastTendered) ? nextLastTendered : 'all');
+    }, [location.search]);
     
     useEffect(() => {
         applyFilters();
@@ -139,10 +175,13 @@ export default function Search() {
             const cutoffDate = subDays(now, days);
             
             filtered = filtered.filter(t => {
-                const publicationDate = getTenderPublicationDate(t);
-                if (!publicationDate) return false;
-                const pubDate = new Date(publicationDate);
-                return pubDate >= cutoffDate;
+                // For the "last 24h" quick view, match the dashboard "new tenders"
+                // metric by using first-seen time.
+                const dateValue = days === 1
+                    ? getTenderFirstSeen(t)
+                    : getTenderPublicationDate(t);
+                if (!dateValue) return false;
+                return new Date(dateValue) >= cutoffDate;
             });
         }
         
@@ -337,6 +376,7 @@ export default function Search() {
                                         </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="all">Any time</SelectItem>
+                                            <SelectItem value="1">Last 24 hours</SelectItem>
                                             <SelectItem value="7">Last 7 days</SelectItem>
                                             <SelectItem value="30">Last 30 days</SelectItem>
                                             <SelectItem value="90">Last 3 months</SelectItem>

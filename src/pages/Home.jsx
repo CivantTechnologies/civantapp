@@ -88,21 +88,27 @@ export default function Home() {
         }
     };
     
-    const StatCard = ({ title, value, icon: Icon, color, subtext }) => (
-        <Card className="hover:border-primary/30 transition-colors">
-            <CardContent className="p-6">
-                <div className="flex items-start justify-between">
-                    <div>
-                        <p className="text-sm font-medium text-muted-foreground">{title}</p>
-                        <p className={`text-3xl font-bold mt-2 ${color}`}>{value}</p>
-                        {subtext && <p className="text-xs text-muted-foreground mt-1">{subtext}</p>}
+    const StatCard = ({ title, value, icon: Icon, color, subtext, to }) => (
+        <Link
+            to={to}
+            className="group block rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            aria-label={`Open ${title}`}
+        >
+            <Card className="h-full cursor-pointer transition-all duration-150 group-hover:border-primary/40 group-hover:bg-card/95">
+                <CardContent className="p-6">
+                    <div className="flex items-start justify-between">
+                        <div>
+                            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+                            <p className={`text-3xl font-bold mt-2 ${color}`}>{value}</p>
+                            {subtext && <p className="text-xs text-muted-foreground mt-1">{subtext}</p>}
+                        </div>
+                        <div className="p-3 rounded-xl bg-primary/15 border border-primary/25 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:-translate-y-0.5">
+                            <Icon className={`h-5 w-5 ${color}`} />
+                        </div>
                     </div>
-                    <div className="p-3 rounded-xl bg-primary/15 border border-primary/25">
-                        <Icon className={`h-5 w-5 ${color}`} />
-                    </div>
-                </div>
-            </CardContent>
-        </Card>
+                </CardContent>
+            </Card>
+        </Link>
     );
     
     const getSourceBadge = (source) => {
@@ -163,6 +169,7 @@ export default function Home() {
                         icon={FileText}
                         color="text-primary"
                         subtext="Just published"
+                        to={createPageUrl('Search?lastTendered=1')}
                     />
                     <StatCard 
                         title="Deadlines (7 days)" 
@@ -170,6 +177,7 @@ export default function Home() {
                         icon={Clock}
                         color="text-card-foreground"
                         subtext="Closing soon"
+                        to={createPageUrl('Search?deadlineWithin=7')}
                     />
                     <StatCard 
                         title="Alerts Triggered" 
@@ -177,6 +185,7 @@ export default function Home() {
                         icon={Bell}
                         color="text-primary"
                         subtext="Last 24 hours"
+                        to={createPageUrl('Alerts')}
                     />
                     <StatCard 
                         title="Total Tenders" 
@@ -184,6 +193,7 @@ export default function Home() {
                         icon={TrendingUp}
                         color="text-card-foreground"
                         subtext="In database"
+                        to={createPageUrl('Search')}
                     />
                 </div>
 
