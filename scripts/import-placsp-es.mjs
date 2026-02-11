@@ -940,7 +940,7 @@ function parseBackfillCursor(cursorValue) {
       return null;
     }
   }
-  if (!parsed || parsed.mode !== 'backfill') return null;
+  if (!parsed || (parsed.mode !== 'backfill' && parsed.mode !== 'backfill-local')) return null;
   const feed = clean(parsed.feed);
   if (!feed) return null;
   const feedKey = makeFeedKey(feed);
