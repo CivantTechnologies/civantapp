@@ -15,15 +15,17 @@ const DEFAULT_MANAGER_LOG_FILE = '/tmp/placsp-es-block-manager.log';
 const DEFAULT_REPORT_LOG_FILE = '/tmp/placsp-es-block-reports.log';
 const DEFAULT_BLOCK_FILE_PREFIX = '/tmp/placsp-es-backfill-block';
 const DEFAULT_DOWNLOAD_DIR = '/Users/davidmanrique/Downloads/placsp_zips';
+const DEFAULT_LOCAL_OUTPUT_DIR = '/Users/davidmanrique/projects/Historical_data_spain/processed_ndjson';
 
 const DEFAULT_API_BASE = 'https://civantapp.vercel.app';
 const DEFAULT_APP_ID = 'civantapp';
 const DEFAULT_TENANT_ID = 'civant_default';
+const DEFAULT_IMPORT_MODE = 'backfill-local';
 const DEFAULT_BATCH_SIZE = 120;
 const DEFAULT_REPORT_INTERVAL_MS = 5 * 60 * 1000;
-const DEFAULT_WARNING_THRESHOLD_MS = 3 * 60 * 1000;
-const DEFAULT_STALL_THRESHOLD_MS = 10 * 60 * 1000;
-const DEFAULT_STALL_KILL_GRACE_MS = 2 * 60 * 1000;
+const DEFAULT_WARNING_THRESHOLD_MS = 5 * 60 * 1000;
+const DEFAULT_STALL_THRESHOLD_MS = 15 * 60 * 1000;
+const DEFAULT_STALL_KILL_GRACE_MS = 3 * 60 * 1000;
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_POLL_MS = 5000;
 
@@ -230,7 +232,9 @@ Shared options:
   --api-base <url>              Default: ${DEFAULT_API_BASE}
   --app-id <id>                 Default: ${DEFAULT_APP_ID}
   --tenant-id <id>              Default: ${DEFAULT_TENANT_ID}
+  --import-mode <mode>          Default: ${DEFAULT_IMPORT_MODE} (backfill|backfill-local)
   --download-dir <path>         Default: ${DEFAULT_DOWNLOAD_DIR}
+  --local-output-dir <path>     Default: ${DEFAULT_LOCAL_OUTPUT_DIR}
   --batch-size <n>              Default: ${DEFAULT_BATCH_SIZE}
   --blocks <spec>               Comma list, e.g. 2012-2016,2017-2020,2021-2023,2024-2026:monthly
   --max-retries <n>             Default: ${DEFAULT_MAX_RETRIES}
@@ -276,7 +280,9 @@ function createInitialState(options, blocks) {
       api_base: options.apiBase,
       app_id: options.appId,
       tenant_id: options.tenantId,
+      import_mode: options.importMode,
       download_dir: options.downloadDir,
+      local_output_dir: options.localOutputDir,
       batch_size: options.batchSize,
       max_retries: options.maxRetries,
       report_every_minutes: options.reportEveryMs / 60000,
@@ -357,7 +363,8 @@ async function runBlockAttempt({
 
   const args = [
     IMPORTER_SCRIPT,
-    '--mode', 'backfill',
+    '--mode', options.importMode,
+    '--sink', options.importMode === 'backfill-local' ? 'local' : 'api',
     '--api-base', options.apiBase,
     '--app-id', options.appId,
     '--tenant-id', options.tenantId,
@@ -366,6 +373,7 @@ async function runBlockAttempt({
     '--historical-to-year', String(block.toYear),
     '--include-monthly-current-year', block.includeMonthlyCurrentYear ? 'true' : 'false',
     '--download-dir', options.downloadDir,
+    '--local-output-dir', options.localOutputDir,
     '--batch-size', String(options.batchSize),
     '--start-record', String(startRecord),
     '--status-file', files.statusFile,
@@ -956,11 +964,18 @@ function parseOptions(args) {
     parsePositiveInt(args['stall-kill-grace-minutes'], DEFAULT_STALL_KILL_GRACE_MS / 60000)
   );
 
+  const importMode = clean(args['import-mode']) || DEFAULT_IMPORT_MODE;
+  if (!['backfill', 'backfill-local'].includes(importMode)) {
+    throw new Error(`Unsupported --import-mode value: ${importMode}`);
+  }
+
   return {
     apiBase: clean(args['api-base']) || DEFAULT_API_BASE,
     appId: clean(args['app-id']) || DEFAULT_APP_ID,
     tenantId: clean(args['tenant-id']) || DEFAULT_TENANT_ID,
+    importMode,
     downloadDir: clean(args['download-dir']) || DEFAULT_DOWNLOAD_DIR,
+    localOutputDir: clean(args['local-output-dir']) || DEFAULT_LOCAL_OUTPUT_DIR,
     batchSize: Math.max(20, parsePositiveInt(args['batch-size'], DEFAULT_BATCH_SIZE)),
     blocks: clean(args.blocks) || null,
     maxRetries: parsePositiveInt(args['max-retries'], DEFAULT_MAX_RETRIES),

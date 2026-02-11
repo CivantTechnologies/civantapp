@@ -53,8 +53,9 @@ npm run import:placsp:backfill -- \
 ## Recommended block strategy (safer restart model)
 
 For large historical runs, use the block manager. It runs multiple year ranges in sequence with retries, per-block checkpoint files, and a health report every 5 minutes.
-By default it now raises a stall warning after 3 minutes of no status activity, then triggers a safe stop after 10 minutes. Stall-triggered stops auto-restart from the latest checkpoint within the same manager run.
-If the importer does not exit after stall-stop, the manager force-kills it after a 2-minute grace period and retries from checkpoint.
+Default mode is now local-only (`backfill-local`), so no API/Supabase writes happen during historical preprocessing.
+By default it now raises a stall warning after 5 minutes of no status activity, then triggers a safe stop after 15 minutes. Stall-triggered stops auto-restart from the latest checkpoint within the same manager run.
+If the importer does not exit after stall-stop, the manager force-kills it after a 3-minute grace period and retries from checkpoint.
 
 Start (detached):
 
@@ -63,11 +64,13 @@ npm run import:placsp:block:start -- \
   --api-base https://civantapp.vercel.app \
   --app-id civantapp \
   --tenant-id civant_default \
+  --import-mode backfill-local \
   --download-dir /Users/davidmanrique/Downloads/placsp_zips \
+  --local-output-dir /Users/davidmanrique/projects/Historical_data_spain/processed_ndjson \
   --batch-size 120 \
-  --warning-threshold-minutes 3 \
-  --stall-threshold-minutes 10 \
-  --stall-kill-grace-minutes 2
+  --warning-threshold-minutes 5 \
+  --stall-threshold-minutes 15 \
+  --stall-kill-grace-minutes 3
 ```
 
 Monitor:
@@ -179,5 +182,6 @@ npm run import:placsp:check -- \
 - Backfill is archive-driven and dedupes by `(canonical_id, version_fingerprint)` in-process.
 - Canonical/current duplicates are handled with id-based update fallback.
 - ZIP archives are the preferred ingestion input for PLACSP in this implementation.
+- Local preprocessing (`backfill-local`) writes NDJSON only; use `upload-local` later for controlled API upload.
 - Use `--insecure-tls true` only for temporary TLS issues in controlled environments.
 - Keep backfill and heavy BOAMP imports separate to avoid local resource contention.
