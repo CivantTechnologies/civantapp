@@ -22,7 +22,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import 'react-easy-crop/react-easy-crop.css';
 
 const PROFILE_DRAFT_VERSION = 1;
@@ -457,6 +457,11 @@ export default function Profile() {
 
   const updateAvatarZoom = (nextZoom) => {
     setAvatarZoom(clamp(nextZoom, AVATAR_ZOOM_MIN, AVATAR_ZOOM_MAX));
+  };
+
+  const resetAvatarFraming = () => {
+    setAvatarCrop({ x: 0, y: 0 });
+    setAvatarZoom(1);
   };
 
   const onAvatarFileChange = (event) => {
@@ -910,38 +915,37 @@ export default function Profile() {
         </form>
 
         <Dialog open={avatarCropOpen} onOpenChange={(open) => (!open ? closeAvatarCropper() : setAvatarCropOpen(true))}>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Crop profile picture</DialogTitle>
-              <DialogDescription>Drag to reposition and use trackpad pinch, mouse wheel, or slider to zoom.</DialogDescription>
+          <DialogContent className="w-[min(96vw,1100px)] max-w-[1100px] h-[min(90vh,760px)] overflow-hidden p-0 gap-0 border-border">
+            <DialogHeader className="px-5 py-4 border-b border-border bg-background/95 backdrop-blur-sm">
+              <DialogTitle>Profile photo</DialogTitle>
+              <DialogDescription>Edit framing and zoom, then save your photo.</DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-4">
-              <div
-                className="mx-auto w-full max-w-[300px] overflow-hidden rounded-2xl border border-border bg-muted/20 aspect-square"
-                style={{ maxWidth: `${AVATAR_CROP_VIEWPORT}px` }}
-              >
-                {avatarCropSource ? (
-                  <Cropper
-                    image={avatarCropSource}
-                    crop={avatarCrop}
-                    zoom={avatarZoom}
-                    onCropChange={setAvatarCrop}
-                    onZoomChange={updateAvatarZoom}
-                    onCropComplete={onAvatarCropComplete}
-                    cropShape="round"
-                    showGrid={false}
-                    aspect={1}
-                    zoomWithScroll
-                    restrictPosition
-                    objectFit="cover"
-                  />
-                ) : null}
+            <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+              <div className="relative flex flex-1 min-h-[320px] items-center justify-center bg-black/35 p-4 md:p-6">
+                <div className="relative w-full max-w-[620px] aspect-square overflow-hidden rounded-2xl border border-white/25 bg-muted/20">
+                  {avatarCropSource ? (
+                    <Cropper
+                      image={avatarCropSource}
+                      crop={avatarCrop}
+                      zoom={avatarZoom}
+                      onCropChange={setAvatarCrop}
+                      onZoomChange={updateAvatarZoom}
+                      onCropComplete={onAvatarCropComplete}
+                      cropShape="round"
+                      showGrid={false}
+                      aspect={1}
+                      zoomWithScroll
+                      restrictPosition
+                      objectFit="cover"
+                    />
+                  ) : null}
+                </div>
               </div>
 
-              <div className="space-y-3">
+              <aside className="w-full lg:w-80 shrink-0 border-t lg:border-t-0 lg:border-l border-border bg-background/70 p-4 space-y-4 overflow-y-auto">
                 <div>
-                  <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                  <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
                     <span>Zoom</span>
                     <span>{avatarZoom.toFixed(2)}x</span>
                   </div>
@@ -953,24 +957,37 @@ export default function Profile() {
                     onValueChange={(value) => updateAvatarZoom(value[0] || 1)}
                   />
                 </div>
-                <p className="text-xs text-muted-foreground">Tip: drag the photo to center your face. Use wheel/pinch for fine zoom.</p>
-              </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <Button type="button" variant="ghost" size="sm" onClick={resetAvatarFraming}>
+                    Reset framing
+                  </Button>
+                  <span className="text-xs text-muted-foreground">Drag image to reposition</span>
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  Tip: use mouse wheel or trackpad pinch to zoom for precise framing.
+                </p>
+              </aside>
             </div>
 
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={closeAvatarCropper}
-                disabled={avatarApplying}
-              >
-                Cancel
-              </Button>
-              <Button type="button" onClick={applyAvatarCrop} disabled={avatarApplying || !avatarCropSource}>
-                {avatarApplying ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Save photo
-              </Button>
-            </DialogFooter>
+            <div className="border-t border-border bg-background px-5 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-muted-foreground">Your picture will be saved as a 512x512 profile image.</p>
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={closeAvatarCropper}
+                  disabled={avatarApplying}
+                >
+                  Cancel
+                </Button>
+                <Button type="button" onClick={applyAvatarCrop} disabled={avatarApplying || !avatarCropSource}>
+                  {avatarApplying ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Save photo
+                </Button>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       </PageBody>
