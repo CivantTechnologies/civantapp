@@ -7,7 +7,7 @@
   "theme_color": "#0b1424",
   "icons": [
     {
-      "src": "/favicon.svg",
+      "src": "/civant-mark.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
