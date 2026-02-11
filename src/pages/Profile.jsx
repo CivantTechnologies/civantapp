@@ -50,7 +50,7 @@ const phoneCodeOptions = [
   { code: '+1', label: 'US/Canada (+1)' }
 ];
 
-const countryOptions = [
+const fallbackCountryOptions = [
   'Ireland',
   'France',
   'Spain',
@@ -72,6 +72,32 @@ const countryOptions = [
   'United States',
   'Other'
 ];
+
+function buildCountryOptions() {
+  try {
+    if (typeof Intl?.DisplayNames !== 'function' || typeof Intl?.supportedValuesOf !== 'function') {
+      return fallbackCountryOptions;
+    }
+
+    const displayNames = new Intl.DisplayNames(['en'], { type: 'region' });
+    const supportedRegions = Intl.supportedValuesOf('region');
+    const uniqueNames = new Set();
+
+    for (const regionCode of supportedRegions) {
+      if (!/^[A-Z]{2}$/.test(regionCode)) continue;
+      const label = displayNames.of(regionCode);
+      if (!label || label.toLowerCase() === 'unknown region') continue;
+      uniqueNames.add(label);
+    }
+
+    const sorted = Array.from(uniqueNames).sort((a, b) => a.localeCompare(b));
+    return sorted.length ? sorted : fallbackCountryOptions;
+  } catch {
+    return fallbackCountryOptions;
+  }
+}
+
+const countryOptions = buildCountryOptions();
 
 const tenderTypeOptions = [
   'IT & Software',
@@ -99,13 +125,85 @@ const notificationFrequencyOptions = [
   { value: 'daily', label: 'Daily' },
   { value: 'weekly', label: 'Weekly' }
 ];
-const languageOptions = [
+const fallbackLanguageOptions = [
   { value: 'en', label: 'English' },
   { value: 'es', label: 'Spanish' },
   { value: 'fr', label: 'French' },
   { value: 'de', label: 'German' },
   { value: 'it', label: 'Italian' },
-  { value: 'pt', label: 'Portuguese' }
+  { value: 'pt', label: 'Portuguese' },
+  { value: 'ar', label: 'Arabic' },
+  { value: 'hi', label: 'Hindi' },
+  { value: 'zh', label: 'Chinese' },
+  { value: 'ja', label: 'Japanese' },
+  { value: 'ko', label: 'Korean' },
+  { value: 'nl', label: 'Dutch' },
+  { value: 'pl', label: 'Polish' },
+  { value: 'sv', label: 'Swedish' },
+  { value: 'da', label: 'Danish' },
+  { value: 'fi', label: 'Finnish' },
+  { value: 'cs', label: 'Czech' },
+  { value: 'ro', label: 'Romanian' },
+  { value: 'hu', label: 'Hungarian' },
+  { value: 'tr', label: 'Turkish' },
+  { value: 'uk', label: 'Ukrainian' },
+  { value: 'ru', label: 'Russian' }
+];
+
+function buildLanguageOptions() {
+  try {
+    if (typeof Intl?.DisplayNames !== 'function' || typeof Intl?.supportedValuesOf !== 'function') {
+      return fallbackLanguageOptions;
+    }
+
+    const displayNames = new Intl.DisplayNames(['en'], { type: 'language' });
+    const supportedLanguages = Intl.supportedValuesOf('language');
+    const options = [];
+    const seen = new Set();
+
+    for (const rawCode of supportedLanguages) {
+      const code = String(rawCode || '').toLowerCase();
+      if (!/^[a-z]{2,3}$/.test(code)) continue;
+      if (seen.has(code)) continue;
+      const label = displayNames.of(code);
+      if (!label || label.toLowerCase() === 'unknown language') continue;
+      seen.add(code);
+      options.push({ value: code, label });
+    }
+
+    options.sort((a, b) => a.label.localeCompare(b.label));
+    return options.length ? options : fallbackLanguageOptions;
+  } catch {
+    return fallbackLanguageOptions;
+  }
+}
+
+const languageOptions = buildLanguageOptions();
+const languageOptionValues = new Set(languageOptions.map((option) => option.value));
+
+const industryOptionsBase = [
+  'Agriculture & Food',
+  'Automotive',
+  'Construction & Infrastructure',
+  'Consulting & Professional Services',
+  'Defense & Security',
+  'Education & Training',
+  'Energy & Utilities',
+  'Environmental Services',
+  'Financial Services',
+  'Healthcare & Medical',
+  'Hospitality & Catering',
+  'IT & Software',
+  'Legal Services',
+  'Logistics & Transport',
+  'Manufacturing & Industrial Equipment',
+  'Media & Communications',
+  'Pharmaceuticals & Biotech',
+  'Public Sector & Government',
+  'Real Estate & Facilities',
+  'Retail & Consumer Goods',
+  'Telecommunications',
+  'Other'
 ];
 const timezoneOptions = [
   'Europe/Dublin',
@@ -287,7 +385,7 @@ function normalizeLanguage(value) {
   if (normalized === 'ger' || normalized === 'deu') return 'de';
   if (normalized === 'ita') return 'it';
   if (normalized === 'por') return 'pt';
-  if (languageOptions.some((option) => option.value === normalized)) return normalized;
+  if (languageOptionValues.has(normalized)) return normalized;
   return 'en';
 }
 
@@ -353,6 +451,11 @@ export default function Profile() {
   const avatarObjectUrlRef = useRef('');
 
   const displayName = useMemo(() => [form.first_name, form.last_name].filter(Boolean).join(' ').trim(), [form.first_name, form.last_name]);
+  const industryOptions = useMemo(() => {
+    if (!form.industry) return industryOptionsBase;
+    if (industryOptionsBase.includes(form.industry)) return industryOptionsBase;
+    return [form.industry, ...industryOptionsBase];
+  }, [form.industry]);
 
   useEffect(() => {
     let mounted = true;
@@ -753,7 +856,18 @@ export default function Profile() {
               </div>
               <div>
                 <Label htmlFor="industry">Industry</Label>
-                <Input id="industry" value={form.industry} onChange={(e) => setField('industry', e.target.value)} />
+                <Select value={form.industry || undefined} onValueChange={(value) => setField('industry', value)}>
+                  <SelectTrigger id="industry">
+                    <SelectValue placeholder="Select industry" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {industryOptions.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label htmlFor="job_title">Job Title</Label>
