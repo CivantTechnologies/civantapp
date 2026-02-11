@@ -60,3 +60,12 @@ Use this quick checklist before escalating production issues.
 ## Ingestion Runbooks
 
 - Spain CODICE/PLACSP: `docs/placsp-ingestion.md`
+
+## Architecture Baseline
+
+Current frozen architecture baseline:
+
+- `docs/Civant_Technical_Spec_v0.2.docx`
+- `docs/Civant_Technical_Spec_v0.2.txt`
+- `docs/Civant_Architecture_Freeze_v0.2.md`
+- `docs/Civant_Architecture_Freeze_v0.2.docx`

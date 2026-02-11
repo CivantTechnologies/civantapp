@@ -1,0 +1,366 @@
+Civant Technical Specification v0.2
+Date: February 11, 2026
+Status: Draft for Advisory Review
+Audience: Founder, Technical Advisors, Engineering, Data, Product
+
+1. Purpose
+This document defines the implementation strategy for Civant v0.2 as an executable technical blueprint. It converts product vision into concrete engineering guidance, data contracts, operational controls, and delivery sequencing.
+
+Primary objective:
+Build a multi-tenant, explainable procurement intelligence platform that ingests public data at scale, normalizes it into a canonical model, and powers confidence-scored predictions and alerts.
+
+2. Product Boundaries
+2.1 In scope
+- Public procurement ingestion (Ireland, France, Spain, EU spine)
+- Canonical normalization and deduplication
+- Tenant-scoped analytics, predictions, and alerts
+- Explainable confidence scoring and evidence traceability
+- Admin and operational controls for ingestion and data health
+
+2.2 Out of scope (v0.2)
+- Bid submission handling
+- Private procurement data ingestion
+- Non-public evaluator identity analytics
+- Full enterprise SSO implementation (placeholder support only)
+
+3. Architecture Overview
+3.1 Logical architecture
+- Source Layer: TED, eTenders, BOAMP, PLACSP/Open data datasets
+- Ingestion Layer: connectors + historical backfill loaders + delta loaders
+- Raw Layer (Bronze): immutable source payloads and checksums
+- Canonical Layer (Silver): normalized tender, authority, supplier, and event records
+- Intelligence Layer (Gold): features, predictions, signals, confidence breakdowns
+- API Layer: tenant-scoped endpoints for app and operations
+- UX Layer: dashboards, watchlists, alerts, review queues
+
+3.2 Deployment architecture
+- Frontend: Vite React app, deployed on Vercel
+- API: Node/TypeScript serverless routes under /api on Vercel
+- Data: Supabase Postgres (RLS-enabled public schema)
+- Auth: Supabase Auth, role-aware backend enforcement
+- Storage: Supabase storage (profile assets and future document snapshots)
+
+4. Core Design Decisions
+4.1 Event-driven procurement model
+Each source notice and update is represented as immutable procurement events in canonical form.
+
+4.2 Deterministic-first processing
+Parsing, scoring, confidence arithmetic, and eligibility logic run in code. LLM usage is limited to bounded classification/reconciliation tasks with strict structured output validation.
+
+4.3 Idempotent ingestion as a hard requirement
+All writes for high-volume flows must be conflict-safe:
+- raw_documents: conflict key checksum
+- canonical_tenders: conflict key canonical_id
+- TendersCurrent: conflict key tender_id
+
+4.4 Tenant isolation by default
+Every tenant-scoped table includes tenant_id and enforces RLS policies tied to current tenant context.
+
+5. Data Model (Canonical Contract)
+5.1 Mandatory entities
+- raw_documents
+- ingestion_runs
+- staging_records
+- canonical_tenders
+- entities
+- entity_aliases
+- tender_features_weekly
+- predictions
+- market_signals
+- reconciliation_queue
+
+5.2 Operational entities
+- ConnectorConfig
+- ConnectorRuns
+- TendersCurrent
+- TenderVersions
+
+5.3 App entities
+- users
+- user_roles
+- user_profiles
+- tenants
+- support_access_grants
+- support_access_audit
+- Competitors
+- Alerts
+- AlertEvents
+
+5.4 Country/source fields
+Canonical tender records must always carry:
+- source (e.g., ETENDERS_IE, BOAMP_FR, PLACSP_ES)
+- source_url
+- external_id
+- canonical_id
+- tenant_id
+
+6. Ingestion Strategy
+6.1 Recommended mode for historical backfills
+Local-first pipeline:
+1) Download source archives locally
+2) Validate archive integrity
+3) Parse and normalize locally
+4) Upload in idempotent batches
+5) Resume via checkpoint/start-record if interrupted
+
+Rationale:
+- Lower network volatility
+- Better restart semantics
+- Lower repeated API cost
+- Better auditability and replay
+
+6.2 Incremental freshness mode
+- Frequent polling of authoritative feeds/APIs
+- Cursor-driven, dedupe-aware updates
+- Lag and drift monitoring
+- Daily reconciliation checks against source totals
+
+6.3 Spain (PLACSP) operating pattern
+Use block manager with year windows:
+- 2012-2016
+- 2017-2020
+- 2021-2023
+- 2024-current (monthly where needed)
+
+Controls:
+- Safe stop/pause/restart
+- Start-record resume checkpoint
+- Health report every 5 minutes
+- Stall warning and auto-recovery policy
+
+7. Data Quality Policy
+7.1 Validation gates
+A record can only move to canonical if:
+- Required identity fields are present
+- Date parsing succeeds
+- Source and tenant context are valid
+- Checksum and dedupe checks pass
+
+7.2 Dedupe policy
+- In-run dedupe by version fingerprint
+- Cross-run dedupe by checksum/canonical_id/tender_id conflict keys
+- Duplicate writes counted as duplicates, not failures
+
+7.3 Error policy
+- Fail closed on schema-invalid agent outputs
+- Soft-fail source parse errors into staging_records.errors for review
+- Never silently drop parse failures
+
+8. Prediction and Confidence Framework
+8.1 Deterministic confidence formula
+overall_confidence = data_confidence (0-40) + signal_confidence (0-30) + model_confidence (0-30)
+
+8.2 Confidence breakdown persistence
+Each prediction stores:
+- composite confidence
+- sub-scores and numeric drivers
+- evidence pointers (source URL, snippets, record IDs)
+
+8.3 Model governance
+- Calibrated probability output
+- Stability and variance checks
+- Drift checks and retrain triggers
+
+9. AI Agent Use (Bounded)
+9.1 Allowed agents
+- ReconcilerAgent
+- ClassifierAgent
+- SignalsAgent
+
+9.2 Enforcement
+- Structured outputs only (strict JSON schema)
+- Confidence threshold for auto-apply: >= 0.85
+- Below threshold: queue in reconciliation_queue for manual approval
+
+9.3 Auditability
+All non-trivial AI decisions must persist:
+- evidence_snippet
+- source_url
+- confidence
+- structured payload
+
+10. Security and Compliance
+10.1 Authn/Authz
+- Supabase Auth for identity
+- Backend-enforced role checks (never client-only)
+- Admin/creator capability checks from server-side claims + DB roles
+
+10.2 RLS baseline
+- Enable RLS on all PostgREST-exposed tables
+- FORCE RLS on sensitive tenant data tables
+- Tenant-select policies based on current_tenant_id()
+
+10.3 Operational security controls
+- Support access is consent-based, time-limited, fully audited
+- Audit trails for grant/revoke/expire actions
+- No hidden privileged access flows
+
+10.4 Password policy
+- Enable leaked password protection
+- Enforce minimum complexity and MFA roadmap for privileged users
+
+11. API Design Guidance
+11.1 Endpoint conventions
+- Tenant-scoped requests must include x-tenant-id
+- All writes must be idempotent where replay is expected
+- Consistent error shape for frontend handling
+
+11.2 Required capability endpoints
+- getMyProfile
+- getCapabilities
+- getTenant
+- listTenants
+- createTenant
+- listTenantUsers
+- getConnectorStatus
+- support access endpoints
+
+11.3 API readiness guard
+Frontend should avoid data calls until:
+- session authenticated
+- profile resolved
+- tenant selected
+- appId resolved
+
+12. UX/Frontend Technical Guidelines
+12.1 Brand system
+- Civant navy base, teal accents, white headings, muted body text
+- Shared UI primitives only (Button/Card/Input/Badge/Page)
+- No one-off color drift in feature pages
+
+12.2 Reliability UX
+- Top-level error boundary
+- Explicit loading, pending-role, and denied states
+- ConfigError screen for missing runtime vars
+- No blank screen failure mode
+
+12.3 Profile UX requirements (v0.2)
+- Draft persistence while tab switches/reloads
+- Image upload with size cap (10MB)
+- Replace-in-place avatar flow (edit current image, avoid storage bloat)
+- Structured phone + country selector
+- Multi-select tender categories and procurement regions
+
+13. Performance and Cost Controls
+13.1 Ingestion cost guardrails
+- Idempotent writes mandatory to avoid duplicate storm retries
+- Retry policy distinguishes transient errors vs conflicts
+- Batch-size tuning with monitored throughput and error rate
+
+13.2 Runtime SLO indicators
+Track and alert on:
+- rows/min per connector
+- stall duration
+- write failure rate
+- API 5xx rate
+- queue growth rate
+
+13.3 Suggested operating thresholds
+- Warning: no progress >= 3 minutes
+- Auto-stop and restart: >= 10 minutes
+- Force-kill grace: 2 minutes after stop command if worker hangs
+
+14. Observability and Operations
+14.1 Required telemetry artifacts
+- status JSON per run
+- checkpoint JSON per block
+- manager status + report logs
+- ingestion_runs metrics/errors in DB
+
+14.2 Runbook commands (minimum)
+- start
+- monitor
+- pause
+- stop
+- restart
+- resume from explicit start-record
+
+14.3 Incident triage matrix
+- Class A: auth/tenant leakage risk
+- Class B: ingestion stalled or high failure burst
+- Class C: cosmetic/UX regressions
+
+15. Environment and Deployment Standards
+15.1 Frontend env vars
+- VITE_SUPABASE_URL
+- VITE_SUPABASE_ANON_KEY
+- VITE_API_BASE_URL (optional, default /api)
+- VITE_CIVANT_APP_ID
+
+15.2 Server env vars
+- SUPABASE_URL
+- SUPABASE_SERVICE_ROLE_KEY (sensitive)
+
+15.3 Deployment checks
+- lint
+- build
+- type checks (frontend/api/functions)
+- smoke test critical endpoints
+- verify no /apps/null or null tenant calls
+
+16. Roadmap Execution Plan (v0.2 -> v1.0)
+Phase A: Stabilization (current)
+- Complete idempotent write coverage
+- Finish RLS policy hardening
+- Lock ingestion manager operational behavior
+
+Phase B: Data completeness
+- Complete Spain backfill
+- Reconcile IE/FR/ES canonical quality
+- Implement daily incremental feeds for freshness
+
+Phase C: Intelligence maturity
+- Weekly feature generation reliability
+- Prediction calibration and confidence QA
+- Evidence-linked alert quality tuning
+
+Phase D: Enterprise readiness
+- Expanded admin controls
+- support access audits finalized
+- onboarding/profile and role governance polish
+
+17. Technical Risks and Mitigations
+Risk: Duplicate/retry storms increase cost
+Mitigation: conflict-safe writes + conflict-fast retry exits
+
+Risk: Long-running ingestion stalls
+Mitigation: progress heartbeat + watchdog + auto-restart + checkpoints
+
+Risk: Tenant leakage in public schema
+Mitigation: RLS + forced policies + tenant header validation
+
+Risk: Slow app perceived quality
+Mitigation: endpoint slimming, readiness guards, aggressive client caching, UI skeletons
+
+18. Decision Log (v0.2)
+- Keep source archives locally for backfill reliability
+- Use block-based ingestion manager for Spain historical load
+- Preserve deterministic scoring logic in code
+- Restrict AI agents to bounded extraction/classification tasks
+- Enforce tenant-scoped RLS across exposed tables
+
+19. Advisor Review Checklist
+Architecture
+- Is data layering (raw/canonical/intelligence) correctly separated?
+- Are idempotency and replay semantics sufficient?
+
+Security
+- Are auth + RLS controls complete for multi-tenant production?
+- Are service-role boundaries and audit trails adequate?
+
+Data science
+- Is confidence decomposition operationally explainable?
+- Are retrain and drift controls sufficient for production?
+
+Operations
+- Are stall/restart controls and observability enough for unattended backfills?
+- Are cost guardrails concrete enough for solo-founder operation?
+
+20. Immediate Next Actions
+1) Resume Spain 2012-2016 to completion, then continue next blocks.
+2) Maintain 5-minute reporting and checkpoint-based restarts.
+3) Run post-backfill reconciliation report (source counts vs canonical counts).
+4) Establish daily incremental jobs for IE/FR/ES freshness.
+5) Prepare v0.3 spec update with concrete API schemas and SLA targets.
+
+End of document.
