@@ -23,6 +23,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import CpvCodePicker from '@/components/CpvCodePicker';
 import 'react-easy-crop/react-easy-crop.css';
 
 const PROFILE_DRAFT_VERSION = 1;
@@ -972,13 +973,13 @@ export default function Profile() {
 
               <div>
                 <Label htmlFor="cpv_interest_codes">CPV Codes of Interest</Label>
-                <Input
-                  id="cpv_interest_codes"
-                  value={form.cpv_interest_codes}
-                  onChange={(e) => setField('cpv_interest_codes', e.target.value)}
-                  placeholder="e.g. 72000000, 72250000, 80500000"
+                <CpvCodePicker
+                  value={ensureArray(form.cpv_interest_codes)}
+                  onChange={(codes) => setField('cpv_interest_codes', codes.join(', '))}
+                  placeholder="Search CPV by code or keyword (e.g. software, construction, medical)"
+                  maxSelections={30}
                 />
-                <p className="mt-1 text-xs text-muted-foreground">Comma-separated CPV codes for watchlists and alert scoring.</p>
+                <p className="mt-1 text-xs text-muted-foreground">Selected CPV codes are used for watchlists and alert scoring.</p>
               </div>
 
               <div>

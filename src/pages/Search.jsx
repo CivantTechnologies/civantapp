@@ -14,6 +14,36 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format, subDays, isAfter, addDays } from 'date-fns';
+import CpvCodePicker from '@/components/CpvCodePicker';
+
+function parseCpvFilterCodes(value) {
+    const seen = new Set();
+    const output = [];
+    const matches = String(value || '').match(/\d{2,8}/g) || [];
+    for (const raw of matches) {
+        const code = raw.slice(0, 8);
+        if (!code || seen.has(code)) continue;
+        seen.add(code);
+        output.push(code);
+    }
+    return output;
+}
+
+function parseTenderCpvCodes(value) {
+    const seen = new Set();
+    const output = [];
+    const parts = String(value || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+    for (const part of parts) {
+        const code = part.replace(/\D/g, '').slice(0, 8);
+        if (code.length < 2 || seen.has(code)) continue;
+        seen.add(code);
+        output.push(code);
+    }
+    return output;
+}
 
 export default function Search() {
     const location = useLocation();
@@ -27,7 +57,7 @@ export default function Search() {
     const [country, setCountry] = useState('all');
     const [source, setSource] = useState('all');
     const [buyerSearch, setBuyerSearch] = useState('');
-    const [cpvSearch, setCpvSearch] = useState('');
+    const [cpvSearchCodes, setCpvSearchCodes] = useState([]);
     const [deadlineWithin, setDeadlineWithin] = useState('all');
     const [industry, setIndustry] = useState('all');
     const [institutionType, setInstitutionType] = useState('all');
@@ -39,8 +69,8 @@ export default function Search() {
 
     useEffect(() => {
         const params = new URLSearchParams(location.search);
-        const allowedCountries = new Set(['all', 'FR', 'IE']);
-        const allowedSources = new Set(['all', 'BOAMP_FR', 'TED', 'ETENDERS_IE']);
+        const allowedCountries = new Set(['all', 'FR', 'IE', 'ES']);
+        const allowedSources = new Set(['all', 'BOAMP_FR', 'TED', 'ETENDERS_IE', 'PLACSP_ES']);
         const allowedDeadlineWithin = new Set(['all', '7', '14', '30', '60', '90', '180', '365']);
         const allowedIndustry = new Set(['all', 'construction', 'it', 'health', 'transport', 'consulting', 'food']);
         const allowedInstitutionType = new Set(['all', 'ministry', 'local', 'health', 'education', 'transport']);
@@ -50,7 +80,7 @@ export default function Search() {
 
         setKeyword(params.get('keyword') || '');
         setBuyerSearch(params.get('buyer') || '');
-        setCpvSearch(params.get('cpv') || '');
+        setCpvSearchCodes(parseCpvFilterCodes(params.get('cpv') || ''));
 
         const nextCountry = readFilter('country');
         setCountry(allowedCountries.has(nextCountry) ? nextCountry : 'all');
@@ -73,7 +103,7 @@ export default function Search() {
     
     useEffect(() => {
         applyFilters();
-    }, [tenders, keyword, country, source, buyerSearch, cpvSearch, deadlineWithin, industry, institutionType, lastTendered]);
+    }, [tenders, keyword, country, source, buyerSearch, cpvSearchCodes, deadlineWithin, industry, institutionType, lastTendered]);
 
     const getTenderPublicationDate = (tender) => tender.publication_date || tender.published_at || tender.first_seen_at || tender.updated_at;
     const getTenderFirstSeen = (tender) => tender.first_seen_at || tender.published_at || tender.publication_date || tender.updated_at;
@@ -119,10 +149,14 @@ export default function Search() {
         }
         
         // CPV search
-        if (cpvSearch) {
-            filtered = filtered.filter(t => 
-                t.cpv_codes?.includes(cpvSearch)
-            );
+        if (cpvSearchCodes.length) {
+            filtered = filtered.filter((t) => {
+                const tenderCodes = parseTenderCpvCodes(t.cpv_codes);
+                if (!tenderCodes.length) return false;
+                return cpvSearchCodes.some((wanted) =>
+                    tenderCodes.some((code) => code.startsWith(wanted))
+                );
+            });
         }
         
         // Deadline filter
@@ -193,7 +227,7 @@ export default function Search() {
         setCountry('all');
         setSource('all');
         setBuyerSearch('');
-        setCpvSearch('');
+        setCpvSearchCodes([]);
         setDeadlineWithin('all');
         setIndustry('all');
         setInstitutionType('all');
@@ -201,14 +235,15 @@ export default function Search() {
     };
     
     const hasActiveFilters = keyword || country !== 'all' || source !== 'all' || 
-        buyerSearch || cpvSearch || deadlineWithin !== 'all' || industry !== 'all' || 
+        buyerSearch || cpvSearchCodes.length > 0 || deadlineWithin !== 'all' || industry !== 'all' || 
         institutionType !== 'all' || lastTendered !== 'all';
     
     const getSourceBadge = (source) => {
         const colors = {
             'BOAMP_FR': 'bg-blue-500/15 text-blue-200 border-blue-400/40',
             'TED': 'bg-violet-500/15 text-violet-200 border-violet-400/40',
-            'ETENDERS_IE': 'bg-emerald-500/15 text-emerald-200 border-emerald-400/40'
+            'ETENDERS_IE': 'bg-emerald-500/15 text-emerald-200 border-emerald-400/40',
+            'PLACSP_ES': 'bg-amber-500/15 text-amber-200 border-amber-400/40'
         };
         return colors[source] || 'bg-slate-900/60 text-slate-300 border-slate-700';
     };
@@ -275,6 +310,7 @@ export default function Search() {
                                             <SelectItem value="all">All Countries</SelectItem>
                                             <SelectItem value="FR">🇫🇷 France</SelectItem>
                                             <SelectItem value="IE">🇮🇪 Ireland</SelectItem>
+                                            <SelectItem value="ES">🇪🇸 Spain</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>
@@ -290,6 +326,7 @@ export default function Search() {
                                             <SelectItem value="BOAMP_FR">BOAMP FR</SelectItem>
                                             <SelectItem value="TED">TED EU</SelectItem>
                                             <SelectItem value="ETENDERS_IE">eTenders IE</SelectItem>
+                                            <SelectItem value="PLACSP_ES">PLACSP ES</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>
@@ -304,13 +341,14 @@ export default function Search() {
                                     />
                                 </div>
                                 
-                                <div>
+                                <div className="sm:col-span-2 lg:col-span-2">
                                     <label className="text-xs font-medium text-slate-400 mb-1.5 block">CPV code</label>
-                                    <Input
-                                        placeholder="e.g. 45000000"
-                                        value={cpvSearch}
-                                        onChange={(e) => setCpvSearch(e.target.value)}
-                                        className="bg-slate-900/60 border-0"
+                                    <CpvCodePicker
+                                        value={cpvSearchCodes}
+                                        onChange={setCpvSearchCodes}
+                                        placeholder="Search CPV by code or keyword"
+                                        maxSelections={8}
+                                        className="text-sm"
                                     />
                                 </div>
                                 
