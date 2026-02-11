@@ -214,7 +214,7 @@ export default function Search() {
     };
     
     const getCountryFlag = (country) => {
-        return country === 'FR' ? '🇫🇷' : country === 'IE' ? '🇮🇪' : '🌍';
+        return country === 'FR' ? '🇫🇷' : country === 'IE' ? '🇮🇪' : country === 'ES' ? '🇪🇸' : '🌍';
     };
     
     if (loading) {

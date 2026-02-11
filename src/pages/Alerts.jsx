@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { civant } from '@/api/civantClient';
+import { useLocation } from 'react-router-dom';
 import { 
     Bell, 
     Plus, 
@@ -32,14 +33,20 @@ import {
 import { format, formatDistanceToNow } from 'date-fns';
 
 export default function Alerts() {
+    const location = useLocation();
     const [user, setUser] = useState(null);
     const [alerts, setAlerts] = useState([]);
     const [alertEvents, setAlertEvents] = useState([]);
+    const [visibleEvents, setVisibleEvents] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
     const [editingAlert, setEditingAlert] = useState(null);
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState('');
+
+    const queryParams = new URLSearchParams(location.search);
+    const eventsView = queryParams.get('view') || '';
+    const eventsPeriod = queryParams.get('period') || '';
     
     // Form state
     const [formData, setFormData] = useState({
@@ -74,6 +81,17 @@ export default function Alerts() {
     useEffect(() => {
         loadData();
     }, []);
+
+    useEffect(() => {
+        if (eventsView === 'triggered' && eventsPeriod === '24h') {
+            const since = Date.now() - 24 * 60 * 60 * 1000;
+            setVisibleEvents(
+                alertEvents.filter((event) => event.matched_at && new Date(event.matched_at).getTime() >= since)
+            );
+            return;
+        }
+        setVisibleEvents(alertEvents);
+    }, [alertEvents, eventsView, eventsPeriod]);
     
     const loadData = async () => {
         try {
@@ -226,7 +244,7 @@ export default function Alerts() {
                     </Card>
                 ) : (
                     alerts.map(alert => {
-                        const matchCount = alertEvents.filter(e => e.alert_id === alert.id).length;
+                        const matchCount = visibleEvents.filter(e => e.alert_id === alert.id).length;
                         
                         return (
                             <Card key={alert.id} className="border border-civant-border bg-civant-navy/55 shadow-none">
@@ -351,14 +369,18 @@ export default function Alerts() {
             </div>
             
             {/* Recent Matches */}
-            {alertEvents.length > 0 && (
+            {visibleEvents.length > 0 && (
                 <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
                     <CardHeader>
-                        <CardTitle className="text-lg font-semibold">Recent Matches</CardTitle>
+                        <CardTitle className="text-lg font-semibold">
+                            {eventsView === 'triggered' && eventsPeriod === '24h'
+                                ? 'Triggered in the Last 24 Hours'
+                                : 'Recent Matches'}
+                        </CardTitle>
                     </CardHeader>
                     <CardContent className="p-0">
                         <div className="divide-y divide-slate-800">
-                            {alertEvents.slice(0, 10).map(event => {
+                            {visibleEvents.slice(0, 10).map(event => {
                                 const alert = alerts.find(a => a.id === event.alert_id);
                                 return (
                                     <div key={event.id} className="p-4 flex items-center justify-between">

@@ -79,7 +79,7 @@ export default function TenderDetail() {
     };
     
     const getCountryFlag = (country) => {
-        return country === 'FR' ? '🇫🇷' : country === 'IE' ? '🇮🇪' : '🌍';
+        return country === 'FR' ? '🇫🇷' : country === 'IE' ? '🇮🇪' : country === 'ES' ? '🇪🇸' : '🌍';
     };
     
     const getNoticeTypeBadge = (type) => {

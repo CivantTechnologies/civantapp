@@ -121,7 +121,7 @@ export default function Home() {
     };
     
     const getCountryFlag = (country) => {
-        return country === 'FR' ? '🇫🇷' : country === 'IE' ? '🇮🇪' : '🌍';
+        return country === 'FR' ? '🇫🇷' : country === 'IE' ? '🇮🇪' : country === 'ES' ? '🇪🇸' : '🌍';
     };
     
     if (loading) {
@@ -185,7 +185,7 @@ export default function Home() {
                         icon={Bell}
                         color="text-primary"
                         subtext="Last 24 hours"
-                        to={createPageUrl('Alerts')}
+                        to={createPageUrl('Alerts?view=triggered&period=24h')}
                     />
                     <StatCard 
                         title="Total Tenders" 
