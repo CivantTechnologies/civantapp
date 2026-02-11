@@ -281,7 +281,7 @@ export default function Home() {
                             <CardTitle className="text-lg font-semibold">Connector Health</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-3">
-                            {['BOAMP_FR', 'TED', 'ETENDERS_IE'].map(source => {
+                            {['BOAMP_FR', 'TED', 'ETENDERS_IE', 'PLACSP_ES'].map(source => {
                                 const run = connectorHealth.find(r => r.source === source);
                                 const status = run?.status;
                                 
