@@ -14,8 +14,7 @@ import {
   CardTitle,
   CardContent,
   Button,
-  Input,
-  Badge
+  Input
 } from '@/components/ui';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -24,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Slider } from '@/components/ui/slider';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import CpvCodePicker from '@/components/CpvCodePicker';
+import OptionMultiSelector from '@/components/OptionMultiSelector';
 import 'react-easy-crop/react-easy-crop.css';
 
 const PROFILE_DRAFT_VERSION = 1;
@@ -267,16 +267,6 @@ function normalizeForm(value) {
   };
 }
 
-function addUniqueOption(list, value) {
-  const current = ensureArray(list);
-  if (current.includes(value)) return current;
-  return [...current, value];
-}
-
-function removeOption(list, value) {
-  return ensureArray(list).filter((item) => item !== value);
-}
-
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -477,20 +467,6 @@ export default function Profile() {
       const next = list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
       return { ...prev, [key]: next };
     });
-  };
-
-  const addOption = (key, value) => {
-    setForm((prev) => ({
-      ...prev,
-      [key]: addUniqueOption(prev[key], value)
-    }));
-  };
-
-  const removeSelectedOption = (key, value) => {
-    setForm((prev) => ({
-      ...prev,
-      [key]: removeOption(prev[key], value)
-    }));
   };
 
   const openAvatarCropper = (source) => {
@@ -849,95 +825,38 @@ export default function Profile() {
             </CardHeader>
             <CardContent className="space-y-5">
               <div>
+                <Label htmlFor="cpv_interest_codes">CPV Codes of Interest</Label>
+                <CpvCodePicker
+                  value={ensureArray(form.cpv_interest_codes)}
+                  onChange={(codes) => setField('cpv_interest_codes', codes.join(', '))}
+                  placeholder="Search CPV by code or keyword (e.g. software, construction, medical)"
+                  maxSelections={30}
+                />
+                <p className="mt-1 text-xs text-muted-foreground">Selected CPV codes are used for watchlists and alert scoring.</p>
+              </div>
+
+              <div>
                 <Label>Type of Tenders Interested In</Label>
-                <div className="mt-2 grid grid-cols-1 lg:grid-cols-2 gap-3">
-                  <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Available categories</p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {tenderTypeOptions.map((option) => {
-                        const selected = form.tender_interest_types.includes(option);
-                        return (
-                          <button
-                            key={option}
-                            type="button"
-                            disabled={selected}
-                            onClick={() => addOption('tender_interest_types', option)}
-                            className={`rounded-full border px-3 py-1.5 text-xs transition ${
-                              selected
-                                ? 'border-primary/40 bg-primary/20 text-primary cursor-not-allowed'
-                                : 'border-border text-muted-foreground hover:border-primary/50 hover:text-primary'
-                            }`}
-                          >
-                            {selected ? 'Selected' : 'Add'} {option}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Selected categories</p>
-                    {form.tender_interest_types.length ? (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {form.tender_interest_types.map((option) => (
-                          <Badge key={option} variant="outline" className="gap-1 py-1">
-                            {option}
-                            <button type="button" onClick={() => removeSelectedOption('tender_interest_types', option)} aria-label={`Remove ${option}`}>
-                              <X className="h-3 w-3" />
-                            </button>
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-sm text-muted-foreground">Select categories from the left panel.</p>
-                    )}
-                  </div>
-                </div>
+                <OptionMultiSelector
+                  value={form.tender_interest_types}
+                  onChange={(values) => setField('tender_interest_types', values)}
+                  options={tenderTypeOptions}
+                  placeholder="Search tender categories"
+                  helperText="Add categories to personalize your discovery and scoring."
+                  maxSelections={20}
+                />
               </div>
 
               <div>
                 <Label>Preferred Procurement Regions</Label>
-                <div className="mt-2 grid grid-cols-1 lg:grid-cols-2 gap-3">
-                  <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Available regions</p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {regionOptions.map((option) => {
-                        const selected = form.procurement_regions.includes(option);
-                        return (
-                          <button
-                            key={option}
-                            type="button"
-                            disabled={selected}
-                            onClick={() => addOption('procurement_regions', option)}
-                            className={`rounded-full border px-3 py-1.5 text-xs transition ${
-                              selected
-                                ? 'border-primary/40 bg-primary/20 text-primary cursor-not-allowed'
-                                : 'border-border text-muted-foreground hover:border-primary/50 hover:text-primary'
-                            }`}
-                          >
-                            {selected ? 'Selected' : 'Add'} {option}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Selected regions</p>
-                    {form.procurement_regions.length ? (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {form.procurement_regions.map((option) => (
-                          <Badge key={option} variant="outline" className="gap-1 py-1">
-                            {option}
-                            <button type="button" onClick={() => removeSelectedOption('procurement_regions', option)} aria-label={`Remove ${option}`}>
-                              <X className="h-3 w-3" />
-                            </button>
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-sm text-muted-foreground">Select regions from the left panel.</p>
-                    )}
-                  </div>
-                </div>
+                <OptionMultiSelector
+                  value={form.procurement_regions}
+                  onChange={(values) => setField('procurement_regions', values)}
+                  options={regionOptions}
+                  placeholder="Search regions (e.g. Ireland, France, Spain, EU-wide)"
+                  helperText="Set your priority procurement geographies."
+                  maxSelections={12}
+                />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -969,17 +888,6 @@ export default function Profile() {
                     ))}
                   </div>
                 </div>
-              </div>
-
-              <div>
-                <Label htmlFor="cpv_interest_codes">CPV Codes of Interest</Label>
-                <CpvCodePicker
-                  value={ensureArray(form.cpv_interest_codes)}
-                  onChange={(codes) => setField('cpv_interest_codes', codes.join(', '))}
-                  placeholder="Search CPV by code or keyword (e.g. software, construction, medical)"
-                  maxSelections={30}
-                />
-                <p className="mt-1 text-xs text-muted-foreground">Selected CPV codes are used for watchlists and alert scoring.</p>
               </div>
 
               <div>
