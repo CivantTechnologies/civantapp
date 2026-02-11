@@ -29,7 +29,7 @@ const PROFILE_DRAFT_VERSION = 1;
 const PROFILE_DRAFT_PREFIX = 'civant_profile_draft_v1';
 const MAX_AVATAR_SIZE_BYTES = 10 * 1024 * 1024;
 const AVATAR_OUTPUT_SIZE = 512;
-const AVATAR_CROP_VIEWPORT = 380;
+const AVATAR_CROP_VIEWPORT = 300;
 const AVATAR_ZOOM_MIN = 1;
 const AVATAR_ZOOM_MAX = 4;
 
@@ -623,27 +623,25 @@ export default function Profile() {
                       className="hidden"
                       onChange={onAvatarFileChange}
                     />
-                    {!form.avatar_url ? (
-                      <Button type="button" variant="secondary" onClick={triggerAvatarUpload}>
-                        <Upload className="h-4 w-4 mr-1" />
-                        Upload image
-                      </Button>
-                    ) : (
-                      <>
-                        <Button type="button" variant="secondary" onClick={startEditingCurrentAvatar}>
-                          Edit image
-                        </Button>
-                        <Button type="button" variant="ghost" onClick={onRemoveAvatar}>
-                          <X className="h-4 w-4 mr-1" />
-                          Remove
-                        </Button>
-                      </>
-                    )}
+                    <Button type="button" variant="secondary" onClick={triggerAvatarUpload}>
+                      <Upload className="h-4 w-4 mr-1" />
+                      Upload image
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={startEditingCurrentAvatar}
+                      disabled={!form.avatar_url}
+                      title={form.avatar_url ? 'Edit current picture' : 'Upload a picture first'}
+                    >
+                      Edit picture
+                    </Button>
+                    <Button type="button" variant="ghost" onClick={onRemoveAvatar} disabled={!form.avatar_url}>
+                      <X className="h-4 w-4 mr-1" />
+                      Remove
+                    </Button>
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">Max file size: 10 MB.</p>
-                  {form.avatar_url && (
-                    <p className="mt-1 text-xs text-muted-foreground">Remove first if you want to upload a different photo.</p>
-                  )}
                   {avatarError && <p className="mt-1 text-xs text-red-400">{avatarError}</p>}
                 </div>
               </div>
@@ -912,14 +910,17 @@ export default function Profile() {
         </form>
 
         <Dialog open={avatarCropOpen} onOpenChange={(open) => (!open ? closeAvatarCropper() : setAvatarCropOpen(true))}>
-          <DialogContent className="max-w-xl">
+          <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>Crop profile picture</DialogTitle>
               <DialogDescription>Drag to reposition and use trackpad pinch, mouse wheel, or slider to zoom.</DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4">
-              <div className="mx-auto overflow-hidden rounded-2xl border border-border bg-muted/20" style={{ width: AVATAR_CROP_VIEWPORT, height: AVATAR_CROP_VIEWPORT }}>
+              <div
+                className="mx-auto w-full max-w-[300px] overflow-hidden rounded-2xl border border-border bg-muted/20 aspect-square"
+                style={{ maxWidth: `${AVATAR_CROP_VIEWPORT}px` }}
+              >
                 {avatarCropSource ? (
                   <Cropper
                     image={avatarCropSource}
@@ -967,7 +968,7 @@ export default function Profile() {
               </Button>
               <Button type="button" onClick={applyAvatarCrop} disabled={avatarApplying || !avatarCropSource}>
                 {avatarApplying ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Apply crop
+                Save photo
               </Button>
             </DialogFooter>
           </DialogContent>
