@@ -105,7 +105,6 @@
   }
 
   p,
-  span,
   li,
   small {
     color: hsl(var(--civant-body));
@@ -118,5 +117,16 @@
 
   a:hover {
     color: hsl(var(--civant-heading));
+  }
+
+  /* Ensure selected/highlighted select options stay readable on teal backgrounds. */
+  .civant-select-item[data-highlighted],
+  .civant-select-item[data-state='checked'] {
+    color: hsl(var(--primary-foreground)) !important;
+  }
+
+  .civant-select-item[data-highlighted] *,
+  .civant-select-item[data-state='checked'] * {
+    color: hsl(var(--primary-foreground)) !important;
   }
 }
