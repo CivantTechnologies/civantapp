@@ -1,18 +1,19 @@
-import Alerts from './pages/Alerts';
-import Architecture from './pages/Architecture';
-import Competitors from './pages/Competitors';
-import Connectors from './pages/Connectors';
+import { lazy } from 'react';
 import Home from './pages/Home';
-import Insights from './pages/Insights';
-import Integrations from './pages/Integrations';
-import PipelineAdmin from './pages/PipelineAdmin';
-import Predictions from './pages/Predictions';
-import Profile from './pages/Profile';
-import Search from './pages/Search';
 import System from './pages/System';
-import TenderDetail from './pages/TenderDetail';
 import __Layout from './Layout.jsx';
 
+const Alerts = lazy(() => import('./pages/Alerts'));
+const Architecture = lazy(() => import('./pages/Architecture'));
+const Competitors = lazy(() => import('./pages/Competitors'));
+const Connectors = lazy(() => import('./pages/Connectors'));
+const Insights = lazy(() => import('./pages/Insights'));
+const Integrations = lazy(() => import('./pages/Integrations'));
+const PipelineAdmin = lazy(() => import('./pages/PipelineAdmin'));
+const Predictions = lazy(() => import('./pages/Predictions'));
+const Profile = lazy(() => import('./pages/Profile'));
+const Search = lazy(() => import('./pages/Search'));
+const TenderDetail = lazy(() => import('./pages/TenderDetail'));
 
 export const PAGES = {
     "Alerts": Alerts,

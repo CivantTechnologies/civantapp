@@ -7,10 +7,12 @@ import { execFile } from 'node:child_process';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 import { promisify } from 'node:util';
+import readline from 'node:readline';
 
 const DEFAULT_FEED_URL = 'https://contrataciondelsectorpublico.gob.es/sindicacion/sindicacion_643/licitacionesPerfilesContratanteCompleto3.atom';
 const DEFAULT_ZIP_PREFIX = 'https://contrataciondelsectorpublico.gob.es/sindicacion/sindicacion_643/licitacionesPerfilesContratanteCompleto3_';
 const DEFAULT_DOWNLOAD_DIR = '/tmp/placsp-es-zips';
+const DEFAULT_LOCAL_OUTPUT_DIR = '/tmp/placsp-es-local';
 const DEFAULT_STATUS_FILE = '/tmp/placsp-es-import-status.json';
 const DEFAULT_CHECKPOINT_FILE = '/tmp/placsp-es-checkpoint.json';
 const DEFAULT_CONTROL_FILE = '/tmp/placsp-es-control.json';
@@ -45,8 +47,10 @@ function printHelp() {
 
 Modes:
   --mode backfill       Process historical ZIP archives into raw/canonical/current tables
+  --mode backfill-local Process historical ZIP archives into local NDJSON files
   --mode incremental    Pull current Atom feed chain and ingest new entries only
   --mode check-current  Validate recent feed entries against canonical/current and optionally repair
+  --mode upload-local   Upload previously staged local NDJSON files into API tables
 
 Core options:
   --api-base <url>                Default: https://civantapp.vercel.app
@@ -55,6 +59,8 @@ Core options:
   --with-tenant-header <bool>     Default: true
   --run-id <id>                   Optional custom run id
   --batch-size <n>                Default: 120
+  --sink <api|local>              Default: api
+  --local-output-dir <path>       Default: ${DEFAULT_LOCAL_OUTPUT_DIR}
   --status-file <path>            Default: ${DEFAULT_STATUS_FILE}
   --checkpoint-file <path>        Default: ${DEFAULT_CHECKPOINT_FILE}
   --control-file <path>           Default: ${DEFAULT_CONTROL_FILE}
@@ -81,10 +87,17 @@ Check-current options:
   --repair <bool>                  Default: false
   --lookback-days <n>              Default: 14
 
+Upload-local options:
+  --upload-tables <csv>            Default: raw_documents,canonical_tenders,TendersCurrent
+                                  Accepted: raw_documents,canonical_tenders,TendersCurrent
+  --upload-start-line <n>          Optional line offset for first upload run
+
 Examples:
   node scripts/import-placsp-es.mjs --mode backfill --historical-from-year 2012
+  node scripts/import-placsp-es.mjs --mode backfill-local --zip /path/to/2023.zip
   node scripts/import-placsp-es.mjs --mode incremental
   node scripts/import-placsp-es.mjs --mode check-current --repair true --lookback-days 30
+  node scripts/import-placsp-es.mjs --mode upload-local --local-output-dir /tmp/placsp-es-local
 
 Safe controls while running:
   echo '{"action":"pause","reason":"maintenance"}' > ${DEFAULT_CONTROL_FILE}
@@ -117,6 +130,28 @@ function unlinkIfExists(filePath) {
   } catch {
     // best effort
   }
+}
+
+function ensureDir(dirPath) {
+  if (!dirPath) return;
+  fs.mkdirSync(dirPath, { recursive: true });
+}
+
+function appendNdjsonRows(filePath, rows) {
+  if (!rows?.length) return;
+  const payload = rows.map((row) => JSON.stringify(row)).join('\n') + '\n';
+  fs.appendFileSync(filePath, payload, 'utf8');
+}
+
+function getLocalSinkPaths(baseDir) {
+  ensureDir(baseDir);
+  return {
+    baseDir,
+    rawDocuments: path.join(baseDir, 'raw_documents.ndjson'),
+    canonicalTenders: path.join(baseDir, 'canonical_tenders.ndjson'),
+    currentTenders: path.join(baseDir, 'TendersCurrent.ndjson'),
+    manifest: path.join(baseDir, 'manifest.json')
+  };
 }
 
 function readControlInstruction(filePath) {
@@ -1083,6 +1118,7 @@ async function* iterateZipSources({
 
 async function runIngestion({
   mode,
+  sink = 'api',
   baseUrl,
   appId,
   tenantId,
@@ -1090,6 +1126,7 @@ async function runIngestion({
   batchSize,
   runId,
   statusFile,
+  localOutputDir = DEFAULT_LOCAL_OUTPUT_DIR,
   startRecord,
   sourceIterator,
   checkpointFile,
@@ -1120,6 +1157,7 @@ async function runIngestion({
   let lastHeartbeatAt = Date.now();
   let requestedAction = null;
   let heartbeatTimer = null;
+  const localSinkPaths = sink === 'local' ? getLocalSinkPaths(localOutputDir) : null;
 
   const onSignalStop = () => {
     requestedAction = 'stop';
@@ -1133,6 +1171,7 @@ async function runIngestion({
   };
 
   const buildMetrics = () => ({
+    sink,
     mode,
     parsed_records: parsedRecords,
     processed_rows: processed,
@@ -1177,6 +1216,7 @@ async function runIngestion({
   const emitStatus = (phase = 'running') => {
     writeJsonFile(statusFile, {
       phase,
+      sink,
       mode,
       run_id: runId,
       parsed_records: parsedRecords,
@@ -1197,11 +1237,13 @@ async function runIngestion({
       canonical_failed: canonicalMetrics.failed,
       current_failed: currentMetrics.failed,
       max_entry_updated: maxEntryUpdatedIso,
+      local_output_dir: localSinkPaths?.baseDir || null,
       updated_at: new Date().toISOString()
     });
   };
 
   const updateRunProgress = async ({ status = 'running', finishedAt = null } = {}) => {
+    if (sink !== 'api') return;
     try {
       await putEntityById({
         baseUrl,
@@ -1223,42 +1265,44 @@ async function runIngestion({
     }
   };
 
-  try {
-    await postRows({
-      baseUrl,
-      appId,
-      tenantId,
-      table: 'ingestion_runs',
-      rows: [{
-        run_id: runId,
-        source,
-        cursor: `${mode}:start`,
-        status: 'running',
-        metrics: {},
-        errors: [],
-        started_at: startedAt,
-        finished_at: null,
-        tenant_id: tenantId
-      }],
-      includeTenantHeader
-    });
-  } catch (error) {
-    if (!isIngestionRunDuplicateError(error?.message)) {
-      throw error;
+  if (sink === 'api') {
+    try {
+      await postRows({
+        baseUrl,
+        appId,
+        tenantId,
+        table: 'ingestion_runs',
+        rows: [{
+          run_id: runId,
+          source,
+          cursor: `${mode}:start`,
+          status: 'running',
+          metrics: {},
+          errors: [],
+          started_at: startedAt,
+          finished_at: null,
+          tenant_id: tenantId
+        }],
+        includeTenantHeader
+      });
+    } catch (error) {
+      if (!isIngestionRunDuplicateError(error?.message)) {
+        throw error;
+      }
+      await putEntityById({
+        baseUrl,
+        appId,
+        tenantId,
+        table: 'ingestion_runs',
+        id: runId,
+        payload: {
+          status: 'running',
+          cursor: `${mode}:start`,
+          finished_at: null
+        },
+        includeTenantHeader
+      });
     }
-    await putEntityById({
-      baseUrl,
-      appId,
-      tenantId,
-      table: 'ingestion_runs',
-      id: runId,
-      payload: {
-        status: 'running',
-        cursor: `${mode}:start`,
-        finished_at: null
-      },
-      includeTenantHeader
-    });
   }
 
   emitStatus('started');
@@ -1267,54 +1311,87 @@ async function runIngestion({
   const flush = async () => {
     if (!rawBatch.length && !canonicalBatch.length && !currentBatch.length) return;
 
-    if (rawBatch.length) {
-      activity = `flush:raw_documents:${rawBatch.length}`;
-      emitStatus('running');
-      writeCheckpointSnapshot();
-      await insertBatchWithFallback({
-        baseUrl,
-        appId,
-        tenantId,
-        table: 'raw_documents',
-        rows: rawBatch.splice(0, rawBatch.length),
-        metrics: rawMetrics,
-        includeTenantHeader
-      });
-      markProgress();
-    }
+    if (sink === 'local') {
+      const rawRows = rawBatch.splice(0, rawBatch.length);
+      const canonicalRows = canonicalBatch.splice(0, canonicalBatch.length);
+      const currentRows = currentBatch.splice(0, currentBatch.length);
 
-    if (canonicalBatch.length) {
-      activity = `flush:canonical_tenders:${canonicalBatch.length}`;
-      emitStatus('running');
-      writeCheckpointSnapshot();
-      await insertBatchWithUpsertById({
-        baseUrl,
-        appId,
-        tenantId,
-        table: 'canonical_tenders',
-        idField: 'canonical_id',
-        rows: canonicalBatch.splice(0, canonicalBatch.length),
-        metrics: canonicalMetrics,
-        includeTenantHeader
-      });
-      markProgress();
-    }
+      if (rawRows.length) {
+        activity = `flush-local:raw_documents:${rawRows.length}`;
+        emitStatus('running');
+        writeCheckpointSnapshot();
+        appendNdjsonRows(localSinkPaths.rawDocuments, rawRows);
+        rawMetrics.inserted += rawRows.length;
+        markProgress();
+      }
 
-    if (currentBatch.length) {
-      activity = `flush:TendersCurrent:${currentBatch.length}`;
-      emitStatus('running');
-      writeCheckpointSnapshot();
-      await insertBatchWithUpsertById({
-        baseUrl,
-        appId,
-        tenantId,
-        table: 'TendersCurrent',
-        idField: 'tender_id',
-        rows: currentBatch.splice(0, currentBatch.length),
-        metrics: currentMetrics,
-        includeTenantHeader
-      });
-      markProgress();
+      if (canonicalRows.length) {
+        activity = `flush-local:canonical_tenders:${canonicalRows.length}`;
+        emitStatus('running');
+        writeCheckpointSnapshot();
+        appendNdjsonRows(localSinkPaths.canonicalTenders, canonicalRows);
+        canonicalMetrics.inserted += canonicalRows.length;
+        markProgress();
+      }
+
+      if (currentRows.length) {
+        activity = `flush-local:TendersCurrent:${currentRows.length}`;
+        emitStatus('running');
+        writeCheckpointSnapshot();
+        appendNdjsonRows(localSinkPaths.currentTenders, currentRows);
+        currentMetrics.inserted += currentRows.length;
+        markProgress();
+      }
+    } else {
+      if (rawBatch.length) {
+        activity = `flush:raw_documents:${rawBatch.length}`;
+        emitStatus('running');
+        writeCheckpointSnapshot();
+        await insertBatchWithFallback({
+          baseUrl,
+          appId,
+          tenantId,
+          table: 'raw_documents',
+          rows: rawBatch.splice(0, rawBatch.length),
+          metrics: rawMetrics,
+          includeTenantHeader
+        });
+        markProgress();
+      }
+
+      if (canonicalBatch.length) {
+        activity = `flush:canonical_tenders:${canonicalBatch.length}`;
+        emitStatus('running');
+        writeCheckpointSnapshot();
+        await insertBatchWithUpsertById({
+          baseUrl,
+          appId,
+          tenantId,
+          table: 'canonical_tenders',
+          idField: 'canonical_id',
+          rows: canonicalBatch.splice(0, canonicalBatch.length),
+          metrics: canonicalMetrics,
+          includeTenantHeader
+        });
+        markProgress();
+      }
+
+      if (currentBatch.length) {
+        activity = `flush:TendersCurrent:${currentBatch.length}`;
+        emitStatus('running');
+        writeCheckpointSnapshot();
+        await insertBatchWithUpsertById({
+          baseUrl,
+          appId,
+          tenantId,
+          table: 'TendersCurrent',
+          idField: 'tender_id',
+          rows: currentBatch.splice(0, currentBatch.length),
+          metrics: currentMetrics,
+          includeTenantHeader
+        });
+        markProgress();
+      }
     }
 
     flushCount += 1;
@@ -1327,6 +1404,7 @@ async function runIngestion({
   const finalizeResult = (status) => ({
     run_id: runId,
     mode,
+    sink,
     status,
     parsed_records: parsedRecords,
     processed,
@@ -1338,6 +1416,7 @@ async function runIngestion({
     raw_documents: rawMetrics,
     canonical_tenders: canonicalMetrics,
     TendersCurrent: currentMetrics,
+    local_output_dir: localSinkPaths?.baseDir || null,
     errors: buildRunErrors()
   });
 
@@ -1496,21 +1575,41 @@ async function runIngestion({
 
     const runErrors = buildRunErrors();
     const completedStatus = runErrors.length ? 'completed_with_errors' : 'completed';
-    await putEntityById({
-      baseUrl,
-      appId,
-      tenantId,
-      table: 'ingestion_runs',
-      id: runId,
-      payload: {
-        status: completedStatus,
+    if (sink === 'api') {
+      await putEntityById({
+        baseUrl,
+        appId,
+        tenantId,
+        table: 'ingestion_runs',
+        id: runId,
+        payload: {
+          status: completedStatus,
+          metrics: buildMetrics(),
+          errors: runErrors,
+          cursor: lastCursor || `${mode}:completed`,
+          finished_at: new Date().toISOString()
+        },
+        includeTenantHeader
+      });
+    } else {
+      writeJsonFile(localSinkPaths.manifest, {
+        run_id: runId,
+        mode,
+        sink,
+        tenant_id: tenantId,
+        source: 'PLACSP_ES',
+        started_at: startedAt,
+        finished_at: new Date().toISOString(),
         metrics: buildMetrics(),
         errors: runErrors,
-        cursor: lastCursor || `${mode}:completed`,
-        finished_at: new Date().toISOString()
-      },
-      includeTenantHeader
-    });
+        files: {
+          raw_documents: localSinkPaths.rawDocuments,
+          canonical_tenders: localSinkPaths.canonicalTenders,
+          TendersCurrent: localSinkPaths.currentTenders
+        },
+        checkpoint_file: checkpointFile
+      });
+    }
 
     writeCheckpointSnapshot();
     activity = 'completed';
@@ -1652,6 +1751,245 @@ async function runCheckCurrent({
   return result;
 }
 
+function parseUploadTables(value) {
+  const allowed = new Set(['raw_documents', 'canonical_tenders', 'TendersCurrent']);
+  const requested = (clean(value) || 'raw_documents,canonical_tenders,TendersCurrent')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const unique = [];
+  for (const item of requested) {
+    if (!allowed.has(item)) {
+      throw new Error(`Unsupported upload table: ${item}`);
+    }
+    if (!unique.includes(item)) unique.push(item);
+  }
+  return unique;
+}
+
+async function runUploadLocal({
+  baseUrl,
+  appId,
+  tenantId,
+  includeTenantHeader,
+  batchSize,
+  runId,
+  statusFile,
+  checkpointFile,
+  localOutputDir,
+  uploadTables,
+  uploadStartLine
+}) {
+  const paths = getLocalSinkPaths(localOutputDir);
+  const tableToFile = {
+    raw_documents: paths.rawDocuments,
+    canonical_tenders: paths.canonicalTenders,
+    TendersCurrent: paths.currentTenders
+  };
+
+  const checkpoint = readJsonFile(checkpointFile) || {};
+  const tablePositions = { ...(checkpoint.upload_positions || {}) };
+  const metrics = {
+    raw_documents: { inserted: 0, duplicates: 0, updated: 0, failed: 0, errors: [] },
+    canonical_tenders: { inserted: 0, duplicates: 0, updated: 0, failed: 0, errors: [] },
+    TendersCurrent: { inserted: 0, duplicates: 0, updated: 0, failed: 0, errors: [] }
+  };
+
+  const startedAt = new Date().toISOString();
+  let requestedAction = null;
+  let activity = 'initializing upload-local';
+
+  const emitStatus = (phase = 'running', extra = {}) => {
+    writeJsonFile(statusFile, {
+      phase,
+      mode: 'upload-local',
+      sink: 'api',
+      run_id: runId,
+      tenant_id: tenantId,
+      local_output_dir: localOutputDir,
+      activity,
+      upload_positions: tablePositions,
+      metrics,
+      ...extra,
+      updated_at: new Date().toISOString()
+    });
+  };
+
+  const persistCheckpoint = () => {
+    writeJsonFile(checkpointFile, {
+      ...(checkpoint || {}),
+      mode: 'upload-local',
+      run_id: runId,
+      tenant_id: tenantId,
+      upload_positions: tablePositions,
+      updated_at: new Date().toISOString()
+    });
+  };
+
+  const onSignalStop = () => {
+    requestedAction = 'stop';
+  };
+  process.on('SIGTERM', onSignalStop);
+  process.on('SIGINT', onSignalStop);
+
+  try {
+    for (const table of uploadTables) {
+      const filePath = tableToFile[table];
+      if (!fs.existsSync(filePath)) {
+        emitStatus('failed', { error: `Missing local file for ${table}: ${filePath}` });
+        throw new Error(`Missing local file for ${table}: ${filePath}`);
+      }
+
+      const startLine = Math.max(
+        1,
+        Number(tablePositions[table] || 0) > 0
+          ? Number(tablePositions[table]) + 1
+          : Number(uploadStartLine || 1)
+      );
+
+      activity = `uploading ${table} from line ${startLine}`;
+      emitStatus('running');
+      persistCheckpoint();
+
+      const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
+      const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+      const batch = [];
+      let lineNo = 0;
+
+      for await (const line of rl) {
+        lineNo += 1;
+        if (lineNo < startLine) continue;
+        if (requestedAction === 'stop') break;
+        if (!line.trim()) {
+          tablePositions[table] = lineNo;
+          continue;
+        }
+
+        let row;
+        try {
+          row = JSON.parse(line);
+        } catch (error) {
+          metrics[table].failed += 1;
+          metrics[table].errors.push(`line ${lineNo}: invalid JSON (${error.message})`);
+          tablePositions[table] = lineNo;
+          if (metrics[table].errors.length > 100) metrics[table].errors = metrics[table].errors.slice(-100);
+          continue;
+        }
+
+        batch.push(row);
+        if (batch.length >= batchSize) {
+          if (table === 'raw_documents') {
+            await insertBatchWithFallback({
+              baseUrl,
+              appId,
+              tenantId,
+              table,
+              rows: batch.splice(0, batch.length),
+              metrics: metrics[table],
+              includeTenantHeader
+            });
+          } else if (table === 'canonical_tenders') {
+            await insertBatchWithUpsertById({
+              baseUrl,
+              appId,
+              tenantId,
+              table,
+              idField: 'canonical_id',
+              rows: batch.splice(0, batch.length),
+              metrics: metrics[table],
+              includeTenantHeader
+            });
+          } else {
+            await insertBatchWithUpsertById({
+              baseUrl,
+              appId,
+              tenantId,
+              table,
+              idField: 'tender_id',
+              rows: batch.splice(0, batch.length),
+              metrics: metrics[table],
+              includeTenantHeader
+            });
+          }
+          tablePositions[table] = lineNo;
+          emitStatus('running', { table, line: lineNo });
+          persistCheckpoint();
+        }
+      }
+
+      if (batch.length) {
+        if (table === 'raw_documents') {
+          await insertBatchWithFallback({
+            baseUrl,
+            appId,
+            tenantId,
+            table,
+            rows: batch.splice(0, batch.length),
+            metrics: metrics[table],
+            includeTenantHeader
+          });
+        } else if (table === 'canonical_tenders') {
+          await insertBatchWithUpsertById({
+            baseUrl,
+            appId,
+            tenantId,
+            table,
+            idField: 'canonical_id',
+            rows: batch.splice(0, batch.length),
+            metrics: metrics[table],
+            includeTenantHeader
+          });
+        } else {
+          await insertBatchWithUpsertById({
+            baseUrl,
+            appId,
+            tenantId,
+            table,
+            idField: 'tender_id',
+            rows: batch.splice(0, batch.length),
+            metrics: metrics[table],
+            includeTenantHeader
+          });
+        }
+      }
+
+      tablePositions[table] = lineNo;
+      emitStatus('running', { table, line: lineNo });
+      persistCheckpoint();
+
+      if (requestedAction === 'stop') {
+        activity = `stopped during ${table}`;
+        emitStatus('stopped');
+        return {
+          run_id: runId,
+          mode: 'upload-local',
+          status: 'stopped',
+          metrics,
+          upload_positions: tablePositions,
+          started_at: startedAt,
+          finished_at: new Date().toISOString()
+        };
+      }
+    }
+
+    activity = 'completed upload-local';
+    emitStatus('completed');
+    persistCheckpoint();
+    return {
+      run_id: runId,
+      mode: 'upload-local',
+      status: 'completed',
+      metrics,
+      upload_positions: tablePositions,
+      started_at: startedAt,
+      finished_at: new Date().toISOString()
+    };
+  } finally {
+    process.off('SIGTERM', onSignalStop);
+    process.off('SIGINT', onSignalStop);
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   if (parseBoolean(args.help, false) || parseBoolean(args.h, false)) {
@@ -1660,16 +1998,27 @@ async function main() {
   }
 
   const mode = clean(args.mode) || 'incremental';
+  const sink = clean(args.sink)?.toLowerCase() || (mode === 'backfill-local' ? 'local' : 'api');
+  if (!['api', 'local'].includes(sink)) {
+    throw new Error(`Unsupported sink: ${sink}. Use --sink api or --sink local`);
+  }
   const baseUrl = String(args['api-base'] || 'https://civantapp.vercel.app').replace(/\/$/, '');
   const appId = String(args['app-id'] || 'civantapp');
   const tenantId = String(args['tenant-id'] || 'civant_default');
   const includeTenantHeader = args['with-tenant-header'] !== 'false';
   const batchSize = Math.max(20, parsePositiveInt(args['batch-size'], 120));
-  const runId = String(args['run-id'] || makeRunId(mode === 'check-current' ? 'placsp_es_check' : 'placsp_es'));
+  const runPrefix = (() => {
+    if (mode === 'check-current') return 'placsp_es_check';
+    if (mode === 'upload-local') return 'placsp_es_upload';
+    if (mode === 'backfill-local' || sink === 'local') return 'placsp_es_local';
+    return 'placsp_es';
+  })();
+  const runId = String(args['run-id'] || makeRunId(runPrefix));
   const statusFile = String(args['status-file'] || DEFAULT_STATUS_FILE);
   const checkpointFile = String(args['checkpoint-file'] || DEFAULT_CHECKPOINT_FILE);
   const controlFile = String(args['control-file'] || DEFAULT_CONTROL_FILE);
   const pidFile = String(args['pid-file'] || DEFAULT_PID_FILE);
+  const localOutputDir = String(args['local-output-dir'] || DEFAULT_LOCAL_OUTPUT_DIR);
   const insecureTls = parseBoolean(args['insecure-tls'], false);
 
   writeJsonFile(pidFile, {
@@ -1708,6 +2057,7 @@ async function main() {
 
       const result = await runIngestion({
         mode: 'incremental',
+        sink,
         baseUrl,
         appId,
         tenantId,
@@ -1715,6 +2065,7 @@ async function main() {
         batchSize,
         runId,
         statusFile,
+        localOutputDir,
         startRecord: Math.max(1, parsePositiveInt(args['start-record'], 1)),
         sourceIterator,
         checkpointFile,
@@ -1732,7 +2083,7 @@ async function main() {
       return;
     }
 
-    if (mode === 'backfill') {
+    if (mode === 'backfill' || mode === 'backfill-local') {
       const fromYear = parsePositiveInt(args['historical-from-year'], 2012);
       const toYear = parsePositiveInt(args['historical-to-year'], new Date().getUTCFullYear());
       const includeMonthlyCurrentYear = parseBoolean(args['include-monthly-current-year'], true);
@@ -1769,7 +2120,8 @@ async function main() {
       });
 
       const result = await runIngestion({
-        mode: 'backfill',
+        mode: mode === 'backfill-local' ? 'backfill-local' : 'backfill',
+        sink: mode === 'backfill-local' ? 'local' : sink,
         baseUrl,
         appId,
         tenantId,
@@ -1777,6 +2129,7 @@ async function main() {
         batchSize,
         runId,
         statusFile,
+        localOutputDir,
         startRecord: resumePlan.effectiveStartRecord,
         sourceIterator,
         checkpointFile,
@@ -1795,9 +2148,33 @@ async function main() {
 
       console.log(JSON.stringify({
         ...result,
+        sink: mode === 'backfill-local' ? 'local' : sink,
+        local_output_dir: mode === 'backfill-local' || sink === 'local' ? localOutputDir : null,
         zip_sources_count: zipItems.length,
         zip_sources: zipItems.slice(0, 20)
       }, null, 2));
+      return;
+    }
+
+    if (mode === 'upload-local') {
+      const uploadTables = parseUploadTables(args['upload-tables']);
+      const uploadStartLine = Math.max(1, parsePositiveInt(args['upload-start-line'], 1));
+
+      const result = await runUploadLocal({
+        baseUrl,
+        appId,
+        tenantId,
+        includeTenantHeader,
+        batchSize,
+        runId,
+        statusFile,
+        checkpointFile,
+        localOutputDir,
+        uploadTables,
+        uploadStartLine
+      });
+
+      console.log(JSON.stringify(result, null, 2));
       return;
     }
 

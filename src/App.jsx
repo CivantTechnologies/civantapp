@@ -3,6 +3,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClientInstance } from '@/lib/query-client';
 import NavigationTracker from '@/lib/NavigationTracker';
 import { pagesConfig } from './pages.config';
+import { Suspense } from 'react';
 import { BrowserRouter as Router, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/auth';
@@ -12,7 +13,7 @@ import { Button } from '@/components/ui/button';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
-const MainPage = mainPageKey ? Pages[mainPageKey] : <></>;
+const MainPage = mainPageKey ? Pages[mainPageKey] : () => null;
 const SystemPage = Pages.System;
 
 const LayoutWrapper = ({ children, currentPageName }) => Layout
@@ -38,6 +39,14 @@ function AccessDeniedPage() {
         </div>
       </div>
     </LayoutWrapper>
+  );
+}
+
+function RouteLoader() {
+  return (
+    <div className="min-h-[40vh] flex items-center justify-center">
+      <div className="w-8 h-8 border-4 border-slate-200 border-t-teal-400 rounded-full animate-spin" />
+    </div>
   );
 }
 
@@ -96,7 +105,9 @@ function ProtectedRoutes() {
         path="/"
         element={
           <LayoutWrapper currentPageName={mainPageKey}>
-            <MainPage />
+            <Suspense fallback={<RouteLoader />}>
+              <MainPage />
+            </Suspense>
           </LayoutWrapper>
         }
       />
@@ -106,7 +117,9 @@ function ProtectedRoutes() {
         element={
           <RequireSystemRole>
             <LayoutWrapper currentPageName="System">
-              <SystemPage />
+              <Suspense fallback={<RouteLoader />}>
+                <SystemPage />
+              </Suspense>
             </LayoutWrapper>
           </RequireSystemRole>
         }
@@ -116,7 +129,9 @@ function ProtectedRoutes() {
         element={
           <RequireSystemRole>
             <LayoutWrapper currentPageName="System">
-              <SystemPage />
+              <Suspense fallback={<RouteLoader />}>
+                <SystemPage />
+              </Suspense>
             </LayoutWrapper>
           </RequireSystemRole>
         }
@@ -130,7 +145,9 @@ function ProtectedRoutes() {
             path={`/${path}`}
             element={
               <LayoutWrapper currentPageName={path}>
-                <Page />
+                <Suspense fallback={<RouteLoader />}>
+                  <Page />
+                </Suspense>
               </LayoutWrapper>
             }
           />
