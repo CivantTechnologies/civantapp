@@ -12,9 +12,18 @@ import {
     Sparkles,
     Target
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import {
+    Page,
+    PageHeader,
+    PageTitle,
+    PageDescription,
+    Card,
+    CardContent,
+    CardHeader,
+    CardTitle,
+    Button,
+    Badge
+} from '@/components/ui';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
     Table,
@@ -26,6 +35,24 @@ import {
 } from "@/components/ui/table";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { format, differenceInDays, startOfMonth, subMonths } from 'date-fns';
+
+const NOTICE_TYPE_META = [
+    { key: 'tender', label: 'Tender', colorClass: 'bg-primary' },
+    { key: 'award', label: 'Award', colorClass: 'bg-emerald-400' },
+    { key: 'corrigendum', label: 'Corrigendum', colorClass: 'bg-amber-400' },
+    { key: 'cancellation', label: 'Cancellation', colorClass: 'bg-rose-400' },
+    { key: 'other', label: 'Other', colorClass: 'bg-slate-400' }
+];
+
+function normalizeNoticeType(rawType) {
+    const value = String(rawType || '').toLowerCase().trim();
+    if (!value) return 'other';
+    if (value.includes('corrig') || value.includes('rectif') || value.includes('amend') || value.includes('correct')) return 'corrigendum';
+    if (value.includes('award') || value.includes('adjudic')) return 'award';
+    if (value.includes('cancel')) return 'cancellation';
+    if (value.includes('tender') || value.includes('notice') || value.includes('contract') || value.includes('competition')) return 'tender';
+    return 'other';
+}
 
 export default function Insights() {
     const [tenders, setTenders] = useState([]);
@@ -140,12 +167,20 @@ export default function Insights() {
     
     const monthlyChartData = Object.values(monthlyData);
     
-    // Notice type breakdown
-    const noticeTypes = {};
-    filteredTenders.forEach(tender => {
-        const type = tender.notice_type || 'unknown';
-        noticeTypes[type] = (noticeTypes[type] || 0) + 1;
+    // Notice type breakdown (normalized so Corrigendum is always visible)
+    const noticeTypeCounts = NOTICE_TYPE_META.reduce((acc, item) => {
+        acc[item.key] = 0;
+        return acc;
+    }, {});
+    filteredTenders.forEach((tender) => {
+        const typeKey = normalizeNoticeType(tender.notice_type);
+        noticeTypeCounts[typeKey] = (noticeTypeCounts[typeKey] || 0) + 1;
     });
+    const noticeTypeStats = NOTICE_TYPE_META.map((item) => ({
+        ...item,
+        count: noticeTypeCounts[item.key] || 0,
+        percentage: filteredTenders.length > 0 ? Math.round(((noticeTypeCounts[item.key] || 0) / filteredTenders.length) * 100) : 0
+    }));
     
     // Export to Google Drive
     const handleExportToDrive = async () => {
@@ -228,30 +263,37 @@ export default function Insights() {
     }
     
     return (
-        <div className="space-y-6">
+        <Page className="space-y-8">
             {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-100">Insights</h1>
-                    <p className="text-slate-400 mt-1">Buyer analytics and predictability metrics</p>
+            <PageHeader className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+                <div className="space-y-3">
+                    <span className="inline-flex w-fit rounded-full border border-primary/30 bg-primary/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
+                        Civant Intelligence
+                    </span>
+                    <div className="space-y-2">
+                        <PageTitle>Insights</PageTitle>
+                        <PageDescription>Buyer analytics and predictability metrics.</PageDescription>
+                    </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                     <Select value={selectedCountry} onValueChange={setSelectedCountry}>
-                        <SelectTrigger className="w-40">
+                        <SelectTrigger className="w-full sm:w-44 bg-card/70 border-border text-card-foreground">
                             <SelectValue placeholder="All countries" />
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">All Countries</SelectItem>
                             <SelectItem value="FR">🇫🇷 France</SelectItem>
                             <SelectItem value="IE">🇮🇪 Ireland</SelectItem>
+                            <SelectItem value="ES">🇪🇸 Spain</SelectItem>
                         </SelectContent>
                     </Select>
-                    <Button variant="outline" onClick={exportCSV}>
+                    <Button variant="outline" className="border-border/80 bg-card/50 hover:bg-card/75" onClick={exportCSV}>
                         <Download className="h-4 w-4 mr-2" />
                         Export CSV
                     </Button>
                     <Button 
                         variant="outline"
+                        className="border-border/80 bg-card/50 hover:bg-card/75"
                         onClick={handleExportToDrive}
                         disabled={exportingToDrive}
                     >
@@ -263,19 +305,19 @@ export default function Insights() {
                         Export to Drive
                     </Button>
                 </div>
-            </div>
+            </PageHeader>
             
             {/* Summary Stats */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
                     <CardContent className="p-6">
                         <div className="flex items-center gap-3">
-                            <div className="p-3 rounded-xl bg-indigo-50">
-                                <Building2 className="h-5 w-5 text-civant-teal" />
+                            <div className="p-3 rounded-xl bg-primary/15 border border-primary/25">
+                                <Building2 className="h-5 w-5 text-primary" />
                             </div>
                             <div>
-                                <p className="text-sm text-slate-400">Unique Buyers</p>
-                                <p className="text-2xl font-bold text-slate-100">{Object.keys(buyerStats).length}</p>
+                                <p className="text-sm text-muted-foreground">Unique Buyers</p>
+                                <p className="text-2xl font-bold text-card-foreground">{Object.keys(buyerStats).length}</p>
                             </div>
                         </div>
                     </CardContent>
@@ -284,12 +326,12 @@ export default function Insights() {
                 <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
                     <CardContent className="p-6">
                         <div className="flex items-center gap-3">
-                            <div className="p-3 rounded-xl bg-emerald-50">
-                                <TrendingUp className="h-5 w-5 text-emerald-600" />
+                            <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-400/30">
+                                <TrendingUp className="h-5 w-5 text-emerald-300" />
                             </div>
                             <div>
-                                <p className="text-sm text-slate-400">Total Tenders</p>
-                                <p className="text-2xl font-bold text-slate-100">{filteredTenders.length}</p>
+                                <p className="text-sm text-muted-foreground">Total Tenders</p>
+                                <p className="text-2xl font-bold text-card-foreground">{filteredTenders.length}</p>
                             </div>
                         </div>
                     </CardContent>
@@ -298,12 +340,12 @@ export default function Insights() {
                 <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
                     <CardContent className="p-6">
                         <div className="flex items-center gap-3">
-                            <div className="p-3 rounded-xl bg-amber-50">
-                                <Clock className="h-5 w-5 text-amber-600" />
+                            <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-400/30">
+                                <Clock className="h-5 w-5 text-amber-300" />
                             </div>
                             <div>
-                                <p className="text-sm text-slate-400">Avg Tender Window</p>
-                                <p className="text-2xl font-bold text-slate-100">
+                                <p className="text-sm text-muted-foreground">Avg Tender Window</p>
+                                <p className="text-2xl font-bold text-card-foreground">
                                     {(() => {
                                         const allWindows = topBuyers.flatMap(b => b.avgWindow ? [b.avgWindow] : []);
                                         return allWindows.length > 0 
@@ -319,12 +361,12 @@ export default function Insights() {
                 <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
                     <CardContent className="p-6">
                         <div className="flex items-center gap-3">
-                            <div className="p-3 rounded-xl bg-red-50">
-                                <AlertCircle className="h-5 w-5 text-red-600" />
+                            <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-400/30">
+                                <AlertCircle className="h-5 w-5 text-rose-300" />
                             </div>
                             <div>
-                                <p className="text-sm text-slate-400">Deadline Changes</p>
-                                <p className="text-2xl font-bold text-slate-100">
+                                <p className="text-sm text-muted-foreground">Deadline Changes</p>
+                                <p className="text-2xl font-bold text-card-foreground">
                                     {versions.filter(v => v.change_type === 'deadline_changed').length}
                                 </p>
                             </div>
@@ -344,23 +386,30 @@ export default function Insights() {
                         <div className="h-64">
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={monthlyChartData}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                    <CartesianGrid strokeDasharray="4 4" stroke="hsl(var(--border))" />
                                     <XAxis 
                                         dataKey="month" 
-                                        tick={{ fontSize: 12 }}
+                                        tick={{ fontSize: 12, fill: '#94a3b8' }}
+                                        axisLine={{ stroke: 'hsl(var(--border))' }}
+                                        tickLine={{ stroke: 'hsl(var(--border))' }}
                                         tickFormatter={(v) => format(new Date(v + '-01'), 'MMM')}
                                     />
-                                    <YAxis tick={{ fontSize: 12 }} />
+                                    <YAxis
+                                        tick={{ fontSize: 12, fill: '#94a3b8' }}
+                                        axisLine={{ stroke: 'hsl(var(--border))' }}
+                                        tickLine={{ stroke: 'hsl(var(--border))' }}
+                                    />
                                     <Tooltip 
                                         contentStyle={{ 
-                                            background: 'white', 
-                                            border: '1px solid #e2e8f0',
-                                            borderRadius: '8px'
+                                            background: 'hsl(var(--card))', 
+                                            border: '1px solid hsl(var(--border))',
+                                            borderRadius: '10px'
                                         }}
+                                        labelStyle={{ color: 'hsl(var(--card-foreground))' }}
                                         formatter={(value) => [value, 'Tenders']}
                                         labelFormatter={(v) => format(new Date(v + '-01'), 'MMMM yyyy')}
                                     />
-                                    <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                                    <Bar dataKey="count" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
                                 </BarChart>
                             </ResponsiveContainer>
                         </div>
@@ -374,25 +423,17 @@ export default function Insights() {
                     </CardHeader>
                     <CardContent>
                         <div className="space-y-4">
-                            {Object.entries(noticeTypes).map(([type, count]) => {
-                                const percentage = Math.round((count / filteredTenders.length) * 100);
-                                const colors = {
-                                    tender: 'bg-indigo-500',
-                                    award: 'bg-emerald-500',
-                                    corrigendum: 'bg-amber-500',
-                                    unknown: 'bg-slate-400'
-                                };
-                                
+                            {noticeTypeStats.map((item) => {
                                 return (
-                                    <div key={type}>
+                                    <div key={item.key}>
                                         <div className="flex items-center justify-between mb-1">
-                                            <span className="text-sm font-medium text-slate-300 capitalize">{type}</span>
-                                            <span className="text-sm text-slate-400">{count} ({percentage}%)</span>
+                                            <span className="text-sm font-medium text-slate-300">{item.label}</span>
+                                            <span className="text-sm text-slate-400">{item.count} ({item.percentage}%)</span>
                                         </div>
-                                        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                        <div className="h-2 bg-muted/50 rounded-full overflow-hidden">
                                             <div 
-                                                className={`h-full ${colors[type] || colors.unknown} rounded-full transition-all`}
-                                                style={{ width: `${percentage}%` }}
+                                                className={`h-full ${item.colorClass} rounded-full transition-all`}
+                                                style={{ width: `${item.percentage}%` }}
                                             />
                                         </div>
                                     </div>
@@ -405,10 +446,10 @@ export default function Insights() {
             
             {/* AI Analysis Panel */}
             {aiAnalysis && (
-                <Card className="border-indigo-100 bg-gradient-to-br from-indigo-50 to-purple-50">
+                <Card className="border border-civant-border bg-civant-navy/60 shadow-none">
                     <CardHeader>
                         <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                            <Sparkles className="h-5 w-5 text-civant-teal" />
+                            <Sparkles className="h-5 w-5 text-primary" />
                             AI Forecast Analysis - {selectedBuyer}
                         </CardTitle>
                     </CardHeader>
@@ -463,9 +504,9 @@ export default function Insights() {
                                                 </div>
                                                 <div className="text-right">
                                                     <Badge className={
-                                                        pred.confidence_level === 'high' ? 'bg-emerald-50 text-emerald-700' :
-                                                        pred.confidence_level === 'medium' ? 'bg-amber-50 text-amber-700' :
-                                                        'bg-slate-900/60 text-slate-300'
+                                                        pred.confidence_level === 'high' ? 'bg-emerald-500/15 text-emerald-200 border border-emerald-400/40' :
+                                                        pred.confidence_level === 'medium' ? 'bg-amber-500/15 text-amber-200 border border-amber-400/40' :
+                                                        'bg-secondary text-secondary-foreground border border-border/70'
                                                     }>
                                                         {pred.confidence_score ? `${Math.round(pred.confidence_score * 100)}%` : pred.confidence_level}
                                                     </Badge>
@@ -475,11 +516,11 @@ export default function Insights() {
 
                                             {/* Confidence Interval Visualization */}
                                             <div className="mb-3">
-                                                <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                                                <div className="h-2 bg-muted/50 rounded-full overflow-hidden">
                                                     <div 
                                                         className={`h-full rounded-full ${
-                                                            pred.confidence_level === 'high' ? 'bg-emerald-500' :
-                                                            pred.confidence_level === 'medium' ? 'bg-amber-500' : 'bg-slate-400'
+                                                            pred.confidence_level === 'high' ? 'bg-emerald-400' :
+                                                            pred.confidence_level === 'medium' ? 'bg-amber-400' : 'bg-slate-400'
                                                         }`}
                                                         style={{ width: `${(pred.confidence_score || 0.5) * 100}%` }}
                                                     />
@@ -574,10 +615,10 @@ export default function Insights() {
                                             : changeRate < 0.3 ? 'Medium' 
                                             : 'Low';
                                         const predColor = predictability === 'High' 
-                                            ? 'bg-emerald-50 text-emerald-700'
+                                            ? 'bg-emerald-500/15 text-emerald-200 border border-emerald-400/40'
                                             : predictability === 'Medium'
-                                            ? 'bg-amber-50 text-amber-700'
-                                            : 'bg-red-50 text-red-700';
+                                            ? 'bg-amber-500/15 text-amber-200 border border-amber-400/40'
+                                            : 'bg-rose-500/15 text-rose-200 border border-rose-400/40';
                                         
                                         return (
                                             <TableRow key={index}>
@@ -601,7 +642,7 @@ export default function Insights() {
                                                 </TableCell>
                                                 <TableCell className="text-right">
                                                     {buyer.deadlineChanges > 0 ? (
-                                                        <span className="text-amber-600">{buyer.deadlineChanges}</span>
+                                                        <span className="text-amber-300">{buyer.deadlineChanges}</span>
                                                     ) : (
                                                         <span className="text-slate-400">0</span>
                                                     )}
@@ -640,6 +681,6 @@ export default function Insights() {
                     </div>
                 </CardContent>
             </Card>
-        </div>
+        </Page>
     );
 }
