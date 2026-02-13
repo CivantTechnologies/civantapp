@@ -73,6 +73,12 @@ npm run import:placsp:block:start -- \
   --stall-kill-grace-minutes 3
 ```
 
+Notes:
+
+- Prefer writing each run to a fresh timestamped folder, then repoint the `processed_ndjson_latest` symlink:
+  - `ln -sfn /path/to/processed_ndjson_<run_id> /Users/davidmanrique/projects/Historical_data_spain/processed_ndjson_latest`
+- Spain upload scripts default `NDJSON_DIR` to `processed_ndjson_latest` so you can't accidentally upload an older/corrupted run.
+
 Monitor:
 
 ```bash
@@ -185,3 +191,18 @@ npm run import:placsp:check -- \
 - Local preprocessing (`backfill-local`) writes NDJSON only; use `upload-local` later for controlled API upload.
 - Use `--insecure-tls true` only for temporary TLS issues in controlled environments.
 - Keep backfill and heavy BOAMP imports separate to avoid local resource contention.
+
+## Post-Run TODO (Quality Gates)
+
+- Extend the cross-country semantic QA gate beyond dates (null-rate bounds, field-source distribution, and by-status sanity checks).
+- Add a country-level gold sample validation set and require it on parser changes before production merge.
+
+## QA Gate (Run Every Time)
+
+Before shipping data (or immediately after a bulk merge), run:
+
+```bash
+./scripts/qa-gate-tender-dates.sh SOURCE=PLACSP_ES
+./scripts/qa-gate-tender-dates.sh SOURCE=BOAMP_FR
+./scripts/qa-gate-tender-dates.sh SOURCE=ETENDERS_IE
+```
