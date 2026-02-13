@@ -202,7 +202,7 @@ npm run import:placsp:check -- \
 Before shipping data (or immediately after a bulk merge), run:
 
 ```bash
-./scripts/qa-gate-tender-dates.sh SOURCE=PLACSP_ES
-./scripts/qa-gate-tender-dates.sh SOURCE=BOAMP_FR
-./scripts/qa-gate-tender-dates.sh SOURCE=ETENDERS_IE
+SOURCE=PLACSP_ES ./scripts/qa-gate-tender-dates.sh
+SOURCE=BOAMP_FR ./scripts/qa-gate-tender-dates.sh
+SOURCE=ETENDERS_IE ./scripts/qa-gate-tender-dates.sh
 ```
