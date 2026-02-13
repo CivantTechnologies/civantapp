@@ -22,6 +22,9 @@ const MAX_HTTP_RETRIES = 5;
 const SOURCE_WAIT_HEARTBEAT_MS = 15000;
 const ZIP_EXEC_TIMEOUT_MS = 120000;
 const DEBUG_INGEST = String(process.env.PLACSP_DEBUG || '').toLowerCase() === 'true';
+const MIN_REASONABLE_YEAR = 2000;
+const MAX_REASONABLE_YEAR = 2100;
+const PREFERRED_PUBLICATION_NOTICE_PREFIXES = ['DOC_CN', 'DOC_CD'];
 
 const execFileAsync = promisify(execFile);
 
@@ -48,6 +51,7 @@ function printHelp() {
 Modes:
   --mode backfill       Process historical ZIP archives into raw/canonical/current tables
   --mode backfill-local Process historical ZIP archives into local NDJSON files
+  --mode rebuild-from-raw-local Rebuild canonical/current NDJSON from local raw_documents NDJSON
   --mode incremental    Pull current Atom feed chain and ingest new entries only
   --mode check-current  Validate recent feed entries against canonical/current and optionally repair
   --mode upload-local   Upload previously staged local NDJSON files into API tables
@@ -77,6 +81,11 @@ Backfill options:
   --max-archives <n>                     Limit ZIP archives processed (debug)
   --max-files-per-archive <n>            Limit atom files per ZIP (debug)
 
+Rebuild-from-raw options:
+  --raw-input-file <path>                Source raw_documents.ndjson to parse
+  --raw-start-line <n>                   Optional resume line (default: checkpoint or 1)
+  --raw-end-line <n>                     Optional stop line for debug runs
+
 Incremental/check options:
   --feed-url <url>                 Default: ${DEFAULT_FEED_URL}
   --since-iso <iso_datetime>       Optional lower bound for entry updated timestamp
@@ -95,6 +104,7 @@ Upload-local options:
 Examples:
   node scripts/import-placsp-es.mjs --mode backfill --historical-from-year 2012
   node scripts/import-placsp-es.mjs --mode backfill-local --zip /path/to/2023.zip
+  node scripts/import-placsp-es.mjs --mode rebuild-from-raw-local --raw-input-file /path/raw_documents.ndjson
   node scripts/import-placsp-es.mjs --mode incremental
   node scripts/import-placsp-es.mjs --mode check-current --repair true --lookback-days 30
   node scripts/import-placsp-es.mjs --mode upload-local --local-output-dir /tmp/placsp-es-local
@@ -216,19 +226,46 @@ function decodeXmlEntities(value) {
     .replace(/&amp;/g, '&');
 }
 
-function parseDate(value) {
+function parseDate(value, options = {}) {
+  const minYear = Number.isFinite(Number(options.minYear))
+    ? Number(options.minYear)
+    : MIN_REASONABLE_YEAR;
+  const maxYear = Number.isFinite(Number(options.maxYear))
+    ? Number(options.maxYear)
+    : MAX_REASONABLE_YEAR;
   const text = clean(value);
   if (!text) return { date: null, iso: null, ms: null };
-  const parsed = new Date(text);
-  if (Number.isNaN(parsed.getTime())) {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
-      return { date: text, iso: `${text}T00:00:00.000Z`, ms: Date.parse(`${text}T00:00:00.000Z`) };
-    }
+
+  // Accept only ISO-like date/time formats; reject free-form strings.
+  let normalized;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    normalized = `${text}T00:00:00Z`;
+  } else if (/^\d{4}-\d{2}-\d{2}[+\-]\d{2}:\d{2}$/.test(text)) {
+    normalized = `${text.slice(0, 10)}T00:00:00${text.slice(10)}`;
+  } else if (/^\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}(:\d{2}(?:\.\d{1,3})?)?(?:[Zz]|[+\-]\d{2}:\d{2})?$/.test(text)) {
+    const withT = text.replace(' ', 'T').replace('t', 'T');
+    normalized = /(?:[Zz]|[+\-]\d{2}:\d{2})$/.test(withT) ? withT : `${withT}Z`;
+  } else {
     return { date: null, iso: null, ms: null };
   }
+
+  const sourceYear = Number(text.slice(0, 4));
+  if (Number.isNaN(sourceYear) || sourceYear < minYear || sourceYear > maxYear) {
+    return { date: null, iso: null, ms: null };
+  }
+
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return { date: null, iso: null, ms: null };
+
+  const iso = parsed.toISOString();
+  const normalizedYear = Number(iso.slice(0, 4));
+  if (Number.isNaN(normalizedYear) || normalizedYear < minYear || normalizedYear > maxYear) {
+    return { date: null, iso: null, ms: null };
+  }
+
   return {
-    date: parsed.toISOString().slice(0, 10),
-    iso: parsed.toISOString(),
+    date: iso.slice(0, 10),
+    iso,
     ms: parsed.getTime()
   };
 }
@@ -294,13 +331,83 @@ function mapContractType(code) {
   }
 }
 
+function pickEarliestDate(values) {
+  const valid = (values || []).filter((value) => Number.isFinite(value?.ms));
+  if (!valid.length) return null;
+  return valid.reduce((best, item) => (item.ms < best.ms ? item : best), valid[0]);
+}
+
+function pickLatestDate(values) {
+  const valid = (values || []).filter((value) => Number.isFinite(value?.ms));
+  if (!valid.length) return null;
+  return valid.reduce((best, item) => (item.ms > best.ms ? item : best), valid[0]);
+}
+
+function extractNoticeIssueDateCandidates(entryXml) {
+  const blocks = entryXml.match(/<cac-place-ext:ValidNoticeInfo[\s\S]*?<\/cac-place-ext:ValidNoticeInfo>/gi) || [];
+  const out = [];
+  for (const block of blocks) {
+    const noticeTypeCode = clean(
+      extractFirst(block, /<cbc-place-ext:NoticeTypeCode[^>]*>([^<]+)<\/cbc-place-ext:NoticeTypeCode>/i)
+    )?.toUpperCase() || null;
+    const issueDateTexts = extractAll(block, /<cbc:IssueDate>([^<]+)<\/cbc:IssueDate>/ig);
+    for (const issueDateText of issueDateTexts) {
+      const parsed = parseDate(issueDateText, { minYear: MIN_REASONABLE_YEAR, maxYear: MAX_REASONABLE_YEAR });
+      if (!parsed.date) continue;
+      out.push({
+        ...parsed,
+        noticeTypeCode
+      });
+    }
+  }
+  return out;
+}
+
+function resolvePublicationDate(entryXml, updatedDate) {
+  const noticeIssueCandidates = extractNoticeIssueDateCandidates(entryXml);
+  const preferredCandidates = noticeIssueCandidates.filter((candidate) => {
+    if (!candidate.noticeTypeCode) return false;
+    return PREFERRED_PUBLICATION_NOTICE_PREFIXES.some((prefix) => candidate.noticeTypeCode.startsWith(prefix));
+  });
+
+  const minNoticeIssueDate = pickEarliestDate(noticeIssueCandidates);
+  const maxNoticeIssueDate = pickLatestDate(noticeIssueCandidates);
+
+  const preferredPublicationDate = pickEarliestDate(preferredCandidates);
+  if (preferredPublicationDate) {
+    return {
+      publicationDate: preferredPublicationDate,
+      publicationDateSource: 'notice_issue_date_doc_cn_cd',
+      minNoticeIssueDate,
+      maxNoticeIssueDate
+    };
+  }
+
+  const anyPublicationDate = pickEarliestDate(noticeIssueCandidates);
+  if (anyPublicationDate) {
+    return {
+      publicationDate: anyPublicationDate,
+      publicationDateSource: 'notice_issue_date_any',
+      minNoticeIssueDate,
+      maxNoticeIssueDate
+    };
+  }
+
+  return {
+    publicationDate: updatedDate,
+    publicationDateSource: updatedDate?.date ? 'entry_updated' : null,
+    minNoticeIssueDate: null,
+    maxNoticeIssueDate: null
+  };
+}
+
 function parsePlacspEntry(entryXml, context = {}) {
   const entryId = extractFirst(entryXml, /<id>([\s\S]*?)<\/id>/i);
   const sourceUrl = extractFirst(entryXml, /<link[^>]*href="([^"]+)"[^>]*\/?>(?:<\/link>)?/i);
   const title = extractFirst(entryXml, /<title[^>]*>([\s\S]*?)<\/title>/i);
   const summary = extractFirst(entryXml, /<summary[^>]*>([\s\S]*?)<\/summary>/i);
   const updatedText = extractFirst(entryXml, /<updated>([^<]+)<\/updated>/i);
-  const updated = parseDate(updatedText);
+  const updated = parseDate(updatedText, { minYear: MIN_REASONABLE_YEAR, maxYear: MAX_REASONABLE_YEAR });
 
   const contractFolderId =
     extractFirst(entryXml, /<cbc:ContractFolderID>([\s\S]*?)<\/cbc:ContractFolderID>/i) ||
@@ -329,11 +436,24 @@ function parsePlacspEntry(entryXml, context = {}) {
   const summaryAmount = parseNumber(parseSummaryField(summary, 'Importe'));
   const estimatedValue = estimatedOverall ?? taxExclusiveAmount ?? totalAmount ?? summaryAmount;
 
-  const awardDate = parseDate(extractFirst(entryXml, /<cbc:AwardDate>([^<]+)<\/cbc:AwardDate>/i));
-  const deadlineDate = parseDate(
-    extractFirst(entryXml, /<cac:TenderingProcess[\s\S]*?<cbc:EndDate>([^<]+)<\/cbc:EndDate>/i) ||
-    extractFirst(entryXml, /<cbc:EndDate>([^<]+)<\/cbc:EndDate>/i)
+  const awardDate = parseDate(
+    extractFirst(entryXml, /<cbc:AwardDate>([^<]+)<\/cbc:AwardDate>/i),
+    { minYear: MIN_REASONABLE_YEAR, maxYear: MAX_REASONABLE_YEAR }
   );
+
+  const deadlineDateRaw = extractFirst(
+    entryXml,
+    /<cac:TenderSubmissionDeadlinePeriod[\s\S]*?<cbc:EndDate>([^<]+)<\/cbc:EndDate>/i
+  );
+  const deadlineDate = parseDate(deadlineDateRaw, { minYear: MIN_REASONABLE_YEAR, maxYear: MAX_REASONABLE_YEAR });
+  const deadlineDateSource = deadlineDate.date ? 'tender_submission_deadline_period_end_date' : null;
+
+  const {
+    publicationDate,
+    publicationDateSource,
+    minNoticeIssueDate,
+    maxNoticeIssueDate
+  } = resolvePublicationDate(entryXml, updated);
 
   const contractTypeCode = extractFirst(entryXml, /<cbc:TypeCode[^>]*>([^<]+)<\/cbc:TypeCode>/i);
   const contractSubTypeCode = extractFirst(entryXml, /<cbc:SubTypeCode[^>]*>([^<]+)<\/cbc:SubTypeCode>/i);
@@ -352,6 +472,7 @@ function parsePlacspEntry(entryXml, context = {}) {
     buyerName,
     statusCode,
     updated.iso,
+    publicationDate.date,
     deadlineDate.date,
     awardDate.date,
     cpvCodes.join(','),
@@ -371,8 +492,12 @@ function parsePlacspEntry(entryXml, context = {}) {
     buyer_name: buyerName,
     notice_type: noticeType,
     status_code: statusCode,
-    publication_date: updated.date,
+    publication_date: publicationDate.date,
+    publication_date_source: publicationDateSource,
+    notice_issue_date_min: minNoticeIssueDate?.date || null,
+    notice_issue_date_max: maxNoticeIssueDate?.date || null,
     deadline_date: deadlineDate.date,
+    deadline_date_source: deadlineDateSource,
     award_date: awardDate.date,
     cpv_codes: cpvCodes,
     estimated_value: estimatedValue,
@@ -386,6 +511,7 @@ function parsePlacspEntry(entryXml, context = {}) {
     feed_entry_id: entryId,
     feed_url: context.feedUrl || null,
     feed_updated_at: context.feedUpdated || null,
+    entry_updated_at: updated.iso,
     version_fingerprint: versionFingerprint,
     first_seen_at: updated.iso || new Date().toISOString(),
     last_seen_at: updated.iso || new Date().toISOString()
@@ -430,7 +556,7 @@ function parsePlacspEntry(entryXml, context = {}) {
       category: mapContractType(contractTypeCode),
       subcategory: contractSubTypeCode,
       cpv_codes: cpvCodes,
-      publication_date: updated.date,
+      publication_date: publicationDate.date,
       deadline_date: deadlineDate.date,
       estimated_value: estimatedValue,
       currency: 'EUR',
@@ -1990,6 +2116,324 @@ async function runUploadLocal({
   }
 }
 
+async function runRebuildFromRawLocal({
+  tenantId,
+  batchSize,
+  runId,
+  statusFile,
+  checkpointFile,
+  controlFile,
+  localOutputDir,
+  rawInputFile,
+  rawStartLine,
+  rawEndLine
+}) {
+  const startedAt = new Date().toISOString();
+  const mode = 'rebuild-from-raw-local';
+  const sink = 'local';
+  const paths = getLocalSinkPaths(localOutputDir);
+  const checkpoint = readJsonFile(checkpointFile) || {};
+  const checkpointLine = parsePositiveInt(checkpoint?.rebuild_from_raw?.raw_line, 0);
+  const checkpointStartLine = parsePositiveInt(checkpoint?.rebuild_from_raw?.raw_start_line, 1);
+  const checkpointResumeLine = checkpointLine > 0 ? checkpointLine + 1 : checkpointStartLine;
+  const effectiveStartLine = Math.max(
+    1,
+    Number(rawStartLine || 1),
+    checkpointResumeLine
+  );
+
+  if (!fs.existsSync(rawInputFile)) {
+    throw new Error(`Raw input file not found: ${rawInputFile}`);
+  }
+
+  if (effectiveStartLine === 1) {
+    fs.writeFileSync(paths.canonicalTenders, '', 'utf8');
+    fs.writeFileSync(paths.currentTenders, '', 'utf8');
+  } else {
+    if (!fs.existsSync(paths.canonicalTenders) || !fs.existsSync(paths.currentTenders)) {
+      throw new Error(
+        `Cannot resume from line ${effectiveStartLine}: output files missing in ${localOutputDir}`
+      );
+    }
+  }
+
+  const metrics = {
+    lines_seen: 0,
+    skipped_before_start: 0,
+    empty_lines: 0,
+    invalid_json_lines: 0,
+    skipped_non_placsp: 0,
+    skipped_no_raw_text: 0,
+    skipped_unmapped: 0,
+    parsed_entries: 0,
+    mapped_entries: 0,
+    canonical_rows: 0,
+    current_rows: 0,
+    max_entry_updated: null
+  };
+
+  const canonicalBatch = [];
+  const currentBatch = [];
+  let requestedAction = null;
+  let requestedReason = null;
+  let activity = 'initializing rebuild-from-raw-local';
+  let lastCursor = null;
+  let lineNo = 0;
+  let lastHeartbeatAt = Date.now();
+  let controlInstructionSeen = false;
+  let stream = null;
+  let rl = null;
+
+  const emitStatus = (phase = 'running', extra = {}) => {
+    writeJsonFile(statusFile, {
+      phase,
+      mode,
+      sink,
+      run_id: runId,
+      tenant_id: tenantId,
+      activity,
+      raw_input_file: rawInputFile,
+      raw_start_line: effectiveStartLine,
+      raw_end_line: rawEndLine || null,
+      cursor: lastCursor,
+      line_no: lineNo,
+      metrics,
+      local_output_dir: localOutputDir,
+      updated_at: new Date().toISOString(),
+      ...extra
+    });
+  };
+
+  const persistCheckpoint = () => {
+    writeJsonFile(checkpointFile, {
+      ...(checkpoint || {}),
+      mode,
+      run_id: runId,
+      tenant_id: tenantId,
+      rebuild_from_raw: {
+        raw_input_file: rawInputFile,
+        raw_line: lineNo,
+        raw_start_line: effectiveStartLine,
+        raw_end_line: rawEndLine || null,
+        mapped_entries: metrics.mapped_entries,
+        parsed_entries: metrics.parsed_entries,
+        skipped_unmapped: metrics.skipped_unmapped
+      },
+      max_entry_updated: metrics.max_entry_updated,
+      activity,
+      cursor: lastCursor,
+      updated_at: new Date().toISOString()
+    });
+  };
+
+  const flushLocal = () => {
+    if (canonicalBatch.length) {
+      const rows = canonicalBatch.splice(0, canonicalBatch.length);
+      activity = `flush-local:canonical_tenders:${rows.length}`;
+      emitStatus('running');
+      persistCheckpoint();
+      appendNdjsonRows(paths.canonicalTenders, rows);
+      metrics.canonical_rows += rows.length;
+    }
+    if (currentBatch.length) {
+      const rows = currentBatch.splice(0, currentBatch.length);
+      activity = `flush-local:TendersCurrent:${rows.length}`;
+      emitStatus('running');
+      persistCheckpoint();
+      appendNdjsonRows(paths.currentTenders, rows);
+      metrics.current_rows += rows.length;
+    }
+  };
+
+  const onSignalStop = () => {
+    requestedAction = 'stop';
+    requestedReason = 'signal';
+  };
+
+  process.on('SIGTERM', onSignalStop);
+  process.on('SIGINT', onSignalStop);
+
+  try {
+    emitStatus('started');
+    persistCheckpoint();
+
+    stream = fs.createReadStream(rawInputFile, { encoding: 'utf8' });
+    rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+
+    for await (const line of rl) {
+      lineNo += 1;
+      metrics.lines_seen = lineNo;
+
+      if (!requestedAction && lineNo % 1000 === 0) {
+        const instruction = readControlInstruction(controlFile);
+        if (instruction?.action) {
+          requestedAction = instruction.action;
+          requestedReason = instruction.reason || 'control-file';
+          controlInstructionSeen = true;
+        }
+      }
+
+      if (requestedAction) break;
+
+      if (lineNo < effectiveStartLine) {
+        metrics.skipped_before_start += 1;
+        continue;
+      }
+
+      if (rawEndLine && lineNo > rawEndLine) {
+        activity = `stopped-at-raw-end-line:${rawEndLine}`;
+        break;
+      }
+
+      const text = line.trim();
+      if (!text) {
+        metrics.empty_lines += 1;
+        continue;
+      }
+
+      let rawRow;
+      try {
+        rawRow = JSON.parse(text);
+      } catch {
+        metrics.invalid_json_lines += 1;
+        continue;
+      }
+
+      const source = clean(rawRow?.source);
+      if (source && source !== 'PLACSP_ES') {
+        metrics.skipped_non_placsp += 1;
+        continue;
+      }
+
+      const entryXml = clean(rawRow?.raw_text);
+      if (!entryXml) {
+        metrics.skipped_no_raw_text += 1;
+        continue;
+      }
+
+      const context = {
+        tenantId,
+        feedUrl: clean(rawRow?.raw_json?.feed_url) || clean(rawRow?.feed_url) || null,
+        feedUpdated: clean(rawRow?.raw_json?.feed_updated_at) || clean(rawRow?.feed_updated_at) || null
+      };
+
+      const mapped = parsePlacspEntry(entryXml, context);
+      if (!mapped) {
+        metrics.skipped_unmapped += 1;
+        continue;
+      }
+
+      metrics.parsed_entries += 1;
+      metrics.mapped_entries += 1;
+
+      if (mapped.entryUpdated) {
+        if (!metrics.max_entry_updated) {
+          metrics.max_entry_updated = mapped.entryUpdated;
+        } else {
+          const currentMs = parseDate(metrics.max_entry_updated).ms;
+          const candidateMs = parseDate(mapped.entryUpdated).ms;
+          if (candidateMs && currentMs && candidateMs > currentMs) {
+            metrics.max_entry_updated = mapped.entryUpdated;
+          }
+        }
+      }
+
+      canonicalBatch.push(mapped.canonicalTender);
+      currentBatch.push(mapped.currentTender);
+      lastCursor = JSON.stringify({
+        mode,
+        raw_input_file: rawInputFile,
+        raw_line: lineNo,
+        mapped_entries: metrics.mapped_entries,
+        parsed_entries: metrics.parsed_entries,
+        max_entry_updated: metrics.max_entry_updated
+      });
+
+      if (canonicalBatch.length >= batchSize || currentBatch.length >= batchSize) {
+        flushLocal();
+      }
+
+      if (metrics.mapped_entries % 5000 === 0) {
+        console.log(`[${mode}] mapped ${metrics.mapped_entries} rows (line ${lineNo})`);
+        activity = `processing:line:${lineNo}`;
+        emitStatus('running');
+        persistCheckpoint();
+        lastHeartbeatAt = Date.now();
+      } else if (Date.now() - lastHeartbeatAt > 120000) {
+        console.log(`[${mode}] heartbeat mapped ${metrics.mapped_entries} rows (line ${lineNo})`);
+        activity = `processing:line:${lineNo}`;
+        emitStatus('running');
+        persistCheckpoint();
+        lastHeartbeatAt = Date.now();
+      }
+    }
+
+    flushLocal();
+
+    if (requestedAction) {
+      activity = requestedAction === 'pause' ? 'paused' : 'stopped';
+      if (controlInstructionSeen) unlinkIfExists(controlFile);
+      emitStatus(activity, {
+        reason: requestedReason || null
+      });
+      persistCheckpoint();
+      return {
+        run_id: runId,
+        mode,
+        sink,
+        status: activity,
+        raw_input_file: rawInputFile,
+        local_output_dir: localOutputDir,
+        metrics,
+        started_at: startedAt,
+        finished_at: new Date().toISOString()
+      };
+    }
+
+    activity = 'finalizing rebuild-from-raw-local';
+    emitStatus('finalizing');
+    persistCheckpoint();
+
+    writeJsonFile(paths.manifest, {
+      run_id: runId,
+      mode,
+      sink,
+      tenant_id: tenantId,
+      source: 'PLACSP_ES',
+      started_at: startedAt,
+      finished_at: new Date().toISOString(),
+      metrics,
+      raw_input_file: rawInputFile,
+      files: {
+        canonical_tenders: paths.canonicalTenders,
+        TendersCurrent: paths.currentTenders
+      },
+      checkpoint_file: checkpointFile
+    });
+
+    activity = 'completed rebuild-from-raw-local';
+    emitStatus('completed');
+    persistCheckpoint();
+
+    return {
+      run_id: runId,
+      mode,
+      sink,
+      status: 'completed',
+      raw_input_file: rawInputFile,
+      local_output_dir: localOutputDir,
+      metrics,
+      started_at: startedAt,
+      finished_at: new Date().toISOString()
+    };
+  } finally {
+    if (rl) rl.close();
+    if (stream) stream.destroy();
+    process.off('SIGTERM', onSignalStop);
+    process.off('SIGINT', onSignalStop);
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   if (parseBoolean(args.help, false) || parseBoolean(args.h, false)) {
@@ -1998,7 +2442,11 @@ async function main() {
   }
 
   const mode = clean(args.mode) || 'incremental';
-  const sink = clean(args.sink)?.toLowerCase() || (mode === 'backfill-local' ? 'local' : 'api');
+  const sink = clean(args.sink)?.toLowerCase() || (
+    mode === 'backfill-local' || mode === 'rebuild-from-raw-local'
+      ? 'local'
+      : 'api'
+  );
   if (!['api', 'local'].includes(sink)) {
     throw new Error(`Unsupported sink: ${sink}. Use --sink api or --sink local`);
   }
@@ -2010,6 +2458,7 @@ async function main() {
   const runPrefix = (() => {
     if (mode === 'check-current') return 'placsp_es_check';
     if (mode === 'upload-local') return 'placsp_es_upload';
+    if (mode === 'rebuild-from-raw-local') return 'placsp_es_rebuild';
     if (mode === 'backfill-local' || sink === 'local') return 'placsp_es_local';
     return 'placsp_es';
   })();
@@ -2153,6 +2602,29 @@ async function main() {
         zip_sources_count: zipItems.length,
         zip_sources: zipItems.slice(0, 20)
       }, null, 2));
+      return;
+    }
+
+    if (mode === 'rebuild-from-raw-local') {
+      const rawInputFile = String(args['raw-input-file'] || path.join(localOutputDir, 'raw_documents.ndjson'));
+      const rawStartLine = Math.max(1, parsePositiveInt(args['raw-start-line'], 1));
+      const rawEndLineArg = clean(args['raw-end-line']);
+      const rawEndLine = rawEndLineArg ? Math.max(1, parsePositiveInt(rawEndLineArg, 1)) : null;
+
+      const result = await runRebuildFromRawLocal({
+        tenantId,
+        batchSize,
+        runId,
+        statusFile,
+        checkpointFile,
+        controlFile,
+        localOutputDir,
+        rawInputFile,
+        rawStartLine,
+        rawEndLine
+      });
+
+      console.log(JSON.stringify(result, null, 2));
       return;
     }
 
