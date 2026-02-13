@@ -107,21 +107,78 @@ function inferNoticeType(record) {
   return 'tender';
 }
 
-function collectCpvCodes(record) {
-  const candidates = Object.keys(record)
-    .filter((key) => key.toLowerCase().includes('cpv'))
-    .map((key) => clean(record[key]))
-    .filter(Boolean);
+function parseMaybeJson(value) {
+  const text = clean(value);
+  if (!text) return null;
+  if (!(text.startsWith('{') || text.startsWith('['))) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
 
+function addCpvCodesFromText(text, set) {
+  if (text === undefined || text === null) return;
+  const source = String(text);
+  const regex = /\b(\d{8})(?:-\d)?\b/g;
+  let match;
+  while ((match = regex.exec(source)) !== null) {
+    set.add(match[1]);
+  }
+}
+
+function collectCpvCodesFromNode(node, set, inCpvContext = false) {
+  if (node === undefined || node === null) return;
+
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      collectCpvCodesFromNode(item, set, inCpvContext);
+    }
+    return;
+  }
+
+  if (typeof node === 'object') {
+    const listHint = clean(
+      node['@listName']
+      || node['@schemeName']
+      || node.listName
+      || node.schemeName
+    );
+    const objectHasCpvHint = /cpv/i.test(listHint || '');
+    if (objectHasCpvHint) {
+      collectCpvCodesFromNode(node['#text'] ?? node.text ?? node.value, set, true);
+    }
+
+    for (const [key, value] of Object.entries(node)) {
+      const keyHasCpvHint = /(cpv|itemclassificationcode)/i.test(String(key));
+      collectCpvCodesFromNode(value, set, inCpvContext || objectHasCpvHint || keyHasCpvHint);
+    }
+    return;
+  }
+
+  if (inCpvContext) {
+    addCpvCodesFromText(node, set);
+  }
+}
+
+function collectCpvCodes(record) {
   const set = new Set();
-  for (const candidate of candidates) {
-    for (const token of String(candidate).split(/[,\s;|]+/)) {
-      const code = clean(token);
-      if (!code) continue;
-      if (/^\d{6,9}$/.test(code)) set.add(code);
+
+  // Legacy BOAMP rows expose CPV in top-level keys (e.g. CPV, codecpv).
+  for (const [key, value] of Object.entries(record)) {
+    if (/cpv/i.test(String(key))) {
+      collectCpvCodesFromNode(value, set, true);
     }
   }
-  return Array.from(set);
+
+  // eForms rows store CPV inside the DONNEES JSON string.
+  const donneesJson = parseMaybeJson(record.DONNEES);
+  if (donneesJson) {
+    collectCpvCodesFromNode(donneesJson, set, false);
+  }
+
+  return Array.from(set).sort();
 }
 
 function mapRow(record) {

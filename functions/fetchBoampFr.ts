@@ -26,6 +26,77 @@ function generateFingerprint(record) {
     return hash.toString(16);
 }
 
+function parseMaybeJson(value) {
+    const text = String(value || '').trim();
+    if (!text) return null;
+    if (!(text.startsWith('{') || text.startsWith('['))) return null;
+    try {
+        return JSON.parse(text);
+    } catch {
+        return null;
+    }
+}
+
+function addCpvCodesFromText(text, set) {
+    if (text === undefined || text === null) return;
+    const source = String(text);
+    const regex = /\b(\d{8})(?:-\d)?\b/g;
+    let match;
+    while ((match = regex.exec(source)) !== null) {
+        set.add(match[1]);
+    }
+}
+
+function collectCpvCodesFromNode(node, set, inCpvContext = false) {
+    if (node === undefined || node === null) return;
+
+    if (Array.isArray(node)) {
+        for (const item of node) collectCpvCodesFromNode(item, set, inCpvContext);
+        return;
+    }
+
+    if (typeof node === 'object') {
+        const listHint = String(
+            node['@listName']
+            || node['@schemeName']
+            || node.listName
+            || node.schemeName
+            || ''
+        ).trim().toLowerCase();
+        const objectHasCpvHint = listHint.includes('cpv');
+        if (objectHasCpvHint) {
+            collectCpvCodesFromNode(node['#text'] ?? node.text ?? node.value, set, true);
+        }
+
+        for (const [key, value] of Object.entries(node)) {
+            const keyHasCpvHint = /(cpv|itemclassificationcode)/i.test(String(key));
+            collectCpvCodesFromNode(value, set, inCpvContext || objectHasCpvHint || keyHasCpvHint);
+        }
+        return;
+    }
+
+    if (inCpvContext) {
+        addCpvCodesFromText(node, set);
+    }
+}
+
+function extractBoampCpvCodes(raw) {
+    const set = new Set();
+
+    for (const [key, value] of Object.entries(raw || {})) {
+        if (/cpv/i.test(String(key))) {
+            collectCpvCodesFromNode(value, set, true);
+        }
+    }
+
+    const donneesJson = parseMaybeJson(raw?.DONNEES);
+    if (donneesJson) {
+        collectCpvCodesFromNode(donneesJson, set, false);
+    }
+
+    return Array.from(set).sort();
+}
+
 // Normalize BOAMP record to canonical format
 function normalizeBoampRecord(raw) {
     const sourceNoticeId = raw.idweb || raw.id || String(Date.now());
@@ -41,11 +112,8 @@ function normalizeBoampRecord(raw) {
         deadlineDate = raw.datelimitereponse.split('T')[0];
     }
     
-    // Parse CPV codes
-    let cpvCodes = '';
-    if (raw.codecpv) {
-        cpvCodes = Array.isArray(raw.codecpv) ? raw.codecpv.join(',') : raw.codecpv;
-    }
+    // Parse CPV codes from both legacy BOAMP and eForms DONNEES payloads.
+    const cpvCodes = extractBoampCpvCodes(raw).join(',');
     
     // Determine notice type
     let noticeType = 'unknown';
