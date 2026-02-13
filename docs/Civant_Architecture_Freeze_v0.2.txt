@@ -12,7 +12,7 @@ This document freezes the Civant v0.2 architecture so implementation can proceed
 1. Multi-tenant isolation model (`tenant_id` everywhere relevant + backend role checks + RLS policies).
 2. Core data layers and flow:
    - Raw (`raw_documents`)
-   - Canonical (`canonical_tenders`, `TendersCurrent`, entities)
+   - Canonical (`canonical_tenders`, `TendersCurrent` (latest snapshot per `tender_id`, not active-only), entities)
    - Intelligence (`tender_features_weekly`, `predictions`, `market_signals`)
 3. Ingestion operating model:
    - Historical backfill = local-first (download/parse/normalize locally, then upload idempotently).
@@ -83,4 +83,3 @@ Current ingestion defaults (Spain historical blocks):
 - Founder: Pending
 - Technical Advisor: Pending
 - Data Advisor: Pending
-

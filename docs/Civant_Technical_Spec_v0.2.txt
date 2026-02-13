@@ -51,7 +51,7 @@ Parsing, scoring, confidence arithmetic, and eligibility logic run in code. LLM 
 All writes for high-volume flows must be conflict-safe:
 - raw_documents: conflict key checksum
 - canonical_tenders: conflict key canonical_id
-- TendersCurrent: conflict key tender_id
+- TendersCurrent: conflict key tender_id (one row per tender_id; stores the latest normalized snapshot for that tender)
 
 4.4 Tenant isolation by default
 Every tenant-scoped table includes tenant_id and enforces RLS policies tied to current tenant context.
@@ -72,7 +72,7 @@ Every tenant-scoped table includes tenant_id and enforces RLS policies tied to c
 5.2 Operational entities
 - ConnectorConfig
 - ConnectorRuns
-- TendersCurrent
+- TendersCurrent (latest-snapshot table; not active-only. "Active" is a query-level concept.)
 - TenderVersions
 
 5.3 App entities
@@ -141,7 +141,11 @@ A record can only move to canonical if:
 - Cross-run dedupe by checksum/canonical_id/tender_id conflict keys
 - Duplicate writes counted as duplicates, not failures
 
-7.3 Error policy
+7.3 Canonical/current coverage checks
+After large ingestions/backfills, validate per-source parity between `canonical_tenders` and `TendersCurrent`:
+- `./scripts/check-tenderscurrent-coverage.sh` (tenant-scoped; supports optional SOURCE filter)
+
+7.4 Error policy
 - Fail closed on schema-invalid agent outputs
 - Soft-fail source parse errors into staging_records.errors for review
 - Never silently drop parse failures
