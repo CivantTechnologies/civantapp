@@ -193,6 +193,13 @@ async function requireTenantScopedPrivilegedUser(req: RequestLike) {
   return { user, tenantId };
 }
 
+async function requireTenantScopedUser(req: RequestLike) {
+  const user = await getCurrentUser(req);
+  const tenantId = getTenantFromHeader(req);
+  requireTenantAccess(user, tenantId);
+  return { user, tenantId };
+}
+
 async function requireTenantScopedAdmin(req: RequestLike) {
   const { user, tenantId } = await requireTenantScopedPrivilegedUser(req);
   if (!hasRole(user, 'admin')) {
@@ -220,6 +227,29 @@ export async function getMyProfile(req: RequestLike) {
     email: user.email,
     tenant_id: user.tenantId,
     roles: user.roles
+  };
+}
+
+export async function getDashboardStats(req: RequestLike) {
+  const { tenantId } = await requireTenantScopedUser(req);
+  const supabase = getServerSupabase() as any;
+
+  const { data, error } = await supabase.rpc('get_dashboard_stats', {
+    p_tenant_id: tenantId
+  });
+
+  if (error) throw Object.assign(new Error(error.message), { status: 500 });
+
+  const row = Array.isArray(data) && data.length ? data[0] : null;
+  return {
+    success: true,
+    stats: row || {
+      tenant_id: tenantId,
+      total_tenders: 0,
+      new_tenders_24h: 0,
+      deadlines_in_7_days: 0,
+      alerts_triggered_24h: 0
+    }
   };
 }
 
@@ -743,6 +773,8 @@ export async function dispatchFunction(functionName: string, req: RequestLike) {
   switch (functionName) {
     case 'getMyProfile':
       return getMyProfile(req);
+    case 'getDashboardStats':
+      return getDashboardStats(req);
     case 'getCurrentUser':
       return getCurrentUserPayload(req);
     case 'listTenants':
