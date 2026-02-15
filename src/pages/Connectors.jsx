@@ -49,6 +49,12 @@ export default function Connectors() {
             country: 'IE', 
             description: 'Irish government eTenders portal',
             icon: '🇮🇪'
+        },
+        'ETENDERS_IE_INCREMENTAL': { 
+            name: 'eTenders Ireland (Incremental)', 
+            country: 'IE', 
+            description: 'Incremental eTenders sync (new/updated CfTs only)',
+            icon: '🇮🇪'
         }
     };
     
@@ -140,6 +146,8 @@ export default function Connectors() {
                 response = await civant.functions.invoke('fetchTed', { ...params, country: 'IE' });
             } else if (connectorId === 'ETENDERS_IE') {
                 response = await civant.functions.invoke('fetchIreland', params);
+            } else if (connectorId === 'ETENDERS_IE_INCREMENTAL') {
+                response = await civant.functions.invoke('fetchEtendersIeIncremental', params);
             }
             
             const config = configs.find(c => c.connector_id === connectorId);

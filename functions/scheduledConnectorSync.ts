@@ -4,6 +4,7 @@ const getErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 type ConnectorConfigRecord = {
+    tenant_id?: string;
     id: string;
     connector_id: string;
     enabled?: boolean;
@@ -94,7 +95,7 @@ Deno.serve(async (req) => {
             
             // Run the connector
             try {
-                const params = { days_since: 7, limit: 100, mode: 'incremental' };
+                const params = { tenant_id: config.tenant_id, days_since: 7, limit: 100, mode: 'incremental' };
                 let response: ConnectorExecutionResponse | undefined;
                 
                 switch (config.connector_id) {
@@ -109,6 +110,9 @@ Deno.serve(async (req) => {
                         break;
                     case 'ETENDERS_IE':
                         response = await civant.asServiceRole.functions.invoke('fetchIreland', params);
+                        break;
+                    case 'ETENDERS_IE_INCREMENTAL':
+                        response = await civant.asServiceRole.functions.invoke('fetchEtendersIeIncremental', params);
                         break;
                 }
                 
