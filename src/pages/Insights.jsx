@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { civant } from '@/api/civantClient';
+import { useTenant } from '@/lib/tenant';
 import { 
     Building2,
     Clock,
@@ -63,10 +64,14 @@ export default function Insights() {
     const [selectedBuyer, setSelectedBuyer] = useState(null);
     const [aiAnalysis, setAiAnalysis] = useState(null);
     const [analyzingBuyer, setAnalyzingBuyer] = useState(false);
+    const { activeTenantId, isLoadingTenants } = useTenant();
     
     useEffect(() => {
-        loadData();
-    }, []);
+        if (isLoadingTenants) return;
+        if (!activeTenantId) return;
+        setLoading(true);
+        void loadData();
+    }, [activeTenantId, isLoadingTenants]);
     
     const loadData = async () => {
         try {

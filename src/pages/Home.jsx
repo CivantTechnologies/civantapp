@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { civant } from '@/api/civantClient';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '../utils';
+import { useTenant } from '@/lib/tenant';
 import { 
     FileText, 
     Clock, 
@@ -22,16 +23,22 @@ export default function Home() {
     const [latestTenders, setLatestTenders] = useState([]);
     const [connectorHealth, setConnectorHealth] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState('');
+    const { activeTenantId, isLoadingTenants } = useTenant();
     
     useEffect(() => {
-        loadDashboardData();
-    }, []);
+        if (isLoadingTenants) return;
+        if (!activeTenantId) return;
+        setLoading(true);
+        void loadDashboardData();
+    }, [activeTenantId, isLoadingTenants]);
 
     const getTenderPublicationDate = (tender) => tender.publication_date || tender.published_at || tender.first_seen_at || tender.updated_at;
     const getTenderFirstSeen = (tender) => tender.first_seen_at || tender.published_at || tender.publication_date || tender.updated_at;
     
     const loadDashboardData = async () => {
         try {
+            setLoadError('');
             // Load all tenders
             const allTenders = await civant.entities.TendersCurrent.list('-published_at', 1000);
             
@@ -83,6 +90,7 @@ export default function Home() {
             
         } catch (error) {
             console.error('Error loading dashboard:', error);
+            setLoadError(error?.message || 'Failed to load dashboard data');
         } finally {
             setLoading(false);
         }
@@ -131,6 +139,24 @@ export default function Home() {
             </div>
         );
     }
+
+    if (!activeTenantId) {
+        return (
+            <Page className="space-y-8">
+                <PageHeader className="gap-4">
+                    <span className="inline-flex w-fit rounded-full border border-primary/30 bg-primary/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
+                        Civant Intelligence
+                    </span>
+                    <div className="space-y-3">
+                        <PageTitle className="max-w-3xl text-3xl md:text-4xl">Select a tenant to load your dashboard</PageTitle>
+                        <PageDescription className="max-w-2xl">
+                            Choose a tenant from the sidebar. Tenant-scoped data is required to prevent expensive unscoped queries.
+                        </PageDescription>
+                    </div>
+                </PageHeader>
+            </Page>
+        );
+    }
     
     return (
         <Page className="space-y-8">
@@ -162,6 +188,11 @@ export default function Home() {
             </PageHeader>
 
             <PageBody>
+                {loadError ? (
+                    <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                        {loadError}
+                    </div>
+                ) : null}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <StatCard 
                         title="New Tenders (24h)" 
