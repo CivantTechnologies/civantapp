@@ -37,7 +37,14 @@ Deno.serve(async (req) => {
             return Response.json({ error: 'Admin access required' }, { status: 403 });
         }
         
-        const body = await req.json().catch(() => ({})) as { mode?: string; days_since?: number; years_back?: number };
+        const body = await req.json().catch(() => ({})) as { tenant_id?: string; mode?: string; days_since?: number; years_back?: number };
+        const tenantId = String(
+            body.tenant_id
+            || req.headers.get('X-Tenant-Id')
+            || Deno.env.get('DEFAULT_TENANT_ID')
+            || 'civant_default'
+        );
+
         const mode = body.mode || 'incremental'; // 'incremental' or 'backfill'
         const daysSince = Number(body.days_since || 1825); // 5 years default
         const yearsBack = Number(body.years_back || 10);
@@ -49,8 +56,8 @@ Deno.serve(async (req) => {
         
         // Prepare connector parameters based on mode
         const connectorParams = mode === 'backfill' 
-            ? { mode: 'backfill', years_back: yearsBack, limit: 500 }
-            : { mode: 'incremental', days_since: daysSince, limit: 100 };
+            ? { tenant_id: tenantId, mode: 'backfill', years_back: yearsBack, limit: 500 }
+            : { tenant_id: tenantId, mode: 'incremental', days_since: daysSince, limit: 100 };
         
         // Run BOAMP FR
         try {
@@ -90,7 +97,16 @@ Deno.serve(async (req) => {
             results.connectors.ETENDERS_IE = { error: getErrorMessage(e) };
         }
         
-        // Process alerts after ingestion
+        
+        // Run Ireland incremental eTenders
+        try {
+            const ieInc = await civant.functions.invoke('fetchEtendersIeIncremental', connectorParams);
+            results.connectors.ETENDERS_IE_INCREMENTAL = ieInc.data || ieInc;
+        } catch (e: unknown) {
+            results.connectors.ETENDERS_IE_INCREMENTAL = { error: getErrorMessage(e) };
+        }
+
+// Process alerts after ingestion
         try {
             const alertsResult = await civant.functions.invoke('processAlerts', {});
             results.alerts = alertsResult.data || alertsResult;

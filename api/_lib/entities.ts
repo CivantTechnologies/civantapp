@@ -326,6 +326,11 @@ export async function createEntity(req: DynamicRequest) {
         .from(tableName as any)
         .upsert(bodyWithTenant, { onConflict: 'tender_id' });
     }
+    if (tableName === 'TenderVersions') {
+      return supabase
+        .from(tableName as any)
+        .upsert(bodyWithTenant, { onConflict: 'tender_id,version_hash', ignoreDuplicates: true });
+    }
     return supabase.from(tableName as any).insert(bodyWithTenant);
   })();
 
