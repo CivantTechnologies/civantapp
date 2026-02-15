@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Civant: Ireland eTenders incremental rollout
+#
+# Fetches NEW/UPDATED CfTs from etenders.gov.ie and upserts into:
+#   - public."TendersCurrent" (current snapshot)
+#   - public."TenderVersions" (version history; idempotent)
+#
+# Cursor is stored per tenant in public."ConnectorConfig".config under connector_key:
+#   etenders_ie_incremental:<TENANT_ID>
+#
+# Usage:
+#   ./scripts/rollout-etenders-ie-incremental.sh TENANT_ID [START_DATE] [DRY_RUN]
+#
+# Required (unless DRY_RUN=true):
+#   SUPABASE_DB_URL or DATABASE_URL
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+PSQL_BIN="${PSQL_BIN:-/opt/homebrew/opt/libpq/bin/psql}"
+DATABASE_URL="${DATABASE_URL:-${SUPABASE_DB_URL:-}}"
+
+TENANT_ID="${1:-${TENANT_ID:-}}"
+START_DATE="${2:-${START_DATE:-}}"
+DRY_RUN_RAW="${3:-${DRY_RUN:-false}}"
+
+if [[ -z "${TENANT_ID}" ]]; then
+  echo "ERROR: TENANT_ID is required."
+  echo "Usage: $0 TENANT_ID [START_DATE] [DRY_RUN]"
+  exit 1
+fi
+
+DRY_RUN="false"
+case "${DRY_RUN_RAW}" in
+  1|true|TRUE|yes|YES|y|Y|on|ON) DRY_RUN="true" ;;
+  0|false|FALSE|no|NO|n|N|off|OFF|"") DRY_RUN="false" ;;
+  *)
+    echo "ERROR: DRY_RUN must be a boolean (true/false). Got: ${DRY_RUN_RAW}"
+    exit 1
+    ;;
+esac
+
+if [[ "${DRY_RUN}" != "true" && -z "${DATABASE_URL}" ]]; then
+  echo "ERROR: SUPABASE_DB_URL (or DATABASE_URL) is required unless DRY_RUN=true."
+  exit 1
+fi
+if [[ ! -x "${PSQL_BIN}" ]]; then
+  echo "ERROR: psql not found at ${PSQL_BIN}"
+  exit 1
+fi
+
+export PGCONNECT_TIMEOUT="${PGCONNECT_TIMEOUT:-15}"
+
+ETENDERS_SCRIPT="${REPO_ROOT}/scripts/etenders/etenders-ie-incremental.mjs"
+QA_SQL="${REPO_ROOT}/scripts/qa-etenders-ie-incremental.sql"
+
+TMP_DIR="${TMPDIR:-/tmp}"
+TSV_FILE="$(mktemp "${TMP_DIR%/}/civant_etenders_ie_XXXXXX.tsv")"
+
+cleanup() {
+  # best-effort cleanup
+  rm -f "${TSV_FILE}" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+CONNECTOR_KEY="etenders_ie_incremental:${TENANT_ID}"
+
+# If START_DATE not provided, use stored cursor (overlap 2 days) if present.
+if [[ -z "${START_DATE}" && "${DRY_RUN}" != "true" ]]; then
+  START_DATE="$(${PSQL_BIN} "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off -qtA <<SQL
+select
+  case
+    when (config->'cursor'->>'value') is null or (config->'cursor'->>'value') = '' then ''
+    else to_char(((config->'cursor'->>'value')::timestamptz - interval '2 days')::date, 'YYYY-MM-DD')
+  end
+from public."ConnectorConfig"
+where tenant_id = '${TENANT_ID}'
+  and connector_key = '${CONNECTOR_KEY}'
+limit 1;
+SQL
+)"
+fi
+
+start_arg=()
+if [[ -n "${START_DATE}" ]]; then
+  start_arg=("--start-date" "${START_DATE}")
+fi
+
+echo "== eTenders IE incremental rollout =="
+echo "tenant_id=${TENANT_ID} start_date=${START_DATE:-<none>} dry_run=${DRY_RUN} connector_key=${CONNECTOR_KEY}"
+
+echo "== Fetching from etenders.gov.ie (Latest CfTs) =="
+node "${ETENDERS_SCRIPT}" --tenant-id "${TENANT_ID}" "${start_arg[@]}" --dry-run "${DRY_RUN}" >"${TSV_FILE}"
+ROWS="$(wc -l <"${TSV_FILE}" | tr -d ' ')"
+echo "staged_rows=${ROWS}"
+
+if [[ "${DRY_RUN}" == "true" ]]; then
+  echo "== DRY RUN: no database writes =="
+  echo "Sample TSV:"
+  head -n 5 "${TSV_FILE}" || true
+  exit 0
+fi
+
+if [[ ! -s "${TSV_FILE}" ]]; then
+  echo "-- no rows to upsert"
+  exit 0
+fi
+
+echo "== Upserting into Supabase =="
+
+"${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off <<SQL
+begin;
+
+-- Ensure connector config row exists (per tenant).
+insert into public."ConnectorConfig" (tenant_id, connector_key, enabled, config, updated_at)
+values ('${TENANT_ID}', '${CONNECTOR_KEY}', true, '{}'::jsonb, now())
+on conflict (connector_key) do update
+  set updated_at = now();
+
+-- Create run row.
+insert into public."ConnectorRuns" (tenant_id, connector_key, status, started_at, metadata)
+values ('${TENANT_ID}', '${CONNECTOR_KEY}', 'running', now(), '{}'::jsonb)
+returning id as run_id \gset
+
+create temp table tmp_etenders_ie_ingest (
+  tenant_id text,
+  tender_id text,
+  source text,
+  published_at timestamptz,
+  data jsonb,
+  version_hash text
+);
+\copy tmp_etenders_ie_ingest from '${TSV_FILE}' with (format text, delimiter E'\t');
+
+with
+v as (
+  insert into public."TenderVersions" (tenant_id, tender_id, version_hash, data, created_at)
+  select tenant_id, tender_id, version_hash, data, now()
+  from tmp_etenders_ie_ingest
+  on conflict (tender_id, version_hash) do nothing
+  returning tender_id
+),
+up as (
+  insert into public."TendersCurrent" (tenant_id, tender_id, source, published_at, data, updated_at)
+  select tenant_id, tender_id, source, published_at, data, now()
+  from tmp_etenders_ie_ingest
+  on conflict (tender_id) do update set
+    tenant_id = excluded.tenant_id,
+    source = excluded.source,
+    published_at = excluded.published_at,
+    data = excluded.data,
+    updated_at = now()
+  where public."TendersCurrent".tenant_id is distinct from excluded.tenant_id
+     or public."TendersCurrent".source is distinct from excluded.source
+     or public."TendersCurrent".published_at is distinct from excluded.published_at
+     or public."TendersCurrent".data is distinct from excluded.data
+  returning (xmax = 0) as inserted
+),
+counts as (
+  select
+    (select count(*)::int from tmp_etenders_ie_ingest) as fetched_count,
+    (select count(*)::int from up where inserted) as inserted_count,
+    (select count(*)::int from up where not inserted) as updated_count,
+    ((select count(*)::int from tmp_etenders_ie_ingest) - (select count(*)::int from up where inserted) - (select count(*)::int from up where not inserted)) as noop_count,
+    (select count(*)::int from v) as versioned_count,
+    (select max(published_at) from tmp_etenders_ie_ingest) as max_published_at
+)
+select * from counts;
+
+-- Advance cursor only when we had data; keep existing otherwise.
+update public."ConnectorConfig" cfg
+set
+  config = jsonb_set(
+    coalesce(cfg.config, '{}'::jsonb),
+    '{cursor}',
+    jsonb_build_object(
+      'type', 'published',
+      'value', (
+        select coalesce(
+          (select (max_published_at at time zone 'UTC')::text from counts),
+          (cfg.config->'cursor'->>'value'),
+          now()::text
+        )
+      ),
+      'last_success_at', now()::text
+    ),
+    true
+  ),
+  updated_at = now(),
+  enabled = true
+where cfg.tenant_id = '${TENANT_ID}'
+  and cfg.connector_key = '${CONNECTOR_KEY}';
+
+update public."ConnectorRuns" r
+set
+  status = 'success',
+  finished_at = now(),
+  metadata = jsonb_build_object(
+    'fetched_count', (select fetched_count from counts),
+    'inserted_count', (select inserted_count from counts),
+    'updated_count', (select updated_count from counts),
+    'noop_count', (select noop_count from counts),
+    'versioned_count', (select versioned_count from counts),
+    'cursor', (select cfg.config->'cursor' from public."ConnectorConfig" cfg where cfg.tenant_id='${TENANT_ID}' and cfg.connector_key='${CONNECTOR_KEY}' limit 1)
+  )
+where r.id = :'run_id';
+
+commit;
+SQL
+
+echo "== QA pack =="
+if [[ -f "${QA_SQL}" ]]; then
+  "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off -v tenant_id="${TENANT_ID}" -f "${QA_SQL}"
+fi
+
+echo "== Done =="
