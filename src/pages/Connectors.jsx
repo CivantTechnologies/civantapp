@@ -195,6 +195,53 @@ export default function Connectors() {
         if (!config.total_runs || config.total_runs === 0) return 0;
         return Math.round((config.successful_runs / config.total_runs) * 100);
     };
+
+    const getEtendersIncrementalSnapshot = () => {
+        const tenantId = (typeof civant?.getActiveTenantId === 'function' ? civant.getActiveTenantId() : '') || 'civant_default';
+        const connectorKey = `etenders_ie_incremental:${tenantId}`;
+
+        const cfg = (configs || []).find(c =>
+            c?.connector_key === connectorKey
+            || c?.connector_id === 'ETENDERS_IE_INCREMENTAL'
+            || c?.connector_id === 'etenders_ie_incremental'
+        ) || null;
+
+        const cfgCursor = cfg?.config?.cursor || null;
+        const cursorValue = cfgCursor?.value || null;
+
+        const candidates = (runs || []).filter(r =>
+            r?.connector_key === connectorKey
+            || r?.connector_id === 'ETENDERS_IE_INCREMENTAL'
+            || r?.source === 'ETENDERS_IE_INCREMENTAL'
+        );
+
+        const latestRun = candidates.length ? candidates[0] : null;
+        const meta = (latestRun?.metadata && typeof latestRun.metadata === 'object') ? latestRun.metadata : {};
+
+        const inserted = Number(meta.inserted_count ?? latestRun?.inserted_count ?? 0) || 0;
+        const updated = Number(meta.updated_count ?? latestRun?.updated_count ?? 0) || 0;
+        const noop = Number(meta.noop_count ?? 0) || 0;
+
+        const status = String(latestRun?.status || '').toLowerCase() || null;
+        const lastRunAt = latestRun?.started_at || latestRun?.created_at || null;
+        const lastSuccessAt = (meta.cursor && meta.cursor.last_success_at)
+            || cfgCursor?.last_success_at
+            || (status === 'success' ? (latestRun?.finished_at || latestRun?.started_at) : null)
+            || null;
+
+        return {
+            tenantId,
+            connectorKey,
+            status,
+            lastRunAt,
+            lastSuccessAt,
+            cursorValue,
+            counts: { inserted, updated, noop }
+        };
+    };
+
+    const etendersInc = getEtendersIncrementalSnapshot();
+
     
     if (loading) {
         return (
@@ -227,6 +274,88 @@ export default function Connectors() {
                 </Badge>
             </div>
             
+
+            {/* eTenders Incremental Snapshot */}
+            <Card className="border-0 shadow-sm">
+                <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center justify-center">
+                                <Activity className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <CardTitle className="text-lg font-semibold">eTenders IE Incremental</CardTitle>
+                                <p className="text-sm text-slate-500 mt-0.5">Latest run + cursor watermark for the incremental connector</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            {etendersInc?.status ? (
+                                <Badge className={
+                                    etendersInc.status === 'success'
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                        : etendersInc.status === 'partial'
+                                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                            : 'bg-red-50 text-red-700 border-red-200'
+                                }>
+                                    {etendersInc.status}
+                                </Badge>
+                            ) : (
+                                <Badge className="bg-slate-50 text-slate-700 border-slate-200">no data</Badge>
+                            )}
+                        </div>
+                    </div>
+                </CardHeader>
+
+                <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="p-3 rounded-lg bg-slate-50">
+                            <div className="flex items-center gap-2 text-xs text-slate-500">
+                                <Clock className="h-4 w-4" />
+                                Last success
+                            </div>
+                            <div className="mt-1 text-sm font-semibold text-slate-900">
+                                {etendersInc?.lastSuccessAt ? formatDistanceToNow(new Date(etendersInc.lastSuccessAt), { addSuffix: true }) : 'Never'}
+                            </div>
+                            {etendersInc?.lastSuccessAt && (
+                                <div className="mt-0.5 text-xs text-slate-500">{format(new Date(etendersInc.lastSuccessAt), 'PPpp')}</div>
+                            )}
+                        </div>
+
+                        <div className="p-3 rounded-lg bg-slate-50">
+                            <div className="flex items-center gap-2 text-xs text-slate-500">
+                                <Calendar className="h-4 w-4" />
+                                Cursor watermark
+                            </div>
+                            <div className="mt-1 text-sm font-semibold text-slate-900 break-all">
+                                {etendersInc?.cursorValue || 'Not set'}
+                            </div>
+                            <div className="mt-0.5 text-xs text-slate-500">connector_key: {etendersInc?.connectorKey || 'n/a'}</div>
+                        </div>
+
+                        <div className="p-3 rounded-lg bg-slate-50">
+                            <div className="flex items-center gap-2 text-xs text-slate-500">
+                                <Activity className="h-4 w-4" />
+                                Last run counts
+                            </div>
+                            <div className="mt-1 grid grid-cols-3 gap-2">
+                                <div>
+                                    <div className="text-xs text-slate-500">Inserted</div>
+                                    <div className="text-sm font-semibold text-slate-900">{etendersInc?.counts?.inserted ?? 0}</div>
+                                </div>
+                                <div>
+                                    <div className="text-xs text-slate-500">Updated</div>
+                                    <div className="text-sm font-semibold text-slate-900">{etendersInc?.counts?.updated ?? 0}</div>
+                                </div>
+                                <div>
+                                    <div className="text-xs text-slate-500">No-op</div>
+                                    <div className="text-sm font-semibold text-slate-900">{etendersInc?.counts?.noop ?? 0}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+
             {/* Connector Cards */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {configs.map(config => {
