@@ -132,18 +132,22 @@ const createEntityApi = (http, getAppId, getOptionalTenantHeaders) => new Proxy(
     }
 });
 
-const createFunctionsApi = (http, getAppId) => ({
+const createFunctionsApi = (http, getAppId, getOptionalTenantHeaders) => ({
     invoke(functionName, payload, options = {}) {
         const headers = options.headers || undefined;
         const endpoint = `/apps/${getAppId()}/functions/${functionName}`;
+        const withTenantHeaders = (nextHeaders = {}) => ({
+            ...(typeof getOptionalTenantHeaders === 'function' ? getOptionalTenantHeaders() : {}),
+            ...(nextHeaders || {})
+        });
         if (hasFileLike(payload)) {
             const data = toFormData(payload);
             return http.post(endpoint, data, {
-                headers: { 'Content-Type': 'multipart/form-data', ...(headers || {}) }
+                headers: { 'Content-Type': 'multipart/form-data', ...withTenantHeaders(headers || {}) }
             });
         }
         return http.post(endpoint, payload || {}, {
-            headers
+            headers: withTenantHeaders(headers || {})
         });
     }
 });
@@ -269,8 +273,6 @@ export const createClient = ({
         return resolvedAppId;
     };
 
-    const functionsApi = createFunctionsApi(http, ensureAppId);
-
     let activeTenantId = typeof window !== 'undefined' && window.localStorage
         ? normalizeValue(window.localStorage.getItem(ACTIVE_TENANT_STORAGE_KEY))
         : '';
@@ -313,6 +315,8 @@ export const createClient = ({
             'x-tenant-id': effectiveTenantId
         };
     };
+
+    const functionsApi = createFunctionsApi(http, ensureAppId, optionalTenantHeaders);
 
     const setToken = (nextToken, persist = true) => {
         if (nextToken) {
