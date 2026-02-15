@@ -6,6 +6,10 @@ import crypto from 'node:crypto';
 
 const REQUEST_TIMEOUT_MS = 30000;
 const MAX_HTTP_RETRIES = 4;
+const MIN_PLAUSIBLE_YEAR = 1990;
+const MAX_PLAUSIBLE_YEAR = new Date().getUTCFullYear() + 5;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DEADLINE_MAX_SPAN_DAYS = 730;
 
 function parseArgs(argv) {
   const args = {};
@@ -75,13 +79,56 @@ function parseCsvLine(line, delimiter = ';') {
   return { fields: out, inQuotes };
 }
 
+function isPlausibleYear(year) {
+  if (!Number.isFinite(year)) return false;
+  return year >= MIN_PLAUSIBLE_YEAR && year <= MAX_PLAUSIBLE_YEAR;
+}
+
 function parseDate(value) {
   const text = clean(value);
   if (!text) return { date: null, iso: null };
+
+  // Prefer strict patterns over Date.parse() so we don't accept weird years like 0209.
+  let match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    if (!isPlausibleYear(year) || month < 1 || month > 12 || day < 1 || day > 31) {
+      return { date: null, iso: null };
+    }
+    const parsed = new Date(text);
+    if (!Number.isNaN(parsed.getTime()) && isPlausibleYear(parsed.getUTCFullYear())) {
+      return { date: parsed.toISOString().slice(0, 10), iso: parsed.toISOString() };
+    }
+    // Fallback for date-only strings without a timezone.
+    return { date: `${match[1]}-${match[2]}-${match[3]}`, iso: null };
+  }
+
+  // Common French format: DD/MM/YYYY (optionally with time).
+  match = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (match) {
+    const day = Number(match[1]);
+    const month = Number(match[2]);
+    const year = Number(match[3]);
+    const hour = match[4] ? Number(match[4]) : 0;
+    const minute = match[5] ? Number(match[5]) : 0;
+    const second = match[6] ? Number(match[6]) : 0;
+    if (!isPlausibleYear(year) || month < 1 || month > 12 || day < 1 || day > 31) {
+      return { date: null, iso: null };
+    }
+    const ms = Date.UTC(year, month - 1, day, hour, minute, second);
+    const parsed = new Date(ms);
+    if (!Number.isNaN(parsed.getTime()) && isPlausibleYear(parsed.getUTCFullYear())) {
+      return { date: parsed.toISOString().slice(0, 10), iso: parsed.toISOString() };
+    }
+    return { date: null, iso: null };
+  }
+
+  // Last resort: only accept Date.parse() when the resulting year is plausible.
   const parsed = new Date(text);
-  if (!Number.isNaN(parsed.getTime())) {
-    const date = parsed.toISOString().slice(0, 10);
-    return { date, iso: parsed.toISOString() };
+  if (!Number.isNaN(parsed.getTime()) && isPlausibleYear(parsed.getUTCFullYear())) {
+    return { date: parsed.toISOString().slice(0, 10), iso: parsed.toISOString() };
   }
   return { date: null, iso: null };
 }
@@ -116,6 +163,77 @@ function parseMaybeJson(value) {
   } catch {
     return null;
   }
+}
+
+function extractDeadlineFromDonnees(donneesJson, publicationDate) {
+  if (!donneesJson || typeof donneesJson !== 'object') return { date: null, source: null };
+
+  const publication = publicationDate ? new Date(`${publicationDate}T00:00:00.000Z`) : null;
+  const candidates = [];
+
+  const addCandidate = (value, source, weight) => {
+    const parsed = parseDate(value);
+    if (!parsed.date) return;
+    if (publication) {
+      const deadline = new Date(`${parsed.date}T00:00:00.000Z`);
+      const diffDays = Math.floor((deadline.getTime() - publication.getTime()) / DAY_MS);
+      if (diffDays < 0 || diffDays > DEADLINE_MAX_SPAN_DAYS) return;
+    }
+    candidates.push({ date: parsed.date, source, weight });
+  };
+
+  const inspectRectifModification = (mod) => {
+    if (!mod || typeof mod !== 'object') return;
+    const rub = clean(mod.RUB_INIT ?? mod.rub_init ?? mod.rubInit);
+    if (!rub) return;
+    const rubLower = rub.toLowerCase();
+    if (!rubLower.includes('date limite')) return;
+    if (!/(reception|réception|offre|offres|demande|demandes|participation)/i.test(rub)) return;
+
+    const lire = clean(mod.LIRE ?? mod.lire);
+    const txtInit = clean(mod.TXT_INIT ?? mod.txt_init);
+
+    // Prefer the corrected value if present.
+    if (lire) addCandidate(lire, 'donnees.rectif.modification.lire', 3);
+    if (txtInit) addCandidate(txtInit, 'donnees.rectif.modification.txt_init', 2);
+  };
+
+  const rectif = donneesJson.RECTIF ?? donneesJson.rectif;
+  if (rectif && typeof rectif === 'object') {
+    const mod = rectif.MODIFICATION ?? rectif.modification;
+    if (Array.isArray(mod)) mod.forEach(inspectRectifModification);
+    else inspectRectifModification(mod);
+  }
+
+  // Generic fallback: scan for obvious "date limite" / deadline-ish keys.
+  const keyHint = /(date.*limit|datelimit|deadline|date_limite|date\s*limite)/i;
+  const visit = (node) => {
+    if (!node) return;
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+      return;
+    }
+    if (typeof node !== 'object') return;
+
+    for (const [key, value] of Object.entries(node)) {
+      if (typeof value === 'string' && keyHint.test(String(key))) {
+        addCandidate(value, `donnees.${String(key)}`, 1);
+      } else if (value && typeof value === 'object') {
+        // Handle nested "modification-like" objects without relying on exact casing.
+        if (typeof value === 'object' && (value.RUB_INIT || value.rub_init) && (value.LIRE || value.lire || value.TXT_INIT || value.txt_init)) {
+          inspectRectifModification(value);
+        }
+        visit(value);
+      }
+    }
+  };
+  visit(donneesJson);
+
+  if (!candidates.length) return { date: null, source: null };
+
+  // Choose highest-confidence bucket, then the latest date.
+  candidates.sort((a, b) => (b.weight - a.weight) || (b.date.localeCompare(a.date)));
+  return { date: candidates[0].date, source: candidates[0].source };
 }
 
 function addCpvCodesFromText(text, set) {
@@ -162,7 +280,7 @@ function collectCpvCodesFromNode(node, set, inCpvContext = false) {
   }
 }
 
-function collectCpvCodes(record) {
+function collectCpvCodes(record, donneesJson = null) {
   const set = new Set();
 
   // Legacy BOAMP rows expose CPV in top-level keys (e.g. CPV, codecpv).
@@ -173,7 +291,6 @@ function collectCpvCodes(record) {
   }
 
   // eForms rows store CPV inside the DONNEES JSON string.
-  const donneesJson = parseMaybeJson(record.DONNEES);
   if (donneesJson) {
     collectCpvCodesFromNode(donneesJson, set, false);
   }
@@ -189,8 +306,19 @@ function mapRow(record) {
   const source = 'BOAMP_FR';
   const canonicalId = `${source}:${sourceNoticeId}`;
   const publication = parseDate(record.dateparution);
-  const deadline = parseDate(record.datelimitereponse);
-  const cpvCodes = collectCpvCodes(record);
+  const donneesJson = parseMaybeJson(record.DONNEES);
+
+  let deadline = parseDate(record.datelimitereponse);
+  let deadlineSource = deadline.date ? 'datelimitereponse' : null;
+  if (!deadline.date && donneesJson) {
+    const fromDonnees = extractDeadlineFromDonnees(donneesJson, publication.date);
+    if (fromDonnees.date) {
+      deadline = { date: fromDonnees.date, iso: null };
+      deadlineSource = fromDonnees.source || 'donnees';
+    }
+  }
+
+  const cpvCodes = collectCpvCodes(record, donneesJson);
   const nowIso = new Date().toISOString();
   const buyerName = clean(record.nomacheteur) || clean(record.organisme) || clean(record.nomorganisme);
   const estimatedValue = parseNumber(record.montant) ?? parseNumber(record.montantmarche) ?? parseNumber(record.valeurestimee);
@@ -217,6 +345,7 @@ function mapRow(record) {
     notice_type: noticeType,
     publication_date: publication.date,
     deadline_date: deadline.date,
+    deadline_date_source: deadlineSource,
     cpv_codes: cpvCodes,
     estimated_value: estimatedValue,
     currency: 'EUR',

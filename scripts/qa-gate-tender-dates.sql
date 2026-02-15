@@ -231,47 +231,54 @@ where publication_date is not null
 order by publication_date desc, tender_id
 limit 20;
 
-do $$
-declare
-  row_count bigint;
-  max_inv bigint := (:'max_inversions')::bigint;
-  max_inv_pct numeric := (:'max_inversion_pct')::numeric;
-  max_pub_nulls bigint := (:'max_pub_nulls')::bigint;
-  max_pub_null_pct numeric := (:'max_pub_null_pct')::numeric;
-  bad_canonical int;
-  bad_current int;
-begin
-  select count(*) into row_count from tmp_qa_gate_dates;
-  if row_count = 0 then
-    raise exception 'QA gate failed: no rows found for tenant_id=% source_filter=%', :'tenant_id', :'source';
-  end if;
+\echo '--- Gate checks'
+\echo 'NOTE: psql variable substitution does not work inside DO $$ blocks; use \\gset + \\if instead.'
 
-  select count(*) into bad_canonical
-  from tmp_qa_gate_dates
-  where ct_total > 0
-    and (
-      ct_pub_null > max_pub_nulls
-      or coalesce(ct_pub_null_pct, 0) > max_pub_null_pct
-      or ct_inversions > max_inv
-      or coalesce(ct_inversion_pct, 0) > max_inv_pct
-    );
+select
+  count(*)::int as qa_rows,
+  (count(*) = 0) as qa_no_rows
+from tmp_qa_gate_dates
+\gset
 
-  select count(*) into bad_current
-  from tmp_qa_gate_dates
-  where tc_total > 0
-    and (
-      tc_pub_null > max_pub_nulls
-      or coalesce(tc_pub_null_pct, 0) > max_pub_null_pct
-      or tc_inversions > max_inv
-      or coalesce(tc_inversion_pct, 0) > max_inv_pct
-    );
+\if :qa_no_rows
+\echo 'QA gate failed: no rows found for tenant_id=' :tenant_id 'source_filter=' :source
+\quit 1
+\endif
 
-  if bad_canonical > 0 then
-    raise exception 'QA gate failed: canonical_tenders date checks failed for % source(s)', bad_canonical;
-  end if;
+select
+  count(*)::int as qa_bad_canonical_count,
+  (count(*) > 0) as qa_bad_canonical
+from tmp_qa_gate_dates
+where ct_total > 0
+  and (
+    ct_pub_null > (:'max_pub_nulls')::bigint
+    or coalesce(ct_pub_null_pct, 0) > (:'max_pub_null_pct')::numeric
+    or ct_inversions > (:'max_inversions')::bigint
+    or coalesce(ct_inversion_pct, 0) > (:'max_inversion_pct')::numeric
+  )
+\gset
 
-  if bad_current > 0 then
-    raise exception 'QA gate failed: TendersCurrent date checks failed for % source(s)', bad_current;
-  end if;
-end $$;
+select
+  count(*)::int as qa_bad_current_count,
+  (count(*) > 0) as qa_bad_current
+from tmp_qa_gate_dates
+where tc_total > 0
+  and (
+    tc_pub_null > (:'max_pub_nulls')::bigint
+    or coalesce(tc_pub_null_pct, 0) > (:'max_pub_null_pct')::numeric
+    or tc_inversions > (:'max_inversions')::bigint
+    or coalesce(tc_inversion_pct, 0) > (:'max_inversion_pct')::numeric
+  )
+\gset
 
+\if :qa_bad_canonical
+\echo 'QA gate failed: canonical_tenders date checks failed for' :qa_bad_canonical_count 'source(s)'
+\quit 1
+\endif
+
+\if :qa_bad_current
+\echo 'QA gate failed: TendersCurrent date checks failed for' :qa_bad_current_count 'source(s)'
+\quit 1
+\endif
+
+\echo 'QA gate PASSED.'
