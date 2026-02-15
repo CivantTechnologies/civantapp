@@ -19,7 +19,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-PSQL_BIN="${PSQL_BIN:-/opt/homebrew/opt/libpq/bin/psql}"
+# Prefer Homebrew libpq on macOS if present; otherwise fall back to PATH `psql`.
+DEFAULT_PSQL_BIN="/opt/homebrew/opt/libpq/bin/psql"
+PSQL_BIN="${PSQL_BIN:-}"
+if [[ -z "${PSQL_BIN}" ]]; then
+  if [[ -x "${DEFAULT_PSQL_BIN}" ]]; then
+    PSQL_BIN="${DEFAULT_PSQL_BIN}"
+  else
+    PSQL_BIN="psql"
+  fi
+fi
 DATABASE_URL="${DATABASE_URL:-${SUPABASE_DB_URL:-}}"
 
 TENANT_ID="${1:-${TENANT_ID:-}}"
@@ -46,9 +55,19 @@ if [[ "${DRY_RUN}" != "true" && -z "${DATABASE_URL}" ]]; then
   echo "ERROR: SUPABASE_DB_URL (or DATABASE_URL) is required unless DRY_RUN=true."
   exit 1
 fi
-if [[ ! -x "${PSQL_BIN}" ]]; then
-  echo "ERROR: psql not found at ${PSQL_BIN}"
-  exit 1
+
+# Allow PSQL_BIN to be either an absolute path or a command available on PATH.
+if [[ "${PSQL_BIN}" == */* ]]; then
+  if [[ ! -x "${PSQL_BIN}" ]]; then
+    echo "ERROR: psql not found at ${PSQL_BIN}"
+    exit 1
+  fi
+else
+  if ! command -v "${PSQL_BIN}" >/dev/null 2>&1; then
+    echo "ERROR: psql not found on PATH: ${PSQL_BIN}"
+    exit 1
+  fi
+  PSQL_BIN="$(command -v "${PSQL_BIN}")"
 fi
 
 export PGCONNECT_TIMEOUT="${PGCONNECT_TIMEOUT:-15}"

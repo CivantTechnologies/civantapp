@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { civant } from '@/api/civantClient';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '../utils';
+import { useTenant } from '@/lib/tenant';
 import {
   TrendingUp,
   Building2,
@@ -39,10 +40,14 @@ export default function Predictions() {
   const [aiPredictions, setAiPredictions] = useState({});
   const [loadingAI, setLoadingAI] = useState(false);
   const [feedbackDialog, setFeedbackDialog] = useState({ open: false, prediction: null, buyer: null });
+  const { activeTenantId, isLoadingTenants } = useTenant();
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (isLoadingTenants) return;
+    if (!activeTenantId) return;
+    setLoading(true);
+    void loadData();
+  }, [activeTenantId, isLoadingTenants]);
 
   useEffect(() => {
     if (tenders.length > 0) {

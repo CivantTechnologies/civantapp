@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { civant } from '@/api/civantClient';
 import { createPageUrl } from '../utils';
 import { useLocation } from 'react-router-dom';
+import { useTenant } from '@/lib/tenant';
 import { 
     Search as SearchIcon, 
     Filter,
@@ -51,6 +52,7 @@ export default function Search() {
     const [filteredTenders, setFilteredTenders] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showFilters, setShowFilters] = useState(false);
+    const { activeTenantId, isLoadingTenants } = useTenant();
     
     // Filters
     const [keyword, setKeyword] = useState('');
@@ -64,8 +66,11 @@ export default function Search() {
     const [lastTendered, setLastTendered] = useState('all');
     
     useEffect(() => {
-        loadTenders();
-    }, []);
+        if (isLoadingTenants) return;
+        if (!activeTenantId) return;
+        setLoading(true);
+        void loadTenders();
+    }, [activeTenantId, isLoadingTenants]);
 
     useEffect(() => {
         const params = new URLSearchParams(location.search);

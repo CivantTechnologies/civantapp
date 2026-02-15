@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { civant } from '@/api/civantClient';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '../utils';
+import { useTenant } from '@/lib/tenant';
 import { 
     ArrowLeft, 
     ExternalLink, 
@@ -32,15 +33,18 @@ export default function TenderDetail() {
     const [integrationLoading, setIntegrationLoading] = useState(null);
     const [enrichment, setEnrichment] = useState(null);
     const [enriching, setEnriching] = useState(false);
+    const { activeTenantId, isLoadingTenants } = useTenant();
     
     const urlParams = new URLSearchParams(window.location.search);
     const tenderId = urlParams.get('id');
     
     useEffect(() => {
+        if (isLoadingTenants) return;
+        if (!activeTenantId) return;
         if (tenderId) {
             loadTender();
         }
-    }, [tenderId]);
+    }, [tenderId, activeTenantId, isLoadingTenants]);
     
     const loadTender = async () => {
         try {
