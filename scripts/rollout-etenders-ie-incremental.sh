@@ -60,7 +60,6 @@ TMP_DIR="${TMPDIR:-/tmp}"
 TSV_FILE="$(mktemp "${TMP_DIR%/}/civant_etenders_ie_XXXXXX.tsv")"
 
 cleanup() {
-  # best-effort cleanup
   rm -f "${TSV_FILE}" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -134,6 +133,7 @@ create temp table tmp_etenders_ie_ingest (
 );
 \copy tmp_etenders_ie_ingest from '${TSV_FILE}' with (format text, delimiter E'\t');
 
+create temp table tmp_etenders_ie_counts as
 with
 v as (
   insert into public."TenderVersions" (tenant_id, tender_id, version_hash, data, created_at)
@@ -157,17 +157,17 @@ up as (
      or public."TendersCurrent".published_at is distinct from excluded.published_at
      or public."TendersCurrent".data is distinct from excluded.data
   returning (xmax = 0) as inserted
-),
-counts as (
-  select
-    (select count(*)::int from tmp_etenders_ie_ingest) as fetched_count,
-    (select count(*)::int from up where inserted) as inserted_count,
-    (select count(*)::int from up where not inserted) as updated_count,
-    ((select count(*)::int from tmp_etenders_ie_ingest) - (select count(*)::int from up where inserted) - (select count(*)::int from up where not inserted)) as noop_count,
-    (select count(*)::int from v) as versioned_count,
-    (select max(published_at) from tmp_etenders_ie_ingest) as max_published_at
 )
-select * from counts;
+select
+  (select count(*)::int from tmp_etenders_ie_ingest) as fetched_count,
+  (select count(*)::int from up where inserted) as inserted_count,
+  (select count(*)::int from up where not inserted) as updated_count,
+  ((select count(*)::int from tmp_etenders_ie_ingest) - (select count(*)::int from up where inserted) - (select count(*)::int from up where not inserted)) as noop_count,
+  (select count(*)::int from v) as versioned_count,
+  (select max(published_at) from tmp_etenders_ie_ingest) as max_published_at
+;
+
+select * from tmp_etenders_ie_counts;
 
 -- Advance cursor only when we had data; keep existing otherwise.
 update public."ConnectorConfig" cfg
@@ -179,7 +179,7 @@ set
       'type', 'published',
       'value', (
         select coalesce(
-          (select (max_published_at at time zone 'UTC')::text from counts),
+          (select (max_published_at at time zone 'UTC')::text from tmp_etenders_ie_counts),
           (cfg.config->'cursor'->>'value'),
           now()::text
         )
@@ -198,11 +198,11 @@ set
   status = 'success',
   finished_at = now(),
   metadata = jsonb_build_object(
-    'fetched_count', (select fetched_count from counts),
-    'inserted_count', (select inserted_count from counts),
-    'updated_count', (select updated_count from counts),
-    'noop_count', (select noop_count from counts),
-    'versioned_count', (select versioned_count from counts),
+    'fetched_count', (select fetched_count from tmp_etenders_ie_counts),
+    'inserted_count', (select inserted_count from tmp_etenders_ie_counts),
+    'updated_count', (select updated_count from tmp_etenders_ie_counts),
+    'noop_count', (select noop_count from tmp_etenders_ie_counts),
+    'versioned_count', (select versioned_count from tmp_etenders_ie_counts),
     'cursor', (select cfg.config->'cursor' from public."ConnectorConfig" cfg where cfg.tenant_id='${TENANT_ID}' and cfg.connector_key='${CONNECTOR_KEY}' limit 1)
   )
 where r.id = :'run_id';
