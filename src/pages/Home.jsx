@@ -39,44 +39,41 @@ export default function Home() {
     const loadDashboardData = async () => {
         try {
             setLoadError('');
-            // Load all tenders
-            const allTenders = await civant.entities.TendersCurrent.list('-published_at', 1000);
+            // Load a small slice for "Latest tenders" UI.
+            const allTenders = await civant.entities.TendersCurrent.list('-published_at', 250);
+
+            // Fast, tenant-scoped aggregates from the API (avoids pulling large lists for stats).
+            // If the DB helper function isn't deployed yet, fall back to slice-based estimates.
+            let dashboardStats = null;
+            try {
+                const statsPayload = await civant.functions.invoke('getDashboardStats', {});
+                dashboardStats = statsPayload?.stats || null;
+            } catch (error) {
+                console.warn('getDashboardStats unavailable, falling back to client estimates:', error);
+            }
             
             const now = new Date();
             const last24h = subDays(now, 1);
             const next7days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-            
-            // Calculate stats
-            const newTenders24h = allTenders.filter(t => 
+
+            const fallbackNew24h = allTenders.filter(t =>
                 getTenderFirstSeen(t) && isAfter(new Date(getTenderFirstSeen(t)), last24h)
             ).length;
-            
-            const deadlinesIn7Days = allTenders.filter(t => {
+            const fallbackDeadlines7d = allTenders.filter(t => {
                 if (!t.deadline_date) return false;
                 const deadline = new Date(t.deadline_date);
                 return deadline >= now && deadline <= next7days;
             }).length;
-            
-            // Load alert events from last 24h
-            const alertEvents = await civant.entities.AlertEvents.filter({});
-            const alertsTriggered = alertEvents.filter(e => 
-                e.matched_at && isAfter(new Date(e.matched_at), last24h)
-            ).length;
-            
+
             setStats({
-                newTenders24h,
-                deadlinesIn7Days,
-                alertsTriggered,
-                totalTenders: allTenders.length
+                newTenders24h: Number(dashboardStats?.new_tenders_24h ?? fallbackNew24h ?? 0),
+                deadlinesIn7Days: Number(dashboardStats?.deadlines_in_7_days ?? fallbackDeadlines7d ?? 0),
+                alertsTriggered: Number(dashboardStats?.alerts_triggered_24h ?? 0),
+                totalTenders: Number(dashboardStats?.total_tenders ?? 0)
             });
             
             // Latest tenders
-            const sortedTenders = [...allTenders].sort((a, b) => {
-                const aTs = getTenderPublicationDate(a) ? new Date(getTenderPublicationDate(a)).getTime() : 0;
-                const bTs = getTenderPublicationDate(b) ? new Date(getTenderPublicationDate(b)).getTime() : 0;
-                return bTs - aTs;
-            });
-            setLatestTenders(sortedTenders.slice(0, 8));
+            setLatestTenders(allTenders.slice(0, 8));
             
             // Connector health - get latest run per source
             const runs = await civant.entities.ConnectorRuns.list('-started_at', 50);
