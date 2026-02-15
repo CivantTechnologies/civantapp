@@ -57,3 +57,13 @@ Run QA pack:
 ```bash
 /opt/homebrew/opt/libpq/bin/psql "$SUPABASE_DB_URL" -v tenant_id='civant_default' -f scripts/qa-etenders-ie-incremental.sql
 ```
+
+## GitHub Actions (Daily)
+If you run connector sync via GitHub Actions, add repo secrets:
+- `SUPABASE_DB_URL` (required)
+- `CIVANT_TENANT_ID` (optional; defaults to `civant_default`)
+
+Workflow:
+- `.github/workflows/etenders-ie-incremental.yml`
+
+You can also trigger it manually via `workflow_dispatch` with `tenant_id`, `start_date`, and `dry_run`.
