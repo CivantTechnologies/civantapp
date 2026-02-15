@@ -42,6 +42,10 @@ export function readJsonBody<T = Record<string, unknown>>(req: RequestLike): T {
 export function sendJson(res: ResponseLike, status: number, payload: unknown) {
   if (typeof res.setHeader === 'function') {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    // These API responses are tenant/auth scoped (via headers), so browser caching is unsafe.
+    // Prevent 304 responses (Axios treats 304 as an error) and avoid cross-tenant cache pollution.
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Vary', 'x-tenant-id, authorization');
   }
   res.status(status).json(payload);
 }
