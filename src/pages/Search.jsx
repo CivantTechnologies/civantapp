@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { civant } from '@/api/civantClient';
 import { createPageUrl } from '../utils';
 import { useLocation } from 'react-router-dom';
@@ -46,6 +46,64 @@ function parseTenderCpvCodes(value) {
     return output;
 }
 
+const DEFAULT_FILTERS = Object.freeze({
+    keyword: '',
+    country: 'all',
+    source: 'all',
+    buyerSearch: '',
+    cpvSearchCodes: [],
+    deadlineWithin: 'all',
+    industry: 'all',
+    institutionType: 'all',
+    lastTendered: 'all'
+});
+
+function normalizeFilterSnapshot(snapshot) {
+    const safe = snapshot || DEFAULT_FILTERS;
+    return {
+        keyword: String(safe.keyword || ''),
+        country: String(safe.country || 'all'),
+        source: String(safe.source || 'all'),
+        buyerSearch: String(safe.buyerSearch || ''),
+        cpvSearchCodes: Array.isArray(safe.cpvSearchCodes) ? [...safe.cpvSearchCodes] : [],
+        deadlineWithin: String(safe.deadlineWithin || 'all'),
+        industry: String(safe.industry || 'all'),
+        institutionType: String(safe.institutionType || 'all'),
+        lastTendered: String(safe.lastTendered || 'all')
+    };
+}
+
+function areFilterSnapshotsEqual(a, b) {
+    const left = normalizeFilterSnapshot(a);
+    const right = normalizeFilterSnapshot(b);
+    return (
+        left.keyword === right.keyword &&
+        left.country === right.country &&
+        left.source === right.source &&
+        left.buyerSearch === right.buyerSearch &&
+        left.deadlineWithin === right.deadlineWithin &&
+        left.industry === right.industry &&
+        left.institutionType === right.institutionType &&
+        left.lastTendered === right.lastTendered &&
+        [...left.cpvSearchCodes].sort().join(',') === [...right.cpvSearchCodes].sort().join(',')
+    );
+}
+
+function countActiveFilters(snapshot) {
+    const filters = normalizeFilterSnapshot(snapshot);
+    let count = 0;
+    if (filters.keyword.trim()) count += 1;
+    if (filters.country !== 'all') count += 1;
+    if (filters.source !== 'all') count += 1;
+    if (filters.buyerSearch.trim()) count += 1;
+    if (filters.cpvSearchCodes.length > 0) count += 1;
+    if (filters.deadlineWithin !== 'all') count += 1;
+    if (filters.industry !== 'all') count += 1;
+    if (filters.institutionType !== 'all') count += 1;
+    if (filters.lastTendered !== 'all') count += 1;
+    return count;
+}
+
 export default function Search() {
     const location = useLocation();
     const [tenders, setTenders] = useState([]);
@@ -64,6 +122,7 @@ export default function Search() {
     const [industry, setIndustry] = useState('all');
     const [institutionType, setInstitutionType] = useState('all');
     const [lastTendered, setLastTendered] = useState('all');
+    const [appliedFilters, setAppliedFilters] = useState(DEFAULT_FILTERS);
     
     useEffect(() => {
         if (isLoadingTenants) return;
@@ -83,32 +142,51 @@ export default function Search() {
 
         const readFilter = (key, fallback = 'all') => params.get(key) || fallback;
 
-        setKeyword(params.get('keyword') || '');
-        setBuyerSearch(params.get('buyer') || '');
-        setCpvSearchCodes(parseCpvFilterCodes(params.get('cpv') || ''));
+        const nextFilters = {
+            keyword: params.get('keyword') || '',
+            country: (() => {
+                const nextCountry = readFilter('country');
+                return allowedCountries.has(nextCountry) ? nextCountry : 'all';
+            })(),
+            source: (() => {
+                const nextSource = readFilter('source');
+                return allowedSources.has(nextSource) ? nextSource : 'all';
+            })(),
+            buyerSearch: params.get('buyer') || '',
+            cpvSearchCodes: parseCpvFilterCodes(params.get('cpv') || ''),
+            deadlineWithin: (() => {
+                const nextDeadlineWithin = readFilter('deadlineWithin');
+                return allowedDeadlineWithin.has(nextDeadlineWithin) ? nextDeadlineWithin : 'all';
+            })(),
+            industry: (() => {
+                const nextIndustry = readFilter('industry');
+                return allowedIndustry.has(nextIndustry) ? nextIndustry : 'all';
+            })(),
+            institutionType: (() => {
+                const nextInstitutionType = readFilter('institutionType');
+                return allowedInstitutionType.has(nextInstitutionType) ? nextInstitutionType : 'all';
+            })(),
+            lastTendered: (() => {
+                const nextLastTendered = readFilter('lastTendered');
+                return allowedLastTendered.has(nextLastTendered) ? nextLastTendered : 'all';
+            })()
+        };
 
-        const nextCountry = readFilter('country');
-        setCountry(allowedCountries.has(nextCountry) ? nextCountry : 'all');
-
-        const nextSource = readFilter('source');
-        setSource(allowedSources.has(nextSource) ? nextSource : 'all');
-
-        const nextDeadlineWithin = readFilter('deadlineWithin');
-        setDeadlineWithin(allowedDeadlineWithin.has(nextDeadlineWithin) ? nextDeadlineWithin : 'all');
-
-        const nextIndustry = readFilter('industry');
-        setIndustry(allowedIndustry.has(nextIndustry) ? nextIndustry : 'all');
-
-        const nextInstitutionType = readFilter('institutionType');
-        setInstitutionType(allowedInstitutionType.has(nextInstitutionType) ? nextInstitutionType : 'all');
-
-        const nextLastTendered = readFilter('lastTendered');
-        setLastTendered(allowedLastTendered.has(nextLastTendered) ? nextLastTendered : 'all');
+        setKeyword(nextFilters.keyword);
+        setCountry(nextFilters.country);
+        setSource(nextFilters.source);
+        setBuyerSearch(nextFilters.buyerSearch);
+        setCpvSearchCodes(nextFilters.cpvSearchCodes);
+        setDeadlineWithin(nextFilters.deadlineWithin);
+        setIndustry(nextFilters.industry);
+        setInstitutionType(nextFilters.institutionType);
+        setLastTendered(nextFilters.lastTendered);
+        setAppliedFilters(nextFilters);
     }, [location.search]);
     
     useEffect(() => {
-        applyFilters();
-    }, [tenders, keyword, country, source, buyerSearch, cpvSearchCodes, deadlineWithin, industry, institutionType, lastTendered]);
+        applyFilters(appliedFilters);
+    }, [tenders, appliedFilters]);
 
     const getTenderPublicationDate = (tender) => tender.publication_date || tender.published_at || tender.first_seen_at || tender.updated_at;
     const getTenderFirstSeen = (tender) => tender.first_seen_at || tender.published_at || tender.publication_date || tender.updated_at;
@@ -124,12 +202,13 @@ export default function Search() {
         }
     };
     
-    const applyFilters = () => {
+    const applyFilters = (snapshot) => {
+        const filters = normalizeFilterSnapshot(snapshot);
         let filtered = [...tenders];
         
         // Keyword search in title
-        if (keyword) {
-            const kw = keyword.toLowerCase();
+        if (filters.keyword) {
+            const kw = filters.keyword.toLowerCase();
             filtered = filtered.filter(t => 
                 t.title?.toLowerCase().includes(kw) ||
                 t.buyer_name?.toLowerCase().includes(kw)
@@ -137,36 +216,36 @@ export default function Search() {
         }
         
         // Country filter
-        if (country !== 'all') {
-            filtered = filtered.filter(t => t.country === country);
+        if (filters.country !== 'all') {
+            filtered = filtered.filter(t => t.country === filters.country);
         }
         
         // Source filter
-        if (source !== 'all') {
-            filtered = filtered.filter(t => t.source === source);
+        if (filters.source !== 'all') {
+            filtered = filtered.filter(t => t.source === filters.source);
         }
         
         // Buyer search
-        if (buyerSearch) {
+        if (filters.buyerSearch) {
             filtered = filtered.filter(t => 
-                t.buyer_name?.toLowerCase().includes(buyerSearch.toLowerCase())
+                t.buyer_name?.toLowerCase().includes(filters.buyerSearch.toLowerCase())
             );
         }
         
         // CPV search
-        if (cpvSearchCodes.length) {
+        if (filters.cpvSearchCodes.length) {
             filtered = filtered.filter((t) => {
                 const tenderCodes = parseTenderCpvCodes(t.cpv_codes);
                 if (!tenderCodes.length) return false;
-                return cpvSearchCodes.some((wanted) =>
+                return filters.cpvSearchCodes.some((wanted) =>
                     tenderCodes.some((code) => code.startsWith(wanted))
                 );
             });
         }
         
         // Deadline filter
-        if (deadlineWithin !== 'all') {
-            const days = parseInt(deadlineWithin);
+        if (filters.deadlineWithin !== 'all') {
+            const days = parseInt(filters.deadlineWithin);
             const now = new Date();
             const futureDate = addDays(now, days);
             
@@ -178,38 +257,38 @@ export default function Search() {
         }
         
         // Industry filter (based on CPV codes)
-        if (industry !== 'all') {
+        if (filters.industry !== 'all') {
             filtered = filtered.filter(t => {
                 if (!t.cpv_codes) return false;
                 const cpv = t.cpv_codes.toLowerCase();
                 // Map industries to CPV code prefixes
-                if (industry === 'construction') return cpv.includes('45');
-                if (industry === 'it') return cpv.includes('72') || cpv.includes('48');
-                if (industry === 'health') return cpv.includes('33') || cpv.includes('85');
-                if (industry === 'transport') return cpv.includes('60') || cpv.includes('34');
-                if (industry === 'consulting') return cpv.includes('79') || cpv.includes('71');
-                if (industry === 'food') return cpv.includes('15') || cpv.includes('55');
+                if (filters.industry === 'construction') return cpv.includes('45');
+                if (filters.industry === 'it') return cpv.includes('72') || cpv.includes('48');
+                if (filters.industry === 'health') return cpv.includes('33') || cpv.includes('85');
+                if (filters.industry === 'transport') return cpv.includes('60') || cpv.includes('34');
+                if (filters.industry === 'consulting') return cpv.includes('79') || cpv.includes('71');
+                if (filters.industry === 'food') return cpv.includes('15') || cpv.includes('55');
                 return false;
             });
         }
         
         // Institution type filter
-        if (institutionType !== 'all') {
+        if (filters.institutionType !== 'all') {
             filtered = filtered.filter(t => {
                 if (!t.buyer_name) return false;
                 const buyer = t.buyer_name.toLowerCase();
-                if (institutionType === 'ministry') return buyer.includes('ministry') || buyer.includes('ministère') || buyer.includes('minister');
-                if (institutionType === 'local') return buyer.includes('council') || buyer.includes('city') || buyer.includes('county') || buyer.includes('commune') || buyer.includes('ville');
-                if (institutionType === 'health') return buyer.includes('health') || buyer.includes('hospital') || buyer.includes('santé') || buyer.includes('hôpital');
-                if (institutionType === 'education') return buyer.includes('university') || buyer.includes('college') || buyer.includes('school') || buyer.includes('université') || buyer.includes('école');
-                if (institutionType === 'transport') return buyer.includes('transport') || buyer.includes('railway') || buyer.includes('road');
+                if (filters.institutionType === 'ministry') return buyer.includes('ministry') || buyer.includes('ministère') || buyer.includes('minister');
+                if (filters.institutionType === 'local') return buyer.includes('council') || buyer.includes('city') || buyer.includes('county') || buyer.includes('commune') || buyer.includes('ville');
+                if (filters.institutionType === 'health') return buyer.includes('health') || buyer.includes('hospital') || buyer.includes('santé') || buyer.includes('hôpital');
+                if (filters.institutionType === 'education') return buyer.includes('university') || buyer.includes('college') || buyer.includes('school') || buyer.includes('université') || buyer.includes('école');
+                if (filters.institutionType === 'transport') return buyer.includes('transport') || buyer.includes('railway') || buyer.includes('road');
                 return false;
             });
         }
         
         // Last tendered filter (publication date)
-        if (lastTendered !== 'all') {
-            const days = parseInt(lastTendered);
+        if (filters.lastTendered !== 'all') {
+            const days = parseInt(filters.lastTendered);
             const now = new Date();
             const cutoffDate = subDays(now, days);
             
@@ -228,20 +307,37 @@ export default function Search() {
     };
     
     const clearFilters = () => {
-        setKeyword('');
-        setCountry('all');
-        setSource('all');
-        setBuyerSearch('');
-        setCpvSearchCodes([]);
-        setDeadlineWithin('all');
-        setIndustry('all');
-        setInstitutionType('all');
-        setLastTendered('all');
+        setKeyword(DEFAULT_FILTERS.keyword);
+        setCountry(DEFAULT_FILTERS.country);
+        setSource(DEFAULT_FILTERS.source);
+        setBuyerSearch(DEFAULT_FILTERS.buyerSearch);
+        setCpvSearchCodes(DEFAULT_FILTERS.cpvSearchCodes);
+        setDeadlineWithin(DEFAULT_FILTERS.deadlineWithin);
+        setIndustry(DEFAULT_FILTERS.industry);
+        setInstitutionType(DEFAULT_FILTERS.institutionType);
+        setLastTendered(DEFAULT_FILTERS.lastTendered);
+        setAppliedFilters(DEFAULT_FILTERS);
     };
     
-    const hasActiveFilters = keyword || country !== 'all' || source !== 'all' || 
-        buyerSearch || cpvSearchCodes.length > 0 || deadlineWithin !== 'all' || industry !== 'all' || 
-        institutionType !== 'all' || lastTendered !== 'all';
+    const currentFilters = useMemo(() => ({
+        keyword,
+        country,
+        source,
+        buyerSearch,
+        cpvSearchCodes,
+        deadlineWithin,
+        industry,
+        institutionType,
+        lastTendered
+    }), [keyword, country, source, buyerSearch, cpvSearchCodes, deadlineWithin, industry, institutionType, lastTendered]);
+
+    const hasPendingFilterChanges = !areFilterSnapshotsEqual(currentFilters, appliedFilters);
+    const activeFilterCount = countActiveFilters(appliedFilters);
+    const hasActiveFilters = activeFilterCount > 0;
+
+    const applySearch = () => {
+        setAppliedFilters(currentFilters);
+    };
     
     const getSourceBadge = (source) => {
         const colors = {
@@ -283,10 +379,26 @@ export default function Search() {
                                 placeholder="Search by keyword or buyer..."
                                 value={keyword}
                                 onChange={(e) => setKeyword(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        applySearch();
+                                    }
+                                }}
                                 className="pl-10 bg-slate-900/60 border-0"
                             />
                         </div>
                         <Button
+                            type="button"
+                            onClick={applySearch}
+                            disabled={!hasPendingFilterChanges}
+                            className="bg-civant-teal text-slate-950 hover:bg-civant-teal/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <SearchIcon className="h-4 w-4 mr-2" />
+                            Apply Search
+                        </Button>
+                        <Button
+                            type="button"
                             variant="outline"
                             onClick={() => setShowFilters(!showFilters)}
                             className={showFilters ? 'bg-civant-teal/20 border-civant-teal/40 text-civant-teal' : ''}
@@ -295,11 +407,14 @@ export default function Search() {
                             Filters
                             {hasActiveFilters && (
                                 <span className="ml-2 w-5 h-5 rounded-full bg-civant-teal text-slate-950 text-xs flex items-center justify-center">
-                                    !
+                                    {activeFilterCount}
                                 </span>
                             )}
                         </Button>
                     </div>
+                    {hasPendingFilterChanges ? (
+                        <p className="mt-2 text-xs text-amber-300">You changed filters. Click Apply Search to refresh results.</p>
+                    ) : null}
                     
                     {/* Expanded Filters */}
                     {showFilters && (
@@ -430,9 +545,19 @@ export default function Search() {
                                 </div>
                                 </div>
                             
-                            {hasActiveFilters && (
-                                <div className="mt-4 flex justify-end">
-                                    <Button variant="ghost" size="sm" onClick={clearFilters}>
+                            {(hasActiveFilters || hasPendingFilterChanges) && (
+                                <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={applySearch}
+                                        disabled={!hasPendingFilterChanges}
+                                        className="border-civant-teal/40 text-civant-teal hover:bg-civant-teal/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        Apply Search
+                                    </Button>
+                                    <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
                                         <X className="h-4 w-4 mr-1" />
                                         Clear all filters
                                     </Button>
@@ -448,6 +573,11 @@ export default function Search() {
                 <p className="text-sm text-slate-400">
                     Showing <span className="font-medium text-slate-100">{filteredTenders.length}</span> tenders
                 </p>
+                {hasActiveFilters ? (
+                    <Badge className="bg-civant-teal/15 text-civant-teal border-civant-teal/30">
+                        {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} active
+                    </Badge>
+                ) : null}
             </div>
             
             {/* Results Table */}
