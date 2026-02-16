@@ -16,7 +16,7 @@ import {
     Building2
 } from 'lucide-react';
 import { Page, PageHeader, PageTitle, PageDescription, PageBody, Card, CardContent, CardHeader, CardTitle, Button, Badge } from '@/components/ui';
-import { format, formatDistanceToNow, subDays, isAfter } from 'date-fns';
+import { format, formatDistanceToNow, subDays, isAfter, startOfDay } from 'date-fns';
 
 export default function Home() {
     const [stats, setStats] = useState(null);
@@ -65,12 +65,17 @@ export default function Home() {
                 const deadline = new Date(t.deadline_date);
                 return deadline >= now && deadline <= next7days;
             }).length;
+            const fallbackOpenTendersNow = allTenders.filter(t => {
+                if (!t.deadline_date) return false;
+                const deadline = new Date(t.deadline_date);
+                return !Number.isNaN(deadline.getTime()) && deadline >= startOfDay(now);
+            }).length;
 
             setStats({
                 newTenders24h: Number(dashboardStats?.new_tenders_24h ?? fallbackNew24h ?? 0),
                 deadlinesIn7Days: Number(dashboardStats?.deadlines_in_7_days ?? fallbackDeadlines7d ?? 0),
                 alertsTriggered: Number(dashboardStats?.alerts_triggered_24h ?? 0),
-                totalTenders: Number(dashboardStats?.total_tenders ?? allTenders.length ?? 0)
+                openTendersNow: Number(dashboardStats?.open_tenders_now ?? fallbackOpenTendersNow ?? 0)
             });
             
             // Latest tenders
@@ -217,11 +222,11 @@ export default function Home() {
                         to={createPageUrl('Alerts?view=triggered&period=24h')}
                     />
                     <StatCard 
-                        title="Total Tenders" 
-                        value={stats?.totalTenders || 0}
+                        title="Open Tenders" 
+                        value={stats?.openTendersNow || 0}
                         icon={TrendingUp}
                         color="text-card-foreground"
-                        subtext="In database"
+                        subtext="Currently open"
                         to={createPageUrl('Search')}
                     />
                 </div>
