@@ -76,7 +76,22 @@ ETENDERS_SCRIPT="${REPO_ROOT}/scripts/etenders/etenders-ie-incremental.mjs"
 QA_SQL="${REPO_ROOT}/scripts/qa-etenders-ie-incremental.sql"
 
 TMP_DIR="${TMPDIR:-/tmp}"
-TSV_FILE="$(mktemp "${TMP_DIR%/}/civant_etenders_ie_XXXXXX.tsv")"
+TSV_FILE="$(mktemp "${TMP_DIR%/}/civant_etenders_ie_XXXXXX" 2>/dev/null || mktemp -t civant_etenders_ie)"
+
+if [[ -z "${TSV_FILE}" ]]; then
+  echo "ERROR: failed to allocate a temporary file."
+  exit 1
+fi
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "ERROR: node is required but was not found on PATH."
+  exit 1
+fi
+
+if [[ -n "${START_DATE}" && ! "${START_DATE}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+  echo "ERROR: START_DATE must be YYYY-MM-DD. Got: ${START_DATE}"
+  exit 1
+fi
 
 cleanup() {
   rm -f "${TSV_FILE}" 2>/dev/null || true
@@ -110,7 +125,26 @@ echo "== eTenders IE incremental rollout =="
 echo "tenant_id=${TENANT_ID} start_date=${START_DATE:-<none>} dry_run=${DRY_RUN} connector_key=${CONNECTOR_KEY}"
 
 echo "== Fetching from etenders.gov.ie (Latest CfTs) =="
-node "${ETENDERS_SCRIPT}" --tenant-id "${TENANT_ID}" "${start_arg[@]}" --dry-run "${DRY_RUN}" >"${TSV_FILE}"
+fetch_attempts=3
+fetch_delay_sec=3
+fetch_ok=0
+
+for attempt in $(seq 1 "${fetch_attempts}"); do
+  if node "${ETENDERS_SCRIPT}" --tenant-id "${TENANT_ID}" "${start_arg[@]}" --dry-run "${DRY_RUN}" >"${TSV_FILE}"; then
+    fetch_ok=1
+    break
+  fi
+  echo "WARN: fetch attempt ${attempt}/${fetch_attempts} failed."
+  if [[ "${attempt}" -lt "${fetch_attempts}" ]]; then
+    sleep $((fetch_delay_sec * attempt))
+  fi
+done
+
+if [[ "${fetch_ok}" -ne 1 ]]; then
+  echo "ERROR: eTenders fetch failed after ${fetch_attempts} attempts."
+  exit 1
+fi
+
 ROWS="$(wc -l <"${TSV_FILE}" | tr -d ' ')"
 echo "staged_rows=${ROWS}"
 
@@ -121,8 +155,57 @@ if [[ "${DRY_RUN}" == "true" ]]; then
   exit 0
 fi
 
+if ! "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off -qtA -c "select 1;" >/dev/null; then
+  echo "ERROR: database connection preflight failed. Check SUPABASE_DB_URL/DATABASE_URL and sslmode=require."
+  exit 1
+fi
+
 if [[ ! -s "${TSV_FILE}" ]]; then
-  echo "-- no rows to upsert"
+  echo "-- no rows fetched; recording successful noop connector run"
+  "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off <<SQL
+begin;
+
+insert into public."ConnectorConfig" (tenant_id, connector_key, enabled, config, updated_at)
+values ('${TENANT_ID}', '${CONNECTOR_KEY}', true, '{}'::jsonb, now())
+on conflict (connector_key) do update
+  set updated_at = now();
+
+update public."ConnectorConfig" cfg
+set
+  config = jsonb_set(
+    coalesce(cfg.config, '{}'::jsonb),
+    '{cursor}',
+    jsonb_build_object(
+      'type', 'published',
+      'value', coalesce((cfg.config->'cursor'->>'value'), now()::text),
+      'last_success_at', now()::text
+    ),
+    true
+  ),
+  updated_at = now(),
+  enabled = true
+where cfg.tenant_id = '${TENANT_ID}'
+  and cfg.connector_key = '${CONNECTOR_KEY}';
+
+insert into public."ConnectorRuns" (tenant_id, connector_key, status, started_at, finished_at, metadata)
+values (
+  '${TENANT_ID}',
+  '${CONNECTOR_KEY}',
+  'success',
+  now(),
+  now(),
+  jsonb_build_object(
+    'fetched_count', 0,
+    'inserted_count', 0,
+    'updated_count', 0,
+    'noop_count', 0,
+    'versioned_count', 0,
+    'note', 'No rows fetched for the requested window'
+  )
+);
+
+commit;
+SQL
   exit 0
 fi
 
