@@ -108,6 +108,7 @@ export default function Search() {
     const [institutionType, setInstitutionType] = useState('all');
     const [lastTendered, setLastTendered] = useState('all');
     const [appliedFilters, setAppliedFilters] = useState(DEFAULT_FILTERS);
+    const [lastSearchAt, setLastSearchAt] = useState(null);
     
     useEffect(() => {
         if (isLoadingTenants) return;
@@ -320,7 +321,8 @@ export default function Search() {
     const hasActiveFilters = !areFilterSnapshotsEqual(appliedFilters, DEFAULT_FILTERS);
 
     const applySearch = () => {
-        setAppliedFilters(currentFilters);
+        setAppliedFilters(normalizeFilterSnapshot(currentFilters));
+        setLastSearchAt(new Date());
     };
     
     const getSourceBadge = (source) => {
@@ -375,8 +377,7 @@ export default function Search() {
                         <Button
                             type="button"
                             onClick={applySearch}
-                            disabled={!hasPendingFilterChanges}
-                            className="bg-civant-teal text-slate-950 hover:bg-civant-teal/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="bg-civant-teal text-slate-950 hover:bg-civant-teal/90"
                         >
                             <SearchIcon className="h-4 w-4 mr-2" />
                             Search
@@ -531,8 +532,7 @@ export default function Search() {
                                         variant="outline"
                                         size="sm"
                                         onClick={applySearch}
-                                        disabled={!hasPendingFilterChanges}
-                                        className="border-civant-teal/40 text-civant-teal hover:bg-civant-teal/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="border-civant-teal/40 text-civant-teal hover:bg-civant-teal/10"
                                     >
                                         Search
                                     </Button>
@@ -552,6 +552,11 @@ export default function Search() {
                 <p className="text-sm text-slate-400">
                     Showing <span className="font-medium text-slate-100">{filteredTenders.length}</span> tenders
                 </p>
+                {lastSearchAt ? (
+                    <p className="text-xs text-slate-500">
+                        Search run at {format(lastSearchAt, 'HH:mm:ss')}
+                    </p>
+                ) : null}
             </div>
             
             {/* Results Table */}
@@ -583,6 +588,11 @@ export default function Search() {
                                     <td colSpan={5} className="px-4 py-12 text-center text-slate-400">
                                         <SearchIcon className="h-8 w-8 mx-auto mb-2 text-slate-300" />
                                         <p>No tenders found matching your criteria</p>
+                                        {(hasActiveFilters || hasPendingFilterChanges) ? (
+                                            <p className="text-xs mt-2">
+                                                Adjust filters or use Clear all filters to broaden results.
+                                            </p>
+                                        ) : null}
                                     </td>
                                 </tr>
                             ) : (
