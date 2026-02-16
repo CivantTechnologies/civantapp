@@ -17,7 +17,9 @@ const CONNECTOR_MAP: Record<string, { key: string; displayName: string }> = {
   TED: { key: 'TED', displayName: 'TED (EU)' },
   TED_IE: { key: 'TED_IE', displayName: 'TED Ireland' },
   TED_FR: { key: 'TED_FR', displayName: 'TED France' },
-  ETENDERS_IE: { key: 'ETENDERS_IE', displayName: 'eTenders Ireland' }
+  ETENDERS_IE: { key: 'ETENDERS_IE', displayName: 'eTenders Ireland' },
+  PLACSP_ES: { key: 'PLACSP_ES', displayName: 'PLACSP Spain' },
+  PLACSP_ES_INCREMENTAL: { key: 'PLACSP_ES', displayName: 'PLACSP Spain' }
 };
 
 const TENANT_ID_PATTERN = /^[a-z0-9_]{3,40}$/;
@@ -40,6 +42,20 @@ function conflict(message: string) {
 
 function toDisplay(connectorKey: string) {
   if (CONNECTOR_MAP[connectorKey]) return CONNECTOR_MAP[connectorKey];
+
+  const upperKey = connectorKey.toUpperCase();
+  const keyPrefix = upperKey.split(':')[0];
+  if (CONNECTOR_MAP[keyPrefix]) {
+    return { key: connectorKey, displayName: CONNECTOR_MAP[keyPrefix].displayName };
+  }
+
+  if (keyPrefix.endsWith('_INCREMENTAL')) {
+    const baseKey = keyPrefix.replace(/_INCREMENTAL$/, '');
+    if (CONNECTOR_MAP[baseKey]) {
+      return { key: connectorKey, displayName: CONNECTOR_MAP[baseKey].displayName };
+    }
+  }
+
   return { key: connectorKey, displayName: connectorKey };
 }
 

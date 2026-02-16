@@ -1,0 +1,84 @@
+name: "PLACSP ES Incremental Sync"
+
+on:
+  schedule:
+    # Daily at 06:15 UTC.
+    - cron: "15 6 * * *"
+  workflow_dispatch:
+    inputs:
+      tenant_id:
+        description: "Tenant id (defaults to civant_default)"
+        required: false
+        default: "civant_default"
+      start_date:
+        description: "Optional start date (YYYY-MM-DD). Leave blank to use stored cursor."
+        required: false
+        default: ""
+      dry_run:
+        description: "Dry run (true/false)"
+        required: false
+        default: "false"
+      max_pages:
+        description: "Max PLACSP feed pages to scan per run"
+        required: false
+        default: "40"
+
+concurrency:
+  group: "placsp-es-incremental"
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      CIVANT_TENANT_ID: ${{ secrets.CIVANT_TENANT_ID }}
+      DISPATCH_TENANT_ID: ${{ github.event.inputs.tenant_id }}
+      DISPATCH_START_DATE: ${{ github.event.inputs.start_date }}
+      DISPATCH_DRY_RUN: ${{ github.event.inputs.dry_run }}
+      DISPATCH_MAX_PAGES: ${{ github.event.inputs.max_pages }}
+      PSQL_BIN: psql
+      API_BASE_URL: https://civantapp.vercel.app
+      APP_ID: civantapp
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install psql
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Run PLACSP ES incremental sync
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TENANT_ID="${CIVANT_TENANT_ID:-${DISPATCH_TENANT_ID:-civant_default}}"
+          START_DATE="${DISPATCH_START_DATE:-}"
+          DRY_RUN="${DISPATCH_DRY_RUN:-false}"
+          MAX_PAGES="${DISPATCH_MAX_PAGES:-40}"
+
+          if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
+            echo "ERROR: SUPABASE_DB_URL secret is required."
+            exit 1
+          fi
+
+          if [[ "${SUPABASE_DB_URL}" != *"sslmode=require"* ]]; then
+            echo "ERROR: SUPABASE_DB_URL must include sslmode=require."
+            exit 1
+          fi
+
+          export MAX_PAGES
+          ./scripts/rollout-placsp-es-incremental.sh "${TENANT_ID}" "${START_DATE}" "${DRY_RUN}"
