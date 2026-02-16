@@ -241,14 +241,28 @@ export async function getDashboardStats(req: RequestLike) {
   if (error) throw Object.assign(new Error(error.message), { status: 500 });
 
   const row = Array.isArray(data) && data.length ? data[0] : null;
+  let openTendersNow = 0;
+  const openNowResult = await supabase.rpc('count_open_tenders_now', {
+    p_tenant_id: tenantId
+  });
+  if (openNowResult.error) {
+    throw Object.assign(new Error(openNowResult.error.message), { status: 500 });
+  }
+  openTendersNow = toNumber(openNowResult.data);
+
+  const baseStats = row || {
+    tenant_id: tenantId,
+    total_tenders: 0,
+    new_tenders_24h: 0,
+    deadlines_in_7_days: 0,
+    alerts_triggered_24h: 0
+  };
+
   return {
     success: true,
-    stats: row || {
-      tenant_id: tenantId,
-      total_tenders: 0,
-      new_tenders_24h: 0,
-      deadlines_in_7_days: 0,
-      alerts_triggered_24h: 0
+    stats: {
+      ...baseStats,
+      open_tenders_now: openTendersNow
     }
   };
 }
