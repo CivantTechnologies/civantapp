@@ -3,6 +3,7 @@ import { civant } from '@/api/civantClient';
 import { createPageUrl } from '../utils';
 import { useLocation } from 'react-router-dom';
 import { useTenant } from '@/lib/tenant';
+import { useAuth } from '@/lib/auth';
 import { 
     Search as SearchIcon, 
     Filter,
@@ -137,7 +138,9 @@ export default function Search() {
     const [filteredTenders, setFilteredTenders] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showFilters, setShowFilters] = useState(false);
+    const [searchMeta, setSearchMeta] = useState(null);
     const { activeTenantId, isLoadingTenants } = useTenant();
+    const { roles } = useAuth();
     
     // Filters
     const [keyword, setKeyword] = useState('');
@@ -279,6 +282,7 @@ export default function Search() {
         const filters = normalizeFilterSnapshot(snapshot);
 
         try {
+            const startedAtMs = Date.now();
             const response = await civant.functions.invoke('searchTenders', {
                 ...filters,
                 limit: 2000
@@ -291,14 +295,33 @@ export default function Search() {
                     : [];
 
             setTenders(data);
+            const apiMeta = response && typeof response.meta === 'object' ? response.meta : {};
+            setSearchMeta({
+                ...apiMeta,
+                elapsed_ms: Number(apiMeta.elapsed_ms) > 0 ? Number(apiMeta.elapsed_ms) : Date.now() - startedAtMs
+            });
         } catch (error) {
             console.warn('searchTenders function unavailable, using fallback search path:', error);
             try {
+                const startedAtMs = Date.now();
                 const fallbackData = await loadTendersFallback(filters);
                 setTenders(fallbackData);
+                setSearchMeta({
+                    search_engine: 'entities_fallback_client',
+                    returned_rows: Array.isArray(fallbackData) ? fallbackData.length : 0,
+                    scanned_rows: Array.isArray(fallbackData) ? fallbackData.length : 0,
+                    elapsed_ms: Date.now() - startedAtMs,
+                    fallback_reason: error?.message || 'searchTenders unavailable'
+                });
             } catch (fallbackError) {
                 console.error('Error loading tenders:', fallbackError);
                 setTenders([]);
+                setSearchMeta({
+                    search_engine: 'entities_fallback_client',
+                    returned_rows: 0,
+                    elapsed_ms: 0,
+                    fallback_error: fallbackError?.message || 'fallback failed'
+                });
             }
         } finally {
             setLoading(false);
@@ -437,6 +460,7 @@ export default function Search() {
 
     const hasPendingFilterChanges = !areFilterSnapshotsEqual(currentFilters, appliedFilters);
     const hasActiveFilters = !areFilterSnapshotsEqual(appliedFilters, DEFAULT_FILTERS);
+    const canViewSearchDiagnostics = Array.isArray(roles) && (roles.includes('admin') || roles.includes('creator'));
 
     const applySearch = () => {
         const nextFilters = normalizeFilterSnapshot(currentFilters);
@@ -679,6 +703,41 @@ export default function Search() {
                     </p>
                 ) : null}
             </div>
+
+            {canViewSearchDiagnostics && searchMeta ? (
+                <Card className="border border-civant-border bg-civant-navy/45 shadow-none">
+                    <CardContent className="p-3">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
+                            <div>
+                                <p className="text-slate-500">Engine</p>
+                                <p className="text-slate-200 font-medium">{String(searchMeta.search_engine || 'unknown')}</p>
+                            </div>
+                            <div>
+                                <p className="text-slate-500">Returned</p>
+                                <p className="text-slate-200 font-medium">{Number(searchMeta.returned_rows ?? filteredTenders.length ?? 0)}</p>
+                            </div>
+                            <div>
+                                <p className="text-slate-500">Scanned</p>
+                                <p className="text-slate-200 font-medium">{Number(searchMeta.scanned_rows || 0)}</p>
+                            </div>
+                            <div>
+                                <p className="text-slate-500">Candidates</p>
+                                <p className="text-slate-200 font-medium">{Number(searchMeta.candidate_rows || 0)}</p>
+                            </div>
+                            <div>
+                                <p className="text-slate-500">Latency</p>
+                                <p className="text-slate-200 font-medium">{Number(searchMeta.elapsed_ms || 0)} ms</p>
+                            </div>
+                            <div>
+                                <p className="text-slate-500">Zero-result log</p>
+                                <p className="text-slate-200 font-medium">
+                                    {searchMeta.zero_result_logged === true ? 'logged' : Number(searchMeta.returned_rows ?? 0) === 0 ? 'pending/failed' : 'n/a'}
+                                </p>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            ) : null}
             
             {/* Results Table */}
             <Card className="border border-civant-border bg-civant-navy/55 shadow-none overflow-hidden">
