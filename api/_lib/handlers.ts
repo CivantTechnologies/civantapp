@@ -8,6 +8,7 @@ import {
   requireTenantAccess,
   type CurrentUser
 } from './auth.js';
+import { createHash } from 'node:crypto';
 import { readJsonBody, type RequestLike } from './http.js';
 import { getServerSupabase } from './supabase.js';
 import type { ApiDatabase, Json } from './db.types.js';
@@ -324,6 +325,72 @@ function parseSearchWindowDays(value: string) {
   return days;
 }
 
+function hashTelemetryValue(value: string) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function sanitizeFiltersForTelemetry(tenantId: string, filters: SearchFilters) {
+  const normalizedKeyword = String(filters.keyword || '').trim().toLowerCase();
+  const normalizedBuyer = String(filters.buyerSearch || '').trim().toLowerCase();
+  const cpvCodes = Array.isArray(filters.cpvSearchCodes) ? filters.cpvSearchCodes.slice(0, 8) : [];
+
+  return {
+    country: filters.country,
+    source: filters.source,
+    deadline_within: filters.deadlineWithin,
+    industry: filters.industry,
+    institution_type: filters.institutionType,
+    last_tendered: filters.lastTendered,
+    cpv_search_codes: cpvCodes,
+    cpv_count: cpvCodes.length,
+    has_keyword: Boolean(normalizedKeyword),
+    has_buyer_search: Boolean(normalizedBuyer),
+    keyword_hash: normalizedKeyword ? hashTelemetryValue(`${tenantId}:${normalizedKeyword}`) : null,
+    buyer_search_hash: normalizedBuyer ? hashTelemetryValue(`${tenantId}:${normalizedBuyer}`) : null
+  };
+}
+
+async function recordZeroResultSearchTelemetry(params: {
+  supabase: any;
+  tenantId: string;
+  userId: string;
+  filters: SearchFilters;
+  meta: Record<string, unknown>;
+}) {
+  const { supabase, tenantId, userId, filters, meta } = params;
+  const filtersTelemetry = sanitizeFiltersForTelemetry(tenantId, filters);
+  const queryHash = hashTelemetryValue(JSON.stringify(filtersTelemetry));
+
+  const payload = {
+    tenant_id: tenantId,
+    user_id: userId || null,
+    search_engine: String(meta.search_engine || 'unknown'),
+    latency_ms: toNumber(meta.elapsed_ms),
+    scanned_rows: toNumber(meta.scanned_rows),
+    candidate_rows: toNumber(meta.candidate_rows),
+    returned_rows: 0,
+    query_hash: queryHash,
+    filters_json: filtersTelemetry,
+    metadata_json: {
+      limit: toNumber(meta.limit),
+      scan_limit: toNumber(meta.scan_limit),
+      hit_scan_limit: Boolean(meta.hit_scan_limit),
+      rpc_error: String(meta.rpc_error || '').slice(0, 300)
+    }
+  };
+
+  const { error } = await supabase
+    .from('search_zero_results_log')
+    .insert(payload);
+
+  if (error) {
+    console.warn('[search-zero-results-log] insert failed', error.message);
+    return false;
+  }
+
+  return true;
+}
+
 function normalizeTenderForSearch(row: unknown) {
   if (!row || typeof row !== 'object') return {};
   const base = row as Record<string, unknown>;
@@ -557,7 +624,8 @@ function isTenderMatch(tender: Record<string, unknown>, filters: SearchFilters) 
 }
 
 export async function searchTenders(req: RequestLike) {
-  const { tenantId } = await requireTenantScopedUser(req);
+  const startedAtMs = Date.now();
+  const { user, tenantId } = await requireTenantScopedUser(req);
   const supabase = getServerSupabase() as any;
   const body = readJsonBody<Record<string, unknown>>(req);
   const filters = normalizeSearchFilters(body);
@@ -583,15 +651,26 @@ export async function searchTenders(req: RequestLike) {
   if (!rpcResult.error) {
     const rpcRows = Array.isArray(rpcResult.data) ? rpcResult.data : [];
     const items = rpcRows.map((row) => normalizeTenderForSearch(row as Record<string, unknown>));
+    const meta: Record<string, unknown> = {
+      tenant_id: tenantId,
+      returned_rows: items.length,
+      limit,
+      search_engine: 'rpc_ranked',
+      elapsed_ms: Date.now() - startedAtMs
+    };
+    if (items.length === 0) {
+      meta.zero_result_logged = await recordZeroResultSearchTelemetry({
+        supabase,
+        tenantId,
+        userId: user.userId,
+        filters,
+        meta
+      });
+    }
     return {
       success: true,
       items,
-      meta: {
-        tenant_id: tenantId,
-        returned_rows: items.length,
-        limit,
-        search_engine: 'rpc_ranked'
-      }
+      meta
     };
   }
 
@@ -641,21 +720,32 @@ export async function searchTenders(req: RequestLike) {
   }
 
   const rankedResults = sortTendersByRelevance(results, filters).slice(0, limit);
+  const meta: Record<string, unknown> = {
+    tenant_id: tenantId,
+    scanned_rows: scannedRows,
+    candidate_rows: results.length,
+    returned_rows: rankedResults.length,
+    limit,
+    scan_limit: scanLimit,
+    hit_scan_limit: scannedRows >= scanLimit && results.length < candidateLimit,
+    search_engine: 'scan_ranked_fallback',
+    rpc_error: rpcResult.error.message,
+    elapsed_ms: Date.now() - startedAtMs
+  };
+  if (rankedResults.length === 0) {
+    meta.zero_result_logged = await recordZeroResultSearchTelemetry({
+      supabase,
+      tenantId,
+      userId: user.userId,
+      filters,
+      meta
+    });
+  }
 
   return {
     success: true,
     items: rankedResults,
-    meta: {
-      tenant_id: tenantId,
-      scanned_rows: scannedRows,
-      candidate_rows: results.length,
-      returned_rows: rankedResults.length,
-      limit,
-      scan_limit: scanLimit,
-      hit_scan_limit: scannedRows >= scanLimit && results.length < candidateLimit,
-      search_engine: 'scan_ranked_fallback',
-      rpc_error: rpcResult.error.message
-    }
+    meta
   };
 }
 
