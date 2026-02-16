@@ -233,7 +233,7 @@ export default function Predictions() {
           <div className="space-y-2">
             <PageTitle className="flex items-center gap-2">
               <Sparkles className="h-6 w-6 text-primary" />
-              Tender Predictions
+              Tender Panorama
             </PageTitle>
             <PageDescription>AI-powered forecasts based on historical contract award patterns.</PageDescription>
           </div>
