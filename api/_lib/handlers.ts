@@ -273,6 +273,49 @@ function parseTenderCpvCodes(value: unknown) {
   return output;
 }
 
+function parseTenderSources(value: unknown, fallback?: unknown) {
+  const seen = new Set<string>();
+  const output: string[] = [];
+
+  const addSource = (raw: unknown) => {
+    const source = String(raw || '').trim().toUpperCase();
+    if (!source || seen.has(source)) return;
+    seen.add(source);
+    output.push(source);
+  };
+
+  if (Array.isArray(value)) {
+    for (const item of value) addSource(item);
+  } else if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          for (const item of parsed) addSource(item);
+        } else {
+          addSource(trimmed);
+        }
+      } catch {
+        trimmed
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .forEach((item) => addSource(item));
+      }
+    } else {
+      trimmed
+        .split(',')
+        .map((item) => item.replace(/[{}"]/g, '').trim())
+        .filter(Boolean)
+        .forEach((item) => addSource(item));
+    }
+  }
+
+  addSource(fallback);
+  return output;
+}
+
 const CLOSED_STATUS_CODES = new Set([
   'RES', // resolved/result
   'ADJ', // adjudicated
@@ -401,7 +444,7 @@ function normalizeTenderForSearch(row: unknown) {
       : {};
 
   const merged: Record<string, unknown> = { ...data, ...base };
-  const tenderId = String(base.tender_id || data.tender_id || data.id || '').trim();
+  const tenderId = String(base.tender_id || base.canonical_id || data.tender_id || data.canonical_id || data.id || '').trim();
 
   if (tenderId) {
     if (!merged.id) merged.id = tenderId;
@@ -416,9 +459,12 @@ function normalizeTenderForSearch(row: unknown) {
   if (!merged.buyer_name && data.contracting_authority) {
     merged.buyer_name = data.contracting_authority;
   }
+  if (!merged.buyer_name && base.buyer_name_raw) {
+    merged.buyer_name = base.buyer_name_raw;
+  }
 
   if (!merged.country) {
-    merged.country = data.country || data.country_code || data.country_iso || null;
+    merged.country = data.country || data.country_code || data.country_iso || base.country || null;
   }
 
   const cpvCodes = merged.cpv_codes;
@@ -431,17 +477,35 @@ function normalizeTenderForSearch(row: unknown) {
   if (!merged.publication_date && typeof base.published_at === 'string') {
     merged.publication_date = base.published_at;
   }
+  if (!merged.publication_date && typeof base.publication_date === 'string') {
+    merged.publication_date = base.publication_date;
+  }
 
   if (!merged.first_seen_at) {
     merged.first_seen_at = data.first_seen_at || base.published_at || base.updated_at || null;
   }
 
   if (!merged.deadline_date) {
-    merged.deadline_date = data.deadline_date || data.event_deadline_date || data.submission_deadline || null;
+    merged.deadline_date = data.deadline_date || data.event_deadline_date || data.submission_deadline || base.deadline_date || null;
   }
 
   if (!merged.url && data.source_url) {
     merged.url = data.source_url;
+  }
+  if (!merged.url && base.source_url) {
+    merged.url = base.source_url;
+  }
+
+  if (!merged.source && base.source) {
+    merged.source = base.source;
+  }
+
+  const sourceSummary = parseTenderSources(
+    merged.verification_sources || data.verification_sources || base.verification_sources,
+    merged.source || base.source
+  );
+  if (sourceSummary.length > 0) {
+    merged.verification_sources = sourceSummary;
   }
 
   return merged;
@@ -543,7 +607,7 @@ function sortTendersByRelevance(tenders: Record<string, unknown>[], filters: Sea
 
 function isTenderMatch(tender: Record<string, unknown>, filters: SearchFilters) {
   const country = String(tender.country || '').trim().toUpperCase();
-  const source = String(tender.source || '').trim();
+  const sources = parseTenderSources(tender.verification_sources, tender.source);
   const title = String(tender.title || '').toLowerCase();
   const buyerName = String(tender.buyer_name || '').toLowerCase();
 
@@ -556,7 +620,12 @@ function isTenderMatch(tender: Record<string, unknown>, filters: SearchFilters) 
     return false;
   }
 
-  if (filters.source !== 'all' && source !== filters.source) {
+  if (filters.source !== 'all') {
+    const wanted = String(filters.source || '').trim().toUpperCase();
+    if (!sources.includes(wanted)) return false;
+  }
+
+  if (filters.source !== 'all' && !sources.length) {
     return false;
   }
 
@@ -675,29 +744,6 @@ export async function searchTenders(req: RequestLike) {
   }
 
   const rpcErrorMessage = String(rpcResult.error?.message || '');
-  const rpcTimedOut = /statement timeout|timeout/i.test(rpcErrorMessage);
-  if (rpcTimedOut) {
-    const meta: Record<string, unknown> = {
-      tenant_id: tenantId,
-      returned_rows: 0,
-      limit,
-      search_engine: 'rpc_timeout_guard',
-      rpc_error: rpcErrorMessage,
-      elapsed_ms: Date.now() - startedAtMs
-    };
-    meta.zero_result_logged = await recordZeroResultSearchTelemetry({
-      supabase,
-      tenantId,
-      userId: user.userId,
-      filters,
-      meta
-    });
-    return {
-      success: true,
-      items: [],
-      meta
-    };
-  }
 
   const days = parseSearchWindowDays(filters.lastTendered);
   const publishedCutoff = days
@@ -711,18 +757,19 @@ export async function searchTenders(req: RequestLike) {
 
   while (scannedRows < scanLimit && results.length < candidateLimit) {
     let qb = supabase
-      .from('TendersCurrent')
+      .from('canonical_tenders')
       .select('*')
       .eq('tenant_id', tenantId)
-      .order('published_at', { ascending: false })
+      .order('last_seen_at', { ascending: false })
       .range(skip, skip + pageSize - 1);
 
     if (filters.source !== 'all') {
-      qb = qb.eq('source', filters.source);
+      const sourceValue = String(filters.source || '').trim().toUpperCase();
+      qb = qb.or(`source.eq.${sourceValue},verification_sources.cs.{${sourceValue}}`);
     }
 
     if (publishedCutoff) {
-      qb = qb.gte('published_at', publishedCutoff.toISOString());
+      qb = qb.gte('last_seen_at', publishedCutoff.toISOString());
     }
 
     const { data, error } = await qb;
