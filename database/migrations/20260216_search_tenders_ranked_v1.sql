@@ -128,7 +128,7 @@ filtered as (
   select
     e.*,
     (
-      array_length(e.cpv_search_codes, 1) > 0
+      cardinality(e.cpv_search_codes) > 0
       and exists (
         select 1
         from unnest(e.cpv_search_codes) as wanted
@@ -141,7 +141,7 @@ filtered as (
     and (e.keyword is null or e.title_lc like ('%' || e.keyword || '%') or e.buyer_name_lc like ('%' || e.keyword || '%'))
     and (e.buyer_search is null or e.buyer_name_lc like ('%' || e.buyer_search || '%'))
     and (
-      array_length(e.cpv_search_codes, 1) = 0
+      cardinality(e.cpv_search_codes) = 0
       or exists (
         select 1
         from unnest(e.cpv_search_codes) as wanted
