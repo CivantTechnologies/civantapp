@@ -36,6 +36,9 @@ jobs:
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       # Optional. If not set, workflow_dispatch default is used; schedule defaults to civant_default.
       CIVANT_TENANT_ID: ${{ secrets.CIVANT_TENANT_ID }}
+      DISPATCH_TENANT_ID: ${{ github.event.inputs.tenant_id }}
+      DISPATCH_START_DATE: ${{ github.event.inputs.start_date }}
+      DISPATCH_DRY_RUN: ${{ github.event.inputs.dry_run }}
       PSQL_BIN: psql
 
     steps:
@@ -58,12 +61,17 @@ jobs:
           set -euo pipefail
 
           # Determine tenant + args.
-          TENANT_ID="${CIVANT_TENANT_ID:-${{ github.event.inputs.tenant_id || 'civant_default' }}}"
-          START_DATE="${{ github.event.inputs.start_date || '' }}"
-          DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
+          TENANT_ID="${CIVANT_TENANT_ID:-${DISPATCH_TENANT_ID:-civant_default}}"
+          START_DATE="${DISPATCH_START_DATE:-}"
+          DRY_RUN="${DISPATCH_DRY_RUN:-false}"
 
           if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
             echo "ERROR: SUPABASE_DB_URL secret is required."
+            exit 1
+          fi
+
+          if [[ "${SUPABASE_DB_URL}" != *"sslmode=require"* ]]; then
+            echo "ERROR: SUPABASE_DB_URL must include sslmode=require."
             exit 1
           fi
 

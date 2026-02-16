@@ -35,6 +35,32 @@ export default function Home() {
 
     const getTenderPublicationDate = (tender) => tender.publication_date || tender.published_at || tender.first_seen_at || tender.updated_at;
     const getTenderFirstSeen = (tender) => tender.first_seen_at || tender.published_at || tender.publication_date || tender.updated_at;
+
+    const mapRunToSource = (run) => {
+        const candidates = [
+            run?.source,
+            run?.connector_key,
+            run?.connector_id
+        ].map((value) => String(value || '').trim()).filter(Boolean);
+
+        for (const candidate of candidates) {
+            const upper = candidate.toUpperCase();
+            if (upper.startsWith('ETENDERS_IE_INCREMENTAL')) return 'ETENDERS_IE';
+            if (upper.startsWith('ETENDERS_IE')) return 'ETENDERS_IE';
+            if (upper.startsWith('BOAMP_FR')) return 'BOAMP_FR';
+            if (upper.startsWith('PLACSP_ES')) return 'PLACSP_ES';
+            if (upper === 'TED' || upper.startsWith('TED_')) return 'TED';
+        }
+
+        return '';
+    };
+
+    const readRunFetchedCount = (run) => {
+        const metadata = run?.metadata && typeof run.metadata === 'object' ? run.metadata : {};
+        const value = run?.fetched_count ?? metadata?.fetched_count ?? metadata?.rows_fetched ?? 0;
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : 0;
+    };
     
     const loadDashboardData = async () => {
         try {
@@ -85,8 +111,15 @@ export default function Home() {
             const runs = await civant.entities.ConnectorRuns.list('-started_at', 50);
             const latestBySource = {};
             runs.forEach(run => {
-                if (!latestBySource[run.source]) {
-                    latestBySource[run.source] = run;
+                const source = mapRunToSource(run);
+                if (!source) return;
+                if (!latestBySource[source]) {
+                    latestBySource[source] = {
+                        ...run,
+                        source,
+                        fetched_count: readRunFetchedCount(run),
+                        run_started_at: run?.started_at || run?.created_at || null
+                    };
                 }
             });
             setConnectorHealth(Object.values(latestBySource));
@@ -317,7 +350,7 @@ export default function Home() {
                         <CardContent className="space-y-3">
                             {['BOAMP_FR', 'TED', 'ETENDERS_IE', 'PLACSP_ES'].map(source => {
                                 const run = connectorHealth.find(r => r.source === source);
-                                const status = run?.status;
+                                const status = String(run?.status || '').toLowerCase();
                                 
                                 return (
                                     <div 
@@ -327,7 +360,7 @@ export default function Home() {
                                         <div className="flex items-center gap-3">
                                             {status === 'success' ? (
                                                 <CheckCircle2 className="h-5 w-5 text-primary" />
-                                            ) : status === 'fail' ? (
+                                            ) : status === 'fail' || status === 'failed' || status === 'error' ? (
                                                 <AlertCircle className="h-5 w-5 text-destructive" />
                                             ) : status === 'partial' ? (
                                                 <AlertCircle className="h-5 w-5 text-card-foreground" />
@@ -338,7 +371,7 @@ export default function Home() {
                                                 <p className="font-medium text-sm text-card-foreground">{source}</p>
                                                 {run ? (
                                                     <p className="text-xs text-muted-foreground">
-                                                        {formatDistanceToNow(new Date(run.started_at), { addSuffix: true })}
+                                                        {run.run_started_at ? formatDistanceToNow(new Date(run.run_started_at), { addSuffix: true }) : 'No run timestamp'}
                                                     </p>
                                                 ) : (
                                                     <p className="text-xs text-muted-foreground">Never run</p>
