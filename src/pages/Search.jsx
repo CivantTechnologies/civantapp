@@ -31,6 +31,10 @@ function parseCpvFilterCodes(value) {
 }
 
 function parseTenderCpvCodes(value) {
+    if (Array.isArray(value)) {
+        return parseTenderCpvCodes(value.join(','));
+    }
+
     const seen = new Set();
     const output = [];
     const parts = String(value || '')
@@ -44,6 +48,36 @@ function parseTenderCpvCodes(value) {
         output.push(code);
     }
     return output;
+}
+
+const CLOSED_STATUS_CODES = new Set(['RES', 'ADJ', 'CAN', 'DES']);
+
+function parseTenderDeadlineDate(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+
+    // Date-only deadlines remain valid until the end of the day.
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        const parsed = new Date(`${raw}T23:59:59.999Z`);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isClosedTenderByStatus(tender) {
+    const statusCode = String(tender?.status_code || '').trim().toUpperCase();
+    const noticeType = String(tender?.notice_type || '').trim().toLowerCase();
+    if (noticeType === 'award') return true;
+    return CLOSED_STATUS_CODES.has(statusCode);
+}
+
+function formatDateSafe(value, pattern = 'MMM d, yyyy') {
+    if (!value) return '-';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '-';
+    return format(parsed, pattern);
 }
 
 const DEFAULT_FILTERS = Object.freeze({
@@ -310,8 +344,9 @@ export default function Search() {
             const futureDate = addDays(now, days);
             
             filtered = filtered.filter(t => {
-                if (!t.deadline_date) return false;
-                const deadline = new Date(t.deadline_date);
+                if (isClosedTenderByStatus(t)) return false;
+                const deadline = parseTenderDeadlineDate(t.deadline_date);
+                if (!deadline) return false;
                 return deadline >= now && deadline <= futureDate;
             });
         }
@@ -715,18 +750,12 @@ export default function Search() {
                                             </td>
                                             <td className="px-4 py-4 hidden lg:table-cell">
                                                 <p className="text-sm text-slate-300">
-                                                    {getTenderPublicationDate(tender) 
-                                                        ? format(new Date(getTenderPublicationDate(tender)), 'MMM d, yyyy')
-                                                        : '-'
-                                                    }
+                                                    {formatDateSafe(getTenderPublicationDate(tender))}
                                                 </p>
                                             </td>
                                             <td className="px-4 py-4">
                                                 <p className="text-sm text-slate-300">
-                                                    {tender.deadline_date 
-                                                        ? format(new Date(tender.deadline_date), 'MMM d, yyyy')
-                                                        : '-'
-                                                    }
+                                                    {formatDateSafe(tender.deadline_date)}
                                                 </p>
                                             </td>
                                             <td className="px-4 py-4 hidden sm:table-cell">
