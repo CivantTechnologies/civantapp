@@ -50,6 +50,7 @@ export default function Home() {
                 dashboardStats = statsPayload?.stats || null;
             } catch (error) {
                 console.warn('getDashboardStats unavailable, falling back to client estimates:', error);
+                setLoadError('Live dashboard aggregates are temporarily unavailable; showing sample-based estimates.');
             }
             
             const now = new Date();
@@ -69,7 +70,7 @@ export default function Home() {
                 newTenders24h: Number(dashboardStats?.new_tenders_24h ?? fallbackNew24h ?? 0),
                 deadlinesIn7Days: Number(dashboardStats?.deadlines_in_7_days ?? fallbackDeadlines7d ?? 0),
                 alertsTriggered: Number(dashboardStats?.alerts_triggered_24h ?? 0),
-                totalTenders: Number(dashboardStats?.total_tenders ?? 0)
+                totalTenders: Number(dashboardStats?.total_tenders ?? allTenders.length ?? 0)
             });
             
             // Latest tenders
