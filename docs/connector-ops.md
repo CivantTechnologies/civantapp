@@ -6,6 +6,7 @@ Scope today:
 - `ETENDERS_IE` incremental connector (Ireland)
 - `BOAMP_FR` incremental connector (France)
 - `PLACSP_ES` incremental connector (Spain)
+- `TED` incremental connector (IE/FR/ES scoped)
 
 ## 1) Prerequisites
 
@@ -112,7 +113,38 @@ GitHub Actions automation:
 - schedule: daily `06:15 UTC`
 - manual dispatch supports `tenant_id`, `start_date`, `dry_run`, `max_pages`
 
-## 5) Unified Health Checks
+## 5) TED Incremental
+
+Dry-run first:
+
+```bash
+COUNTRIES=IRL,FRA,ESP MAX_PAGES=10 ./scripts/rollout-ted-incremental.sh civant_default 2026-02-01 true
+```
+
+Real write run:
+
+```bash
+COUNTRIES=IRL,FRA,ESP MAX_PAGES=40 ./scripts/rollout-ted-incremental.sh civant_default 2026-02-01 false
+```
+
+QA pack:
+
+```bash
+/opt/homebrew/opt/libpq/bin/psql "$SUPABASE_DB_URL" -v tenant_id='civant_default' -f scripts/qa-ted-incremental.sql
+```
+
+Expected healthy pattern:
+- first scoped run: `inserted_count > 0`
+- immediate replay: mostly `noop_count > 0`, `inserted_count=0`, `updated_count=0`
+- cursor in `ConnectorConfig.config.cursor.value` advances to latest TED `published_at`
+- if no cursor exists and no `START_DATE` is passed, rollout bootstraps with a 30-day window
+
+GitHub Actions automation:
+- workflow file: `.github/workflows/ted-incremental.yml`
+- schedule: daily `04:45 UTC`
+- manual dispatch supports `tenant_id`, `start_date`, `dry_run`, `countries`, `max_pages`
+
+## 6) Unified Health Checks
 
 Connector runs summary:
 
@@ -129,6 +161,7 @@ select
 from public."ConnectorRuns"
 where tenant_id = 'civant_default'
   and connector_key in (
+    'ted_incremental:civant_default',
     'etenders_ie_incremental:civant_default',
     'boamp_fr_incremental:civant_default',
     'placsp_es_incremental:civant_default'
@@ -160,12 +193,12 @@ select
   data->>'source_url' as source_url
 from public."TendersCurrent"
 where tenant_id = 'civant_default'
-  and source in ('ETENDERS_IE', 'BOAMP_FR', 'PLACSP_ES')
+  and source in ('TED', 'ETENDERS_IE', 'BOAMP_FR', 'PLACSP_ES')
 order by published_at desc nulls last
 limit 25;
 ```
 
-## 6) Interpreting Results
+## 7) Interpreting Results
 
 Healthy:
 - Run status is `success`
@@ -179,8 +212,9 @@ Needs investigation:
 - sudden drop in source row counts
 - high null-rate on key fields (`title`, `publication_date`, `source_url`)
 
-## 7) Current known constraints
+## 8) Current known constraints
 
-- `TED` is intentionally deferred due to EU-wide volume.
-- For eTenders implementation details and cursor logic, see:
+- TED incremental is scoped to `IRL,FRA,ESP` by default to keep runtime/cost predictable.
+- For connector implementation details and cursor logic, see:
+  - `docs/ted-incremental.md`
   - `docs/etenders-ie-incremental.md`
