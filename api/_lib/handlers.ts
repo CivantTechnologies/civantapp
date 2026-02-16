@@ -674,6 +674,31 @@ export async function searchTenders(req: RequestLike) {
     };
   }
 
+  const rpcErrorMessage = String(rpcResult.error?.message || '');
+  const rpcTimedOut = /statement timeout|timeout/i.test(rpcErrorMessage);
+  if (rpcTimedOut) {
+    const meta: Record<string, unknown> = {
+      tenant_id: tenantId,
+      returned_rows: 0,
+      limit,
+      search_engine: 'rpc_timeout_guard',
+      rpc_error: rpcErrorMessage,
+      elapsed_ms: Date.now() - startedAtMs
+    };
+    meta.zero_result_logged = await recordZeroResultSearchTelemetry({
+      supabase,
+      tenantId,
+      userId: user.userId,
+      filters,
+      meta
+    });
+    return {
+      success: true,
+      items: [],
+      meta
+    };
+  }
+
   const days = parseSearchWindowDays(filters.lastTendered);
   const publishedCutoff = days
     ? new Date(Date.now() - days * 24 * 60 * 60 * 1000)
