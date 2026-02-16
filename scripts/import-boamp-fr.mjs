@@ -530,6 +530,7 @@ async function main() {
   }
 
   const source = 'BOAMP_FR';
+  const connectorKey = String(args['connector-key'] || source);
   const sourceCursor = `file:${file}`;
   const startedAt = new Date().toISOString();
   const rawMetrics = { inserted: 0, duplicates: 0, failed: 0, errors: [] };
@@ -763,7 +764,7 @@ async function main() {
   emitStatus('finalizing');
 
   const runErrors = [...rawMetrics.errors, ...canonicalMetrics.errors, ...currentMetrics.errors].slice(0, 50);
-    const metrics = {
+  const metrics = {
     total_rows: Math.max(recordNumber - 1, 0),
     start_record: startRecord,
     skipped_before_start: skippedBeforeStart,
@@ -778,6 +779,7 @@ async function main() {
   };
 
   if (!dryRun) {
+    const finishedAt = new Date().toISOString();
     await putEntityById({
       baseUrl,
       appId,
@@ -789,10 +791,46 @@ async function main() {
         metrics,
         errors: runErrors,
         cursor: `record:${recordNumber}:line:${lineNumber}`,
-        finished_at: new Date().toISOString()
+        finished_at: finishedAt
       },
       includeTenantHeader
     });
+
+    // Mirror BOAMP runs into ConnectorRuns so Connector Health reflects real execution status.
+    // Keep this best-effort to avoid breaking ingestion when connector logging has schema drift.
+    try {
+      const failedCount = rawMetrics.failed + canonicalMetrics.failed + currentMetrics.failed;
+      const insertedCount = currentMetrics.inserted;
+      const noopCount = Math.max(processed - insertedCount - failedCount - dedupedInFile, 0);
+      await postRows({
+        baseUrl,
+        appId,
+        tenantId,
+        table: 'ConnectorRuns',
+        rows: [{
+          tenant_id: tenantId,
+          connector_key: connectorKey,
+          status: runErrors.length ? 'partial' : 'success',
+          started_at: startedAt,
+          finished_at: finishedAt,
+          metadata: {
+            source,
+            run_id: runId,
+            fetched_count: processed,
+            inserted_count: insertedCount,
+            updated_count: 0,
+            noop_count: noopCount,
+            versioned_count: 0,
+            deduped_in_file: dedupedInFile,
+            failed_count: failedCount,
+            cursor: `record:${recordNumber}:line:${lineNumber}`
+          }
+        }],
+        includeTenantHeader
+      });
+    } catch (connectorRunError) {
+      console.warn(`WARN: failed to write ConnectorRuns mirror: ${connectorRunError?.message || connectorRunError}`);
+    }
   }
 
   console.log(JSON.stringify({
