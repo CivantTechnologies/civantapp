@@ -52,7 +52,7 @@ export default function Layout({ children, currentPageName }) {
   const navItems = [
     { name: 'Home', page: 'Home', icon: LayoutDashboard },
     { name: 'Profile', page: 'Profile', icon: UserRound },
-    { name: 'Predictions', page: 'Predictions', icon: BarChart3 },
+    { name: 'Forecast', page: 'Predictions', icon: BarChart3 },
     { name: 'Search', page: 'Search', icon: Search },
     { name: 'Competitors', page: 'Competitors', icon: Radar },
     { name: 'Alerts', page: 'Alerts', icon: Bell },
