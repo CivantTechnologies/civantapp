@@ -51,30 +51,35 @@ Expected healthy pattern:
 - `fetched_count > 0` for active windows
 - replay runs may show `inserted_count=0`, `noop_count>0` (this is normal)
 
-## 3) BOAMP FR Connector
+## 3) BOAMP FR Incremental
 
-Use local BOAMP CSV path (large file; canary first):
-
-```bash
-node scripts/import-boamp-fr.mjs \
-  --file /Users/davidmanrique/projects/boamp.csv \
-  --tenant-id civant_default \
-  --limit 10 \
-  --batch-size 20
-```
-
-Replay test (same command again):
-- should trend to `inserted=0`, `updated=0`, `noop>0` for unchanged rows
-
-Larger run (careful, heavier):
+Dry-run first:
 
 ```bash
-node scripts/import-boamp-fr.mjs \
-  --file /Users/davidmanrique/projects/boamp.csv \
-  --tenant-id civant_default \
-  --start-record 1 \
-  --batch-size 120
+./scripts/rollout-boamp-fr-incremental.sh civant_default 2026-02-01 true
 ```
+
+Real write run:
+
+```bash
+./scripts/rollout-boamp-fr-incremental.sh civant_default 2026-02-01 false
+```
+
+QA pack:
+
+```bash
+/opt/homebrew/opt/libpq/bin/psql "$SUPABASE_DB_URL" -v tenant_id='civant_default' -f scripts/qa-boamp-fr-incremental.sql
+```
+
+Expected healthy pattern:
+- first scoped run: `inserted_count > 0`
+- immediate replay: mostly `noop_count > 0`, `inserted_count=0`, `updated_count=0`
+- cursor in `ConnectorConfig.config.cursor.value` advances to latest `published_at`
+
+GitHub Actions automation:
+- workflow file: `.github/workflows/boamp-fr-incremental.yml`
+- schedule: daily `05:45 UTC`
+- manual dispatch supports `tenant_id`, `start_date`, `dry_run`, `max_pages`
 
 ## 4) Unified Health Checks
 
@@ -92,7 +97,7 @@ select
   metadata->>'noop_count'     as noop_count
 from public."ConnectorRuns"
 where tenant_id = 'civant_default'
-  and connector_key in ('etenders_ie_incremental:civant_default', 'BOAMP_FR')
+  and connector_key in ('etenders_ie_incremental:civant_default', 'boamp_fr_incremental:civant_default')
 order by started_at desc
 limit 20;
 ```
