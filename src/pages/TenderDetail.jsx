@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { civant } from '@/api/civantClient';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '../utils';
@@ -12,7 +12,7 @@ import {
     Tag,
     DollarSign,
     FileText,
-    History,
+    Link2,
     Bell,
     Loader2,
     MessageSquare,
@@ -28,7 +28,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 
 export default function TenderDetail() {
     const [tender, setTender] = useState(null);
-    const [versions, setVersions] = useState([]);
+    const [linkedNotices, setLinkedNotices] = useState([]);
     const [loading, setLoading] = useState(true);
     const [integrationLoading, setIntegrationLoading] = useState(null);
     const [enrichment, setEnrichment] = useState(null);
@@ -37,6 +37,20 @@ export default function TenderDetail() {
     
     const urlParams = new URLSearchParams(window.location.search);
     const tenderId = urlParams.get('id');
+    const actionableTenderId = useMemo(() => {
+        if (!tender) return null;
+
+        if (Array.isArray(linkedNotices) && linkedNotices.length > 0) {
+            const preferred = linkedNotices.find((item) => item?.source && item?.source !== 'TED') || linkedNotices[0];
+            const source = String(preferred?.source || '').trim();
+            const sourceNoticeId = String(preferred?.source_notice_id || '').trim();
+            if (source && sourceNoticeId) {
+                return `${source}:${sourceNoticeId}`;
+            }
+        }
+
+        return tender.id || tender.canonical_id || null;
+    }, [linkedNotices, tender]);
     
     useEffect(() => {
         if (isLoadingTenants) return;
@@ -48,19 +62,47 @@ export default function TenderDetail() {
     
     const loadTender = async () => {
         try {
-            const data = await civant.entities.TendersCurrent.filter({ id: tenderId });
+            const data = await civant.entities.canonical_tenders.filter({ id: tenderId });
             if (data.length > 0) {
                 setTender(data[0]);
-                
-                // Load versions
-                const versionData = await civant.entities.TenderVersions.filter({
-                    tender_uid: data[0].tender_uid
-                });
-                setVersions(versionData.sort((a, b) => b.version_number - a.version_number));
+
+                const canonicalId = data[0].canonical_id || data[0].id;
+                const links = await civant.entities.canonical_notice_links.filter(
+                    { canonical_id: canonicalId },
+                    '-linked_at',
+                    250
+                );
+                const noticeIds = links
+                    .map((item) => item.notice_id)
+                    .filter((id) => typeof id === 'string' && id.length > 0);
+
+                let noticeRows = [];
+                if (noticeIds.length > 0) {
+                    noticeRows = await civant.entities.notices.filter(
+                        { notice_id: { $in: noticeIds } },
+                        '-publication_date',
+                        Math.min(noticeIds.length, 250)
+                    );
+                }
+
+                const linkByNoticeId = new Map(links.map((item) => [item.notice_id, item]));
+                const mergedNotices = noticeRows
+                    .map((notice) => ({
+                        ...notice,
+                        link_tier: linkByNoticeId.get(notice.notice_id)?.link_tier || null,
+                        match_score: linkByNoticeId.get(notice.notice_id)?.match_score || null,
+                        linked_at: linkByNoticeId.get(notice.notice_id)?.linked_at || null
+                    }))
+                    .sort((a, b) => {
+                        const left = new Date(a.publication_date || a.ingested_at || 0).getTime();
+                        const right = new Date(b.publication_date || b.ingested_at || 0).getTime();
+                        return right - left;
+                    });
+                setLinkedNotices(mergedNotices);
 
                 // Load enrichment data
                 const enrichmentData = await civant.entities.TenderEnrichment.filter({
-                    tender_uid: data[0].tender_uid
+                    tender_uid: canonicalId
                 });
                 if (enrichmentData.length > 0) {
                     setEnrichment(enrichmentData[0]);
@@ -97,9 +139,10 @@ export default function TenderDetail() {
     };
     
     const handleAddToCalendar = async () => {
+        if (!actionableTenderId) return;
         setIntegrationLoading('calendar');
         try {
-            const response = await civant.functions.invoke('addToCalendar', { tender_id: tender.id });
+            const response = await civant.functions.invoke('addToCalendar', { tender_id: actionableTenderId });
             if (response.data.success) {
                 alert('Tender deadline added to your Google Calendar!');
             } else {
@@ -113,9 +156,10 @@ export default function TenderDetail() {
     };
     
     const handleEnrichTender = async () => {
+        if (!actionableTenderId) return;
         setEnriching(true);
         try {
-            const response = await civant.functions.invoke('enrichTender', { tender_id: tender.id });
+            const response = await civant.functions.invoke('enrichTender', { tender_id: actionableTenderId });
             if (response.data.success) {
                 setEnrichment(response.data.enrichment);
                 alert('Tender enriched successfully with AI insights!');
@@ -132,11 +176,12 @@ export default function TenderDetail() {
     const handleSendToSlack = async () => {
         const channel = prompt('Enter Slack channel (e.g., #tenders or leave empty for #general):');
         if (channel === null) return;
+        if (!actionableTenderId) return;
         
         setIntegrationLoading('slack');
         try {
             const response = await civant.functions.invoke('sendToSlack', { 
-                tender_id: tender.id,
+                tender_id: actionableTenderId,
                 channel: channel || '#general'
             });
             if (response.data.success) {
@@ -149,18 +194,6 @@ export default function TenderDetail() {
         } finally {
             setIntegrationLoading(null);
         }
-    };
-    
-    const getChangeTypeBadge = (type) => {
-        const labels = {
-            'new_notice': { label: 'New Notice', color: 'bg-primary/20 text-primary border-primary/30' },
-            'field_changed': { label: 'Fields Changed', color: 'bg-secondary text-secondary-foreground border-border' },
-            'deadline_changed': { label: 'Deadline Changed', color: 'bg-primary/15 text-card-foreground border-border' },
-            'corrected': { label: 'Correction', color: 'bg-secondary text-secondary-foreground border-border' },
-            'award_published': { label: 'Award Published', color: 'bg-primary/20 text-primary border-primary/30' },
-            'unknown': { label: 'Unknown', color: 'bg-secondary text-secondary-foreground border-border' }
-        };
-        return labels[type] || labels.unknown;
     };
     
     if (loading) {
@@ -234,7 +267,7 @@ export default function TenderDetail() {
                     <Button 
                         variant="outline"
                         onClick={handleEnrichTender}
-                        disabled={enriching || enrichment}
+                        disabled={enriching || enrichment || !actionableTenderId}
                     >
                         {enriching ? (
                             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -247,7 +280,7 @@ export default function TenderDetail() {
                         <Button 
                             variant="outline"
                             onClick={handleAddToCalendar}
-                            disabled={integrationLoading === 'calendar'}
+                            disabled={integrationLoading === 'calendar' || !actionableTenderId}
                         >
                             {integrationLoading === 'calendar' ? (
                                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -260,7 +293,7 @@ export default function TenderDetail() {
                     <Button 
                         variant="outline"
                         onClick={handleSendToSlack}
-                        disabled={integrationLoading === 'slack'}
+                        disabled={integrationLoading === 'slack' || !actionableTenderId}
                     >
                         {integrationLoading === 'slack' ? (
                             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -375,13 +408,13 @@ export default function TenderDetail() {
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <div>
-                            <p className="text-xs text-muted-foreground uppercase tracking-wide">Tender UID</p>
-                            <Input value={tender.tender_uid || ''} readOnly className="mt-1 font-mono text-xs" />
+                            <p className="text-xs text-muted-foreground uppercase tracking-wide">Canonical ID</p>
+                            <Input value={tender.canonical_id || tender.id || ''} readOnly className="mt-1 font-mono text-xs" />
                         </div>
                         
                         <div>
-                            <p className="text-xs text-muted-foreground uppercase tracking-wide">Source Notice ID</p>
-                            <Input value={tender.source_notice_id || ''} readOnly className="mt-1 font-mono text-xs" />
+                            <p className="text-xs text-muted-foreground uppercase tracking-wide">Coverage</p>
+                            <Input value={tender.coverage_status || 'national_only'} readOnly className="mt-1 font-mono text-xs" />
                         </div>
                         
                         <div>
@@ -405,69 +438,79 @@ export default function TenderDetail() {
                         </div>
                         
                         <div>
-                            <p className="text-xs text-muted-foreground uppercase tracking-wide">Fingerprint</p>
-                            <Input value={tender.fingerprint || ''} readOnly className="mt-1 font-mono text-xs" />
+                            <p className="text-xs text-muted-foreground uppercase tracking-wide">Verification</p>
+                            <Input value={tender.verification_level || 'unverified'} readOnly className="mt-1 font-mono text-xs" />
                         </div>
+
+                        {Array.isArray(tender.ted_notice_ids) && tender.ted_notice_ids.length > 0 ? (
+                            <div>
+                                <p className="text-xs text-muted-foreground uppercase tracking-wide">TED Notice IDs</p>
+                                <p className="text-sm text-card-foreground mt-1 break-all">
+                                    {tender.ted_notice_ids.join(', ')}
+                                </p>
+                            </div>
+                        ) : null}
                     </CardContent>
                 </Card>
             </div>
             
-            {/* Version History */}
+            {/* Sources */}
             <Card>
                 <CardHeader className="pb-3">
                     <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                        <History className="h-5 w-5" />
-                        Version History
+                        <Link2 className="h-5 w-5" />
+                        Sources
                     </CardTitle>
                 </CardHeader>
                 <CardContent>
-                    {versions.length === 0 ? (
-                        <p className="text-muted-foreground text-center py-6">No version history available</p>
+                    {linkedNotices.length === 0 ? (
+                        <p className="text-muted-foreground text-center py-6">No linked source notices available</p>
                     ) : (
                         <div className="space-y-4">
-                            {versions.map((version) => {
-                                const changeInfo = getChangeTypeBadge(version.change_type);
-                                
+                            {linkedNotices.map((notice) => {
                                 return (
                                     <div 
-                                        key={version.id} 
+                                        key={notice.notice_id}
                                         className="relative pl-6 pb-4 border-l-2 border-border last:border-l-transparent last:pb-0"
                                     >
                                         <div className="absolute left-0 top-0 transform -translate-x-1/2 w-3 h-3 rounded-full bg-background border-2 border-primary" />
                                         
                                         <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
-                                            <Badge className={`${changeInfo.color} w-fit`}>
-                                                {changeInfo.label}
+                                            <Badge variant="secondary" className="w-fit">
+                                                {notice.source || 'UNKNOWN'}
                                             </Badge>
                                             <span className="text-sm text-muted-foreground">
-                                                Version {version.version_number}
+                                                {notice.source_notice_id || 'No source notice id'}
                                             </span>
+                                            {notice.link_tier ? (
+                                                <span className="text-sm text-muted-foreground">
+                                                    tier: {notice.link_tier}
+                                                </span>
+                                            ) : null}
                                             <span className="text-sm text-muted-foreground">
-                                                {version.change_date 
-                                                    ? format(new Date(version.change_date), 'MMM d, yyyy HH:mm')
+                                                {notice.publication_date
+                                                    ? format(new Date(notice.publication_date), 'MMM d, yyyy')
+                                                    : notice.ingested_at
+                                                    ? format(new Date(notice.ingested_at), 'MMM d, yyyy HH:mm')
                                                     : ''
                                                 }
                                             </span>
                                         </div>
-                                        
-                                        {version.change_type !== 'new_notice' && version.old_value && version.new_value && (
-                                            <div className="mt-2 p-3 bg-muted/40 border border-border rounded-lg text-xs">
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                    <div>
-                                                        <p className="text-muted-foreground mb-1 font-medium">Before</p>
-                                                        <pre className="text-card-foreground whitespace-pre-wrap overflow-x-auto">
-                                                            {version.old_value}
-                                                        </pre>
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-muted-foreground mb-1 font-medium">After</p>
-                                                        <pre className="text-card-foreground whitespace-pre-wrap overflow-x-auto">
-                                                            {version.new_value}
-                                                        </pre>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
+
+                                        <p className="text-sm text-card-foreground">
+                                            {notice.title || 'No title provided'}
+                                        </p>
+                                        {notice.source_url ? (
+                                            <a
+                                                href={notice.source_url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center text-sm text-primary mt-2 hover:underline"
+                                            >
+                                                View source notice
+                                                <ExternalLink className="h-3.5 w-3.5 ml-1" />
+                                            </a>
+                                        ) : null}
                                     </div>
                                 );
                             })}

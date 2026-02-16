@@ -9,6 +9,16 @@ const TENDERS_CURRENT_FIELD_MAP: Record<string, string> = {
   first_seen_at: 'published_at',
   last_seen_at: 'updated_at'
 };
+const CANONICAL_TENDERS_FIELD_MAP: Record<string, string> = {
+  id: 'canonical_id',
+  tender_uid: 'canonical_id',
+  published_at: 'last_seen_at',
+  first_seen_at: 'first_seen_at',
+  last_seen_at: 'last_seen_at'
+};
+const NOTICES_FIELD_MAP: Record<string, string> = {
+  id: 'notice_id'
+};
 const INGESTION_RUNS_FIELD_MAP: Record<string, string> = {
   id: 'run_id'
 };
@@ -23,6 +33,8 @@ const TENANT_SCOPED_TABLES = new Set([
   'ingestion_runs',
   'staging_records',
   'canonical_tenders',
+  'notices',
+  'canonical_notice_links',
   'entities',
   'entity_aliases',
   'reconciliation_queue',
@@ -94,6 +106,12 @@ export function resolveTableName(entityName: string) {
 function mapFieldForTable(tableName: string, field: string) {
   if (tableName === 'TendersCurrent') {
     return TENDERS_CURRENT_FIELD_MAP[field] || field;
+  }
+  if (tableName === 'canonical_tenders') {
+    return CANONICAL_TENDERS_FIELD_MAP[field] || field;
+  }
+  if (tableName === 'notices') {
+    return NOTICES_FIELD_MAP[field] || field;
   }
   if (tableName === 'ingestion_runs') {
     return INGESTION_RUNS_FIELD_MAP[field] || field;
@@ -179,9 +197,55 @@ function normalizeTendersCurrentRow(row: unknown) {
   return merged;
 }
 
+function normalizeCanonicalTenderRow(row: unknown) {
+  if (!row || typeof row !== 'object') return row;
+
+  const base = row as Record<string, unknown>;
+  const merged: Record<string, unknown> = { ...base };
+  const canonicalId = String(base.canonical_id || base.id || '').trim();
+
+  if (canonicalId) {
+    merged.id = canonicalId;
+    if (!merged.tender_uid) merged.tender_uid = canonicalId;
+    if (!merged.canonical_id) merged.canonical_id = canonicalId;
+  }
+
+  const cpvCodes = merged.cpv_codes;
+  if (Array.isArray(cpvCodes)) {
+    merged.cpv_codes = cpvCodes.join(',');
+  } else if (cpvCodes === null || cpvCodes === undefined) {
+    merged.cpv_codes = '';
+  }
+
+  if (!merged.publication_date && typeof base.publication_date === 'string') {
+    merged.publication_date = base.publication_date;
+  }
+
+  if (!merged.first_seen_at) {
+    merged.first_seen_at = base.first_seen_at || base.publication_date || base.updated_at || null;
+  }
+
+  if (!merged.last_seen_at) {
+    merged.last_seen_at = base.last_seen_at || base.updated_at || null;
+  }
+
+  if (!merged.buyer_name && base.buyer_name_raw) {
+    merged.buyer_name = base.buyer_name_raw;
+  }
+
+  if (!merged.url && base.source_url) {
+    merged.url = base.source_url;
+  }
+
+  return merged;
+}
+
 function normalizeEntityRow(tableName: string, row: unknown) {
   if (tableName === 'TendersCurrent') {
     return normalizeTendersCurrentRow(row);
+  }
+  if (tableName === 'canonical_tenders') {
+    return normalizeCanonicalTenderRow(row);
   }
   if (tableName === 'ingestion_runs' && row && typeof row === 'object') {
     const base = row as Record<string, unknown>;
@@ -236,6 +300,9 @@ function applySort(qb: any, sortValue: string) {
 function applyIdFilter(qb: any, tableName: string, id: string) {
   if (tableName === 'TendersCurrent') {
     return qb.eq('tender_id', id);
+  }
+  if (tableName === 'notices') {
+    return qb.eq('notice_id', id);
   }
   if (tableName === 'ingestion_runs') {
     return qb.eq('run_id', id);
@@ -325,6 +392,16 @@ export async function createEntity(req: DynamicRequest) {
       return supabase
         .from(tableName as any)
         .upsert(bodyWithTenant, { onConflict: 'tender_id' });
+    }
+    if (tableName === 'notices') {
+      return supabase
+        .from(tableName as any)
+        .upsert(bodyWithTenant, { onConflict: 'tenant_id,source,source_notice_id,notice_version_hash' });
+    }
+    if (tableName === 'canonical_notice_links') {
+      return supabase
+        .from(tableName as any)
+        .upsert(bodyWithTenant, { onConflict: 'tenant_id,notice_id' });
     }
     if (tableName === 'TenderVersions') {
       return supabase

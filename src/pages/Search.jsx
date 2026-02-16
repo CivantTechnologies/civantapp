@@ -51,6 +51,31 @@ function parseTenderCpvCodes(value) {
     return output;
 }
 
+function parseTenderSources(tender) {
+    const seen = new Set();
+    const output = [];
+
+    const add = (value) => {
+        const normalized = String(value || '').trim().toUpperCase();
+        if (!normalized || seen.has(normalized)) return;
+        seen.add(normalized);
+        output.push(normalized);
+    };
+
+    if (Array.isArray(tender?.verification_sources)) {
+        tender.verification_sources.forEach(add);
+    } else if (typeof tender?.verification_sources === 'string') {
+        tender.verification_sources
+            .split(',')
+            .map((item) => item.replace(/[{}"]/g, '').trim())
+            .filter(Boolean)
+            .forEach(add);
+    }
+
+    add(tender?.source);
+    return output;
+}
+
 const CLOSED_STATUS_CODES = new Set(['RES', 'ADJ', 'CAN', 'DES']);
 
 function parseTenderDeadlineDate(value) {
@@ -220,21 +245,18 @@ export default function Search() {
         applyFilters(appliedFilters);
     }, [tenders, appliedFilters]);
 
-    const getTenderPublicationDate = (tender) => tender.publication_date || tender.published_at || tender.first_seen_at || tender.updated_at;
-    const getTenderFirstSeen = (tender) => tender.first_seen_at || tender.published_at || tender.publication_date || tender.updated_at;
+    const getTenderPublicationDate = (tender) =>
+        tender.publication_date || tender.published_at || tender.first_seen_at || tender.last_seen_at || tender.updated_at;
+    const getTenderFirstSeen = (tender) =>
+        tender.first_seen_at || tender.published_at || tender.publication_date || tender.last_seen_at || tender.updated_at;
 
     const loadTendersFallback = async (filters) => {
         const query = {};
 
-        // Keep fallback predicates limited to stable top-level columns.
-        if (filters.source !== 'all') {
-            query.source = filters.source;
-        }
-
         if (filters.lastTendered !== 'all') {
             const days = Number.parseInt(filters.lastTendered, 10);
             if (!Number.isNaN(days) && days > 0) {
-                query.publication_date = { $gte: subDays(new Date(), days).toISOString() };
+                query.last_seen_at = { $gte: subDays(new Date(), days).toISOString() };
             }
         }
 
@@ -251,8 +273,8 @@ export default function Search() {
 
         while (rows.length < maxRows) {
             const batch = Object.keys(query).length > 0
-                ? await civant.entities.TendersCurrent.filter(query, '-published_at', pageSize, skip)
-                : await civant.entities.TendersCurrent.list('-published_at', pageSize, skip);
+                ? await civant.entities.canonical_tenders.filter(query, '-last_seen_at', pageSize, skip)
+                : await civant.entities.canonical_tenders.list('-last_seen_at', pageSize, skip);
 
             if (!Array.isArray(batch) || batch.length === 0) break;
 
@@ -348,7 +370,8 @@ export default function Search() {
         
         // Source filter
         if (filters.source !== 'all') {
-            filtered = filtered.filter(t => t.source === filters.source);
+            const wantedSource = String(filters.source || '').trim().toUpperCase();
+            filtered = filtered.filter(t => parseTenderSources(t).includes(wantedSource));
         }
         
         // Buyer search
@@ -478,6 +501,18 @@ export default function Search() {
             'PLACSP_ES': 'bg-amber-500/15 text-amber-200 border-amber-400/40'
         };
         return colors[source] || 'bg-slate-900/60 text-slate-300 border-slate-700';
+    };
+
+    const getCoverageBadge = (coverageStatus) => {
+        if (coverageStatus === 'linked') return 'bg-civant-teal/15 text-civant-teal border-civant-teal/40';
+        if (coverageStatus === 'ted_only') return 'bg-violet-500/15 text-violet-200 border-violet-400/40';
+        return 'bg-slate-900/60 text-slate-300 border-slate-700';
+    };
+
+    const getVerificationBadge = (verificationLevel) => {
+        if (verificationLevel === 'verified') return 'bg-emerald-500/15 text-emerald-200 border-emerald-400/40';
+        if (verificationLevel === 'partially_verified') return 'bg-amber-500/15 text-amber-200 border-amber-400/40';
+        return 'bg-slate-900/60 text-slate-300 border-slate-700';
     };
     
     const getCountryFlag = (country) => {
@@ -827,9 +862,21 @@ export default function Search() {
                                                 </p>
                                             </td>
                                             <td className="px-4 py-4 hidden sm:table-cell">
-                                                <Badge className={`${getSourceBadge(tender.source)} border text-xs`}>
-                                                    {tender.source}
-                                                </Badge>
+                                                <div className="flex flex-wrap gap-1.5">
+                                                    <Badge className={`${getSourceBadge(tender.source)} border text-xs`}>
+                                                        {tender.source}
+                                                    </Badge>
+                                                    {tender.coverage_status ? (
+                                                        <Badge className={`${getCoverageBadge(tender.coverage_status)} border text-xs`}>
+                                                            {tender.coverage_status.replace('_', ' ')}
+                                                        </Badge>
+                                                    ) : null}
+                                                    {tender.verification_level ? (
+                                                        <Badge className={`${getVerificationBadge(tender.verification_level)} border text-xs`}>
+                                                            {tender.verification_level.replace('_', ' ')}
+                                                        </Badge>
+                                                    ) : null}
+                                                </div>
                                             </td>
                                         </tr>
                                     );
