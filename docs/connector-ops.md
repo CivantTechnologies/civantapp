@@ -1,10 +1,11 @@
-# Connector Ops Runbook (IE + FR)
+# Connector Ops Runbook (IE + FR + ES)
 
 This runbook is the quick, repeatable way to validate connector health and data quality in production/staging.
 
 Scope today:
 - `ETENDERS_IE` incremental connector (Ireland)
-- `BOAMP_FR` import connector (France)
+- `BOAMP_FR` incremental connector (France)
+- `PLACSP_ES` incremental connector (Spain)
 
 ## 1) Prerequisites
 
@@ -81,7 +82,37 @@ GitHub Actions automation:
 - schedule: daily `05:45 UTC`
 - manual dispatch supports `tenant_id`, `start_date`, `dry_run`, `max_pages`
 
-## 4) Unified Health Checks
+## 4) PLACSP ES Incremental
+
+Dry-run first:
+
+```bash
+./scripts/rollout-placsp-es-incremental.sh civant_default 2026-02-01 true
+```
+
+Real write run:
+
+```bash
+./scripts/rollout-placsp-es-incremental.sh civant_default 2026-02-01 false
+```
+
+QA pack:
+
+```bash
+/opt/homebrew/opt/libpq/bin/psql "$SUPABASE_DB_URL" -v tenant_id='civant_default' -f scripts/qa-placsp-es-incremental.sql
+```
+
+Expected healthy pattern:
+- first scoped run: `inserted_count > 0`
+- immediate replay: mostly `noop_count > 0`, `inserted_count=0`, `updated_count=0`
+- cursor in `ConnectorConfig.config.cursor.value` advances to latest feed update
+
+GitHub Actions automation:
+- workflow file: `.github/workflows/placsp-es-incremental.yml`
+- schedule: daily `06:15 UTC`
+- manual dispatch supports `tenant_id`, `start_date`, `dry_run`, `max_pages`
+
+## 5) Unified Health Checks
 
 Connector runs summary:
 
@@ -97,7 +128,11 @@ select
   metadata->>'noop_count'     as noop_count
 from public."ConnectorRuns"
 where tenant_id = 'civant_default'
-  and connector_key in ('etenders_ie_incremental:civant_default', 'boamp_fr_incremental:civant_default')
+  and connector_key in (
+    'etenders_ie_incremental:civant_default',
+    'boamp_fr_incremental:civant_default',
+    'placsp_es_incremental:civant_default'
+  )
 order by started_at desc
 limit 20;
 ```
@@ -125,12 +160,12 @@ select
   data->>'source_url' as source_url
 from public."TendersCurrent"
 where tenant_id = 'civant_default'
-  and source in ('ETENDERS_IE', 'BOAMP_FR')
+  and source in ('ETENDERS_IE', 'BOAMP_FR', 'PLACSP_ES')
 order by published_at desc nulls last
 limit 25;
 ```
 
-## 5) Interpreting Results
+## 6) Interpreting Results
 
 Healthy:
 - Run status is `success`
@@ -144,9 +179,8 @@ Needs investigation:
 - sudden drop in source row counts
 - high null-rate on key fields (`title`, `publication_date`, `source_url`)
 
-## 6) Current known constraints
+## 7) Current known constraints
 
 - `TED` is intentionally deferred due to EU-wide volume.
-- `PLACSP_ES` not covered by this runbook section.
 - For eTenders implementation details and cursor logic, see:
   - `docs/etenders-ie-incremental.md`
