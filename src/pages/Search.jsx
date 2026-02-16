@@ -92,6 +92,14 @@ const DEFAULT_FILTERS = Object.freeze({
     lastTendered: 'all'
 });
 
+const SPAIN_OPEN_PRESET = Object.freeze({
+    ...DEFAULT_FILTERS,
+    country: 'ES',
+    source: 'PLACSP_ES',
+    deadlineWithin: '90',
+    lastTendered: '90'
+});
+
 function normalizeFilterSnapshot(snapshot) {
     const safe = snapshot || DEFAULT_FILTERS;
     return {
@@ -153,6 +161,7 @@ export default function Search() {
 
     useEffect(() => {
         const params = new URLSearchParams(location.search);
+        const hasQueryParams = Array.from(params.keys()).length > 0;
         const allowedCountries = new Set(['all', 'FR', 'IE', 'ES']);
         const allowedSources = new Set(['all', 'BOAMP_FR', 'TED', 'ETENDERS_IE', 'PLACSP_ES']);
         const allowedDeadlineWithin = new Set(['all', '7', '14', '30', '60', '90', '180', '365']);
@@ -162,7 +171,7 @@ export default function Search() {
 
         const readFilter = (key, fallback = 'all') => params.get(key) || fallback;
 
-        const nextFilters = {
+        const nextFilters = hasQueryParams ? {
             keyword: params.get('keyword') || '',
             country: (() => {
                 const nextCountry = readFilter('country');
@@ -190,7 +199,7 @@ export default function Search() {
                 const nextLastTendered = readFilter('lastTendered');
                 return allowedLastTendered.has(nextLastTendered) ? nextLastTendered : 'all';
             })()
-        };
+        } : normalizeFilterSnapshot(SPAIN_OPEN_PRESET);
 
         setKeyword(nextFilters.keyword);
         setCountry(nextFilters.country);

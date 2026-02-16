@@ -316,6 +316,14 @@ function normalizeSearchFilters(raw: Record<string, unknown>) {
   };
 }
 
+type SearchFilters = ReturnType<typeof normalizeSearchFilters>;
+
+function parseSearchWindowDays(value: string) {
+  const days = Number.parseInt(value, 10);
+  if (Number.isNaN(days) || days <= 0) return null;
+  return days;
+}
+
 function normalizeTenderForSearch(row: unknown) {
   if (!row || typeof row !== 'object') return {};
   const base = row as Record<string, unknown>;
@@ -380,7 +388,93 @@ function getTenderFirstSeenDate(tender: Record<string, unknown>) {
   return String(tender.first_seen_at || tender.published_at || tender.publication_date || tender.updated_at || '');
 }
 
-function isTenderMatch(tender: Record<string, unknown>, filters: ReturnType<typeof normalizeSearchFilters>) {
+function buildTenderRelevanceScore(tender: Record<string, unknown>, filters: SearchFilters) {
+  const now = Date.now();
+  const title = String(tender.title || '').toLowerCase();
+  const buyerName = String(tender.buyer_name || '').toLowerCase();
+  const cpvCodes = parseTenderCpvCodes(tender.cpv_codes);
+  const source = String(tender.source || '').trim().toUpperCase();
+  const country = String(tender.country || '').trim().toUpperCase();
+
+  let score = 0;
+
+  if (filters.keyword) {
+    const kw = filters.keyword.toLowerCase();
+    if (title === kw) {
+      score += 60;
+    } else if (title.startsWith(kw)) {
+      score += 46;
+    } else if (title.includes(kw)) {
+      score += 34;
+    }
+
+    if (buyerName.includes(kw)) {
+      score += 20;
+    }
+  }
+
+  if (filters.buyerSearch && buyerName.includes(filters.buyerSearch.toLowerCase())) {
+    score += 15;
+  }
+
+  if (filters.cpvSearchCodes.length > 0 && cpvCodes.length > 0) {
+    const prefixDepth = filters.cpvSearchCodes.reduce((best, wanted) => {
+      const depth = cpvCodes.reduce((localBest, code) => {
+        if (!code.startsWith(wanted)) return localBest;
+        return Math.max(localBest, wanted.length);
+      }, 0);
+      return Math.max(best, depth);
+    }, 0);
+
+    if (prefixDepth > 0) {
+      score += 14 + Math.min(prefixDepth, 8);
+    }
+  }
+
+  const deadline = parseTenderDeadlineDate(tender.deadline_date);
+  if (deadline && deadline.getTime() >= now) {
+    const daysUntilDeadline = Math.floor((deadline.getTime() - now) / (24 * 60 * 60 * 1000));
+    score += Math.max(0, 20 - Math.min(daysUntilDeadline, 20));
+  } else if (deadline && deadline.getTime() < now) {
+    score -= 8;
+  }
+
+  const publicationValue = getTenderPublicationDate(tender);
+  if (publicationValue) {
+    const publication = new Date(publicationValue);
+    if (!Number.isNaN(publication.getTime())) {
+      const daysOld = Math.max(0, Math.floor((now - publication.getTime()) / (24 * 60 * 60 * 1000)));
+      score += Math.max(0, 15 - Math.floor(daysOld / 7));
+    }
+  }
+
+  if (filters.source !== 'all' && source === String(filters.source).toUpperCase()) score += 6;
+  if (filters.country !== 'all' && country === String(filters.country).toUpperCase()) score += 5;
+
+  // Spain + PLACSP defaults get a small recency tie-break to keep local open opportunities on top.
+  if (source === 'PLACSP_ES' && country === 'ES') score += 3;
+
+  return score;
+}
+
+function sortTendersByRelevance(tenders: Record<string, unknown>[], filters: SearchFilters) {
+  const scored = tenders.map((tender, index) => ({
+    tender,
+    index,
+    score: buildTenderRelevanceScore(tender, filters),
+    publication: new Date(getTenderPublicationDate(tender)).getTime() || 0
+  }));
+
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    if (b.publication !== a.publication) return b.publication - a.publication;
+    return a.index - b.index;
+  });
+
+  return scored.map((entry) => entry.tender);
+}
+
+function isTenderMatch(tender: Record<string, unknown>, filters: SearchFilters) {
   const country = String(tender.country || '').trim().toUpperCase();
   const source = String(tender.source || '').trim();
   const title = String(tender.title || '').toLowerCase();
@@ -471,16 +565,47 @@ export async function searchTenders(req: RequestLike) {
   const pageSize = 1000;
   const scanLimit = filters.lastTendered !== 'all' ? 50000 : 15000;
 
-  const days = Number.parseInt(filters.lastTendered, 10);
-  const publishedCutoff = !Number.isNaN(days) && days > 0
+  const rpcArgs = {
+    p_tenant_id: tenantId,
+    p_limit: limit,
+    p_keyword: filters.keyword || null,
+    p_country: filters.country === 'all' ? null : filters.country,
+    p_source: filters.source === 'all' ? null : filters.source,
+    p_buyer_search: filters.buyerSearch || null,
+    p_cpv_search_codes: filters.cpvSearchCodes.length > 0 ? filters.cpvSearchCodes : null,
+    p_deadline_within: parseSearchWindowDays(filters.deadlineWithin),
+    p_industry: filters.industry === 'all' ? null : filters.industry,
+    p_institution_type: filters.institutionType === 'all' ? null : filters.institutionType,
+    p_last_tendered: parseSearchWindowDays(filters.lastTendered)
+  };
+
+  const rpcResult = await supabase.rpc('search_tenders_ranked', rpcArgs);
+  if (!rpcResult.error) {
+    const rpcRows = Array.isArray(rpcResult.data) ? rpcResult.data : [];
+    const items = rpcRows.map((row) => normalizeTenderForSearch(row as Record<string, unknown>));
+    return {
+      success: true,
+      items,
+      meta: {
+        tenant_id: tenantId,
+        returned_rows: items.length,
+        limit,
+        search_engine: 'rpc_ranked'
+      }
+    };
+  }
+
+  const days = parseSearchWindowDays(filters.lastTendered);
+  const publishedCutoff = days
     ? new Date(Date.now() - days * 24 * 60 * 60 * 1000)
     : null;
 
   const results: Record<string, unknown>[] = [];
+  const candidateLimit = Math.min(scanLimit, Math.max(limit * 8, limit));
   let skip = 0;
   let scannedRows = 0;
 
-  while (scannedRows < scanLimit && results.length < limit) {
+  while (scannedRows < scanLimit && results.length < candidateLimit) {
     let qb = supabase
       .from('TendersCurrent')
       .select('*')
@@ -515,16 +640,21 @@ export async function searchTenders(req: RequestLike) {
     if (rows.length < pageSize) break;
   }
 
+  const rankedResults = sortTendersByRelevance(results, filters).slice(0, limit);
+
   return {
     success: true,
-    items: results,
+    items: rankedResults,
     meta: {
       tenant_id: tenantId,
       scanned_rows: scannedRows,
-      returned_rows: results.length,
+      candidate_rows: results.length,
+      returned_rows: rankedResults.length,
       limit,
       scan_limit: scanLimit,
-      hit_scan_limit: scannedRows >= scanLimit && results.length < limit
+      hit_scan_limit: scannedRows >= scanLimit && results.length < candidateLimit,
+      search_engine: 'scan_ranked_fallback',
+      rpc_error: rpcResult.error.message
     }
   };
 }
