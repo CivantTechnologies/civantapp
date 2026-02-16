@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { format, subDays, isAfter, addDays } from 'date-fns';
 import CpvCodePicker from '@/components/CpvCodePicker';
 
@@ -94,8 +95,11 @@ function parseTenderDeadlineDate(value) {
 
 function isClosedTenderByStatus(tender) {
     const statusCode = String(tender?.status_code || '').trim().toUpperCase();
+    const status = String(tender?.status || '').trim().toLowerCase();
     const noticeType = String(tender?.notice_type || '').trim().toLowerCase();
+    if (tender?.is_open === false) return true;
     if (noticeType === 'award') return true;
+    if (['closed', 'cancelled', 'canceled', 'awarded', 'completed', 'unsuccessful'].includes(status)) return true;
     return CLOSED_STATUS_CODES.has(statusCode);
 }
 
@@ -115,7 +119,9 @@ const DEFAULT_FILTERS = Object.freeze({
     deadlineWithin: 'all',
     industry: 'all',
     institutionType: 'all',
-    lastTendered: 'all'
+    lastTendered: 'all',
+    openOnly: false,
+    sortBy: 'relevance'
 });
 
 const SPAIN_OPEN_PRESET = Object.freeze({
@@ -137,7 +143,9 @@ function normalizeFilterSnapshot(snapshot) {
         deadlineWithin: String(safe.deadlineWithin || 'all'),
         industry: String(safe.industry || 'all'),
         institutionType: String(safe.institutionType || 'all'),
-        lastTendered: String(safe.lastTendered || 'all')
+        lastTendered: String(safe.lastTendered || 'all'),
+        openOnly: Boolean(safe.openOnly),
+        sortBy: String(safe.sortBy || 'relevance')
     };
 }
 
@@ -153,6 +161,8 @@ function areFilterSnapshotsEqual(a, b) {
         left.industry === right.industry &&
         left.institutionType === right.institutionType &&
         left.lastTendered === right.lastTendered &&
+        left.openOnly === right.openOnly &&
+        left.sortBy === right.sortBy &&
         [...left.cpvSearchCodes].sort().join(',') === [...right.cpvSearchCodes].sort().join(',')
     );
 }
@@ -177,6 +187,8 @@ export default function Search() {
     const [industry, setIndustry] = useState('all');
     const [institutionType, setInstitutionType] = useState('all');
     const [lastTendered, setLastTendered] = useState('all');
+    const [openOnly, setOpenOnly] = useState(false);
+    const [sortBy, setSortBy] = useState('relevance');
     const [appliedFilters, setAppliedFilters] = useState(DEFAULT_FILTERS);
     const [lastSearchAt, setLastSearchAt] = useState(null);
     
@@ -196,6 +208,7 @@ export default function Search() {
         const allowedIndustry = new Set(['all', 'construction', 'it', 'health', 'transport', 'consulting', 'food']);
         const allowedInstitutionType = new Set(['all', 'ministry', 'local', 'health', 'education', 'transport']);
         const allowedLastTendered = new Set(['all', '1', '7', '30', '90', '180', '365']);
+        const allowedSortBy = new Set(['relevance', 'published_desc', 'deadline_asc']);
 
         const readFilter = (key, fallback = 'all') => params.get(key) || fallback;
 
@@ -226,6 +239,14 @@ export default function Search() {
             lastTendered: (() => {
                 const nextLastTendered = readFilter('lastTendered');
                 return allowedLastTendered.has(nextLastTendered) ? nextLastTendered : 'all';
+            })(),
+            openOnly: (() => {
+                const raw = String(params.get('openOnly') || '').trim().toLowerCase();
+                return raw === '1' || raw === 'true' || raw === 'yes';
+            })(),
+            sortBy: (() => {
+                const nextSortBy = readFilter('sortBy', 'relevance');
+                return allowedSortBy.has(nextSortBy) ? nextSortBy : 'relevance';
             })()
         } : normalizeFilterSnapshot(SPAIN_OPEN_PRESET);
 
@@ -238,6 +259,8 @@ export default function Search() {
         setIndustry(nextFilters.industry);
         setInstitutionType(nextFilters.institutionType);
         setLastTendered(nextFilters.lastTendered);
+        setOpenOnly(nextFilters.openOnly);
+        setSortBy(nextFilters.sortBy);
         setAppliedFilters(nextFilters);
     }, [location.search]);
     
@@ -357,9 +380,11 @@ export default function Search() {
         // Keyword search in title
         if (filters.keyword) {
             const kw = filters.keyword.toLowerCase();
+            const hasKeywordMatch = (value) => String(value || '').toLowerCase().includes(kw);
             filtered = filtered.filter(t => 
-                t.title?.toLowerCase().includes(kw) ||
-                t.buyer_name?.toLowerCase().includes(kw)
+                hasKeywordMatch(t.title) ||
+                hasKeywordMatch(t.buyer_name) ||
+                hasKeywordMatch(t.description)
             );
         }
         
@@ -452,8 +477,41 @@ export default function Search() {
                 return new Date(dateValue) >= cutoffDate;
             });
         }
+
+        if (filters.openOnly) {
+            const now = new Date();
+            filtered = filtered.filter((t) => {
+                if (t?.is_open === true || String(t?.is_open || '').toLowerCase() === 'true') return true;
+                if (isClosedTenderByStatus(t)) return false;
+                const deadline = parseTenderDeadlineDate(t.deadline_date);
+                return !deadline || deadline >= now;
+            });
+        }
+
+        const ranked = [...filtered];
+        ranked.sort((a, b) => {
+            if (filters.sortBy === 'published_desc') {
+                return new Date(getTenderPublicationDate(b) || 0).getTime() - new Date(getTenderPublicationDate(a) || 0).getTime();
+            }
+            if (filters.sortBy === 'deadline_asc') {
+                const left = parseTenderDeadlineDate(a.deadline_date);
+                const right = parseTenderDeadlineDate(b.deadline_date);
+                if (!left && !right) return 0;
+                if (!left) return 1;
+                if (!right) return -1;
+                return left.getTime() - right.getTime();
+            }
+
+            const leftScore = Number(a.relevance_score || 0);
+            const rightScore = Number(b.relevance_score || 0);
+            if (rightScore !== leftScore) return rightScore - leftScore;
+
+            const leftTime = new Date(getTenderPublicationDate(a) || 0).getTime();
+            const rightTime = new Date(getTenderPublicationDate(b) || 0).getTime();
+            return rightTime - leftTime;
+        });
         
-        setFilteredTenders(filtered);
+        setFilteredTenders(ranked);
     };
     
     const clearFilters = () => {
@@ -466,6 +524,8 @@ export default function Search() {
         setIndustry(DEFAULT_FILTERS.industry);
         setInstitutionType(DEFAULT_FILTERS.institutionType);
         setLastTendered(DEFAULT_FILTERS.lastTendered);
+        setOpenOnly(DEFAULT_FILTERS.openOnly);
+        setSortBy(DEFAULT_FILTERS.sortBy);
         setAppliedFilters(DEFAULT_FILTERS);
     };
     
@@ -478,12 +538,15 @@ export default function Search() {
         deadlineWithin,
         industry,
         institutionType,
-        lastTendered
-    }), [keyword, country, source, buyerSearch, cpvSearchCodes, deadlineWithin, industry, institutionType, lastTendered]);
+        lastTendered,
+        openOnly,
+        sortBy
+    }), [keyword, country, source, buyerSearch, cpvSearchCodes, deadlineWithin, industry, institutionType, lastTendered, openOnly, sortBy]);
 
     const hasPendingFilterChanges = !areFilterSnapshotsEqual(currentFilters, appliedFilters);
     const hasActiveFilters = !areFilterSnapshotsEqual(appliedFilters, DEFAULT_FILTERS);
     const canViewSearchDiagnostics = Array.isArray(roles) && (roles.includes('admin') || roles.includes('creator'));
+    const tedOnlyResults = filteredTenders.length > 0 && filteredTenders.every((tender) => tender.coverage_status === 'ted_only');
 
     const applySearch = () => {
         const nextFilters = normalizeFilterSnapshot(currentFilters);
@@ -703,6 +766,28 @@ export default function Search() {
                                         </SelectContent>
                                     </Select>
                                 </div>
+
+                                <div>
+                                    <label className="text-xs font-medium text-slate-400 mb-1.5 block">Sort</label>
+                                    <Select value={sortBy} onValueChange={setSortBy}>
+                                        <SelectTrigger className="bg-slate-900/60 border-0">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="relevance">Relevance</SelectItem>
+                                            <SelectItem value="published_desc">Published (newest)</SelectItem>
+                                            <SelectItem value="deadline_asc">Deadline (soonest)</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="flex items-center justify-between rounded-md bg-slate-900/60 px-3 py-2">
+                                    <div>
+                                        <p className="text-xs font-medium text-slate-400">Open only</p>
+                                        <p className="text-[11px] text-slate-500">Hide closed/expired tenders</p>
+                                    </div>
+                                    <Switch checked={openOnly} onCheckedChange={setOpenOnly} />
+                                </div>
                                 </div>
                             
                             {(hasActiveFilters || hasPendingFilterChanges) && (
@@ -738,6 +823,14 @@ export default function Search() {
                     </p>
                 ) : null}
             </div>
+
+            {tedOnlyResults ? (
+                <Card className="border border-violet-400/30 bg-violet-950/20">
+                    <CardContent className="p-3 text-sm text-violet-100">
+                        Showing TED-only results. These opportunities are sourced from TED and may not yet have a linked national notice.
+                    </CardContent>
+                </Card>
+            ) : null}
 
             {canViewSearchDiagnostics && searchMeta ? (
                 <Card className="border border-civant-border bg-civant-navy/45 shadow-none">
@@ -803,6 +896,11 @@ export default function Search() {
                                     <td colSpan={5} className="px-4 py-12 text-center text-slate-400">
                                         <SearchIcon className="h-8 w-8 mx-auto mb-2 text-slate-300" />
                                         <p>No tenders found matching your criteria</p>
+                                        {appliedFilters.openOnly ? (
+                                            <p className="text-xs mt-2">
+                                                Try turning off <span className="font-medium">Open only</span> to include closed historical tenders.
+                                            </p>
+                                        ) : null}
                                         {(hasActiveFilters || hasPendingFilterChanges) ? (
                                             <p className="text-xs mt-2">
                                                 Adjust filters or use Clear all filters to broaden results.

@@ -456,6 +456,21 @@ function normalizeTenderForSearch(row: unknown) {
     merged.title = data.tender_name;
   }
 
+  if (!merged.description) {
+    const normalizedJson =
+      base.normalized_json && typeof base.normalized_json === 'object' && !Array.isArray(base.normalized_json)
+        ? (base.normalized_json as Record<string, unknown>)
+        : {};
+    merged.description =
+      data.description ||
+      data.summary ||
+      data.short_description ||
+      normalizedJson.description ||
+      normalizedJson.summary ||
+      normalizedJson.short_description ||
+      null;
+  }
+
   if (!merged.buyer_name && data.contracting_authority) {
     merged.buyer_name = data.contracting_authority;
   }
@@ -487,6 +502,13 @@ function normalizeTenderForSearch(row: unknown) {
 
   if (!merged.deadline_date) {
     merged.deadline_date = data.deadline_date || data.event_deadline_date || data.submission_deadline || base.deadline_date || null;
+  }
+
+  if (merged.is_open === undefined || merged.is_open === null) {
+    const status = String(merged.status || merged.status_code || '').trim().toLowerCase();
+    const deadline = parseTenderDeadlineDate(merged.deadline_date);
+    const isClosed = ['closed', 'cancelled', 'canceled', 'awarded', 'completed', 'unsuccessful'].includes(status);
+    merged.is_open = !isClosed && (!deadline || deadline.getTime() >= Date.now());
   }
 
   if (!merged.url && data.source_url) {
@@ -522,6 +544,7 @@ function getTenderFirstSeenDate(tender: Record<string, unknown>) {
 function buildTenderRelevanceScore(tender: Record<string, unknown>, filters: SearchFilters) {
   const now = Date.now();
   const title = String(tender.title || '').toLowerCase();
+  const description = String(tender.description || '').toLowerCase();
   const buyerName = String(tender.buyer_name || '').toLowerCase();
   const cpvCodes = parseTenderCpvCodes(tender.cpv_codes);
   const source = String(tender.source || '').trim().toUpperCase();
@@ -541,6 +564,9 @@ function buildTenderRelevanceScore(tender: Record<string, unknown>, filters: Sea
 
     if (buyerName.includes(kw)) {
       score += 20;
+    }
+    if (description.includes(kw)) {
+      score += 12;
     }
   }
 
@@ -609,11 +635,12 @@ function isTenderMatch(tender: Record<string, unknown>, filters: SearchFilters) 
   const country = String(tender.country || '').trim().toUpperCase();
   const sources = parseTenderSources(tender.verification_sources, tender.source);
   const title = String(tender.title || '').toLowerCase();
+  const description = String(tender.description || '').toLowerCase();
   const buyerName = String(tender.buyer_name || '').toLowerCase();
 
   if (filters.keyword) {
     const kw = filters.keyword.toLowerCase();
-    if (!title.includes(kw) && !buyerName.includes(kw)) return false;
+    if (!title.includes(kw) && !buyerName.includes(kw) && !description.includes(kw)) return false;
   }
 
   if (filters.country !== 'all' && country !== String(filters.country).toUpperCase()) {
