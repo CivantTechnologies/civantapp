@@ -221,6 +221,269 @@ function normalizeMetrics(value: unknown) {
   return value as Record<string, unknown>;
 }
 
+function parseSearchCpvCodes(value: unknown) {
+  const seen = new Set<string>();
+  const output: string[] = [];
+  const matches = String(value || '').match(/\d{2,8}/g) || [];
+  for (const raw of matches) {
+    const code = raw.slice(0, 8);
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    output.push(code);
+  }
+  return output;
+}
+
+function parseTenderCpvCodes(value: unknown) {
+  if (Array.isArray(value)) {
+    return parseSearchCpvCodes(value.join(','));
+  }
+
+  const seen = new Set<string>();
+  const output: string[] = [];
+  const parts = String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  for (const part of parts) {
+    const code = part.replace(/\D/g, '').slice(0, 8);
+    if (code.length < 2 || seen.has(code)) continue;
+    seen.add(code);
+    output.push(code);
+  }
+
+  return output;
+}
+
+function normalizeSearchFilters(raw: Record<string, unknown>) {
+  return {
+    keyword: String(raw.keyword || '').trim(),
+    country: String(raw.country || 'all').trim() || 'all',
+    source: String(raw.source || 'all').trim() || 'all',
+    buyerSearch: String(raw.buyerSearch || '').trim(),
+    cpvSearchCodes: Array.isArray(raw.cpvSearchCodes)
+      ? raw.cpvSearchCodes.map((v) => String(v || '').trim()).filter(Boolean).slice(0, 8)
+      : parseSearchCpvCodes(raw.cpvSearchCodes || ''),
+    deadlineWithin: String(raw.deadlineWithin || 'all').trim() || 'all',
+    industry: String(raw.industry || 'all').trim() || 'all',
+    institutionType: String(raw.institutionType || 'all').trim() || 'all',
+    lastTendered: String(raw.lastTendered || 'all').trim() || 'all'
+  };
+}
+
+function normalizeTenderForSearch(row: unknown) {
+  if (!row || typeof row !== 'object') return {};
+  const base = row as Record<string, unknown>;
+  const nestedData = base.data;
+  const data =
+    nestedData && typeof nestedData === 'object' && !Array.isArray(nestedData)
+      ? (nestedData as Record<string, unknown>)
+      : {};
+
+  const merged: Record<string, unknown> = { ...data, ...base };
+  const tenderId = String(base.tender_id || data.tender_id || data.id || '').trim();
+
+  if (tenderId) {
+    if (!merged.id) merged.id = tenderId;
+    if (!merged.tender_uid) merged.tender_uid = tenderId;
+    if (!merged.canonical_id) merged.canonical_id = tenderId;
+  }
+
+  if (!merged.title && data.tender_name) {
+    merged.title = data.tender_name;
+  }
+
+  if (!merged.buyer_name && data.contracting_authority) {
+    merged.buyer_name = data.contracting_authority;
+  }
+
+  if (!merged.country) {
+    merged.country = data.country || data.country_code || data.country_iso || null;
+  }
+
+  const cpvCodes = merged.cpv_codes;
+  if (Array.isArray(cpvCodes)) {
+    merged.cpv_codes = cpvCodes.join(',');
+  } else if (cpvCodes === null || cpvCodes === undefined) {
+    merged.cpv_codes = '';
+  }
+
+  if (!merged.publication_date && typeof base.published_at === 'string') {
+    merged.publication_date = base.published_at;
+  }
+
+  if (!merged.first_seen_at) {
+    merged.first_seen_at = data.first_seen_at || base.published_at || base.updated_at || null;
+  }
+
+  if (!merged.deadline_date) {
+    merged.deadline_date = data.deadline_date || data.submission_deadline || null;
+  }
+
+  if (!merged.url && data.source_url) {
+    merged.url = data.source_url;
+  }
+
+  return merged;
+}
+
+function getTenderPublicationDate(tender: Record<string, unknown>) {
+  return String(tender.publication_date || tender.published_at || tender.first_seen_at || tender.updated_at || '');
+}
+
+function getTenderFirstSeenDate(tender: Record<string, unknown>) {
+  return String(tender.first_seen_at || tender.published_at || tender.publication_date || tender.updated_at || '');
+}
+
+function isTenderMatch(tender: Record<string, unknown>, filters: ReturnType<typeof normalizeSearchFilters>) {
+  const country = String(tender.country || '').trim().toUpperCase();
+  const source = String(tender.source || '').trim();
+  const title = String(tender.title || '').toLowerCase();
+  const buyerName = String(tender.buyer_name || '').toLowerCase();
+
+  if (filters.keyword) {
+    const kw = filters.keyword.toLowerCase();
+    if (!title.includes(kw) && !buyerName.includes(kw)) return false;
+  }
+
+  if (filters.country !== 'all' && country !== String(filters.country).toUpperCase()) {
+    return false;
+  }
+
+  if (filters.source !== 'all' && source !== filters.source) {
+    return false;
+  }
+
+  if (filters.buyerSearch && !buyerName.includes(filters.buyerSearch.toLowerCase())) {
+    return false;
+  }
+
+  if (filters.cpvSearchCodes.length > 0) {
+    const tenderCodes = parseTenderCpvCodes(tender.cpv_codes);
+    if (!tenderCodes.length) return false;
+    const hasMatch = filters.cpvSearchCodes.some((wanted) =>
+      tenderCodes.some((code) => code.startsWith(wanted))
+    );
+    if (!hasMatch) return false;
+  }
+
+  if (filters.deadlineWithin !== 'all') {
+    const days = Number.parseInt(filters.deadlineWithin, 10);
+    if (!Number.isNaN(days) && days > 0) {
+      const now = new Date();
+      const futureDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+      const deadlineValue = String(tender.deadline_date || '');
+      if (!deadlineValue) return false;
+      const deadline = new Date(deadlineValue);
+      if (Number.isNaN(deadline.getTime())) return false;
+      if (deadline < now || deadline > futureDate) return false;
+    }
+  }
+
+  if (filters.industry !== 'all') {
+    const cpv = String(tender.cpv_codes || '').toLowerCase();
+    if (!cpv) return false;
+    if (filters.industry === 'construction' && !cpv.includes('45')) return false;
+    if (filters.industry === 'it' && !cpv.includes('72') && !cpv.includes('48')) return false;
+    if (filters.industry === 'health' && !cpv.includes('33') && !cpv.includes('85')) return false;
+    if (filters.industry === 'transport' && !cpv.includes('60') && !cpv.includes('34')) return false;
+    if (filters.industry === 'consulting' && !cpv.includes('79') && !cpv.includes('71')) return false;
+    if (filters.industry === 'food' && !cpv.includes('15') && !cpv.includes('55')) return false;
+  }
+
+  if (filters.institutionType !== 'all') {
+    if (!buyerName) return false;
+    if (filters.institutionType === 'ministry' && !buyerName.includes('ministry') && !buyerName.includes('ministère') && !buyerName.includes('minister')) return false;
+    if (filters.institutionType === 'local' && !buyerName.includes('council') && !buyerName.includes('city') && !buyerName.includes('county') && !buyerName.includes('commune') && !buyerName.includes('ville')) return false;
+    if (filters.institutionType === 'health' && !buyerName.includes('health') && !buyerName.includes('hospital') && !buyerName.includes('santé') && !buyerName.includes('hôpital')) return false;
+    if (filters.institutionType === 'education' && !buyerName.includes('university') && !buyerName.includes('college') && !buyerName.includes('school') && !buyerName.includes('université') && !buyerName.includes('école')) return false;
+    if (filters.institutionType === 'transport' && !buyerName.includes('transport') && !buyerName.includes('railway') && !buyerName.includes('road')) return false;
+  }
+
+  if (filters.lastTendered !== 'all') {
+    const days = Number.parseInt(filters.lastTendered, 10);
+    if (!Number.isNaN(days) && days > 0) {
+      const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      const dateValue = days === 1
+        ? getTenderFirstSeenDate(tender)
+        : getTenderPublicationDate(tender);
+      if (!dateValue) return false;
+      const date = new Date(dateValue);
+      if (Number.isNaN(date.getTime()) || date < cutoffDate) return false;
+    }
+  }
+
+  return true;
+}
+
+export async function searchTenders(req: RequestLike) {
+  const { tenantId } = await requireTenantScopedUser(req);
+  const supabase = getServerSupabase() as any;
+  const body = readJsonBody<Record<string, unknown>>(req);
+  const filters = normalizeSearchFilters(body);
+  const limit = normalizeLimit(body.limit, 200, 2000);
+  const pageSize = 1000;
+  const scanLimit = filters.lastTendered !== 'all' ? 50000 : 15000;
+
+  const days = Number.parseInt(filters.lastTendered, 10);
+  const publishedCutoff = !Number.isNaN(days) && days > 0
+    ? new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+    : null;
+
+  const results: Record<string, unknown>[] = [];
+  let skip = 0;
+  let scannedRows = 0;
+
+  while (scannedRows < scanLimit && results.length < limit) {
+    let qb = supabase
+      .from('TendersCurrent')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('published_at', { ascending: false })
+      .range(skip, skip + pageSize - 1);
+
+    if (filters.source !== 'all') {
+      qb = qb.eq('source', filters.source);
+    }
+
+    if (publishedCutoff) {
+      qb = qb.gte('published_at', publishedCutoff.toISOString());
+    }
+
+    const { data, error } = await qb;
+    if (error) throw Object.assign(new Error(error.message), { status: 500 });
+
+    const rows = Array.isArray(data) ? data : [];
+    if (!rows.length) break;
+
+    scannedRows += rows.length;
+    skip += rows.length;
+
+    for (const row of rows) {
+      const tender = normalizeTenderForSearch(row);
+      if (!isTenderMatch(tender, filters)) continue;
+      results.push(tender);
+      if (results.length >= limit) break;
+    }
+
+    if (rows.length < pageSize) break;
+  }
+
+  return {
+    success: true,
+    items: results,
+    meta: {
+      tenant_id: tenantId,
+      scanned_rows: scannedRows,
+      returned_rows: results.length,
+      limit,
+      scan_limit: scanLimit,
+      hit_scan_limit: scannedRows >= scanLimit && results.length < limit
+    }
+  };
+}
+
 export async function getMyProfile(req: RequestLike) {
   const user = await getCurrentUser(req);
   return {
@@ -789,6 +1052,8 @@ export async function dispatchFunction(functionName: string, req: RequestLike) {
       return getMyProfile(req);
     case 'getDashboardStats':
       return getDashboardStats(req);
+    case 'searchTenders':
+      return searchTenders(req);
     case 'getCurrentUser':
       return getCurrentUserPayload(req);
     case 'listTenants':

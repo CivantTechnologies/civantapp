@@ -114,7 +114,7 @@ export default function Search() {
         if (isLoadingTenants) return;
         if (!activeTenantId) return;
         setLoading(true);
-        void loadTenders();
+        void loadTenders(appliedFilters);
     }, [activeTenantId, isLoadingTenants]);
 
     useEffect(() => {
@@ -176,13 +176,87 @@ export default function Search() {
 
     const getTenderPublicationDate = (tender) => tender.publication_date || tender.published_at || tender.first_seen_at || tender.updated_at;
     const getTenderFirstSeen = (tender) => tender.first_seen_at || tender.published_at || tender.publication_date || tender.updated_at;
+
+    const loadTendersFallback = async (filters) => {
+        const query = {};
+
+        // Keep fallback predicates limited to stable top-level columns.
+        if (filters.source !== 'all') {
+            query.source = filters.source;
+        }
+
+        if (filters.lastTendered !== 'all') {
+            const days = Number.parseInt(filters.lastTendered, 10);
+            if (!Number.isNaN(days) && days > 0) {
+                query.publication_date = { $gte: subDays(new Date(), days).toISOString() };
+            }
+        }
+
+        const pageSize = 2000;
+        const maxRows = filters.lastTendered !== 'all' ? 12000 : 4000;
+        const cutoffDate = (() => {
+            const days = Number.parseInt(filters.lastTendered, 10);
+            if (Number.isNaN(days) || days <= 0) return null;
+            return subDays(new Date(), days);
+        })();
+
+        const rows = [];
+        let skip = 0;
+
+        while (rows.length < maxRows) {
+            const batch = Object.keys(query).length > 0
+                ? await civant.entities.TendersCurrent.filter(query, '-published_at', pageSize, skip)
+                : await civant.entities.TendersCurrent.list('-published_at', pageSize, skip);
+
+            if (!Array.isArray(batch) || batch.length === 0) break;
+
+            rows.push(...batch);
+            skip += batch.length;
+
+            if (batch.length < pageSize) break;
+
+            if (cutoffDate) {
+                const oldestInBatch = batch.reduce((oldest, tender) => {
+                    const dateValue = getTenderPublicationDate(tender);
+                    if (!dateValue) return oldest;
+                    const date = new Date(dateValue);
+                    if (Number.isNaN(date.getTime())) return oldest;
+                    if (!oldest) return date;
+                    return date < oldest ? date : oldest;
+                }, null);
+
+                if (oldestInBatch && oldestInBatch < cutoffDate) break;
+            }
+        }
+
+        return rows.slice(0, maxRows);
+    };
     
-    const loadTenders = async () => {
+    const loadTenders = async (snapshot = appliedFilters) => {
+        const filters = normalizeFilterSnapshot(snapshot);
+
         try {
-            const data = await civant.entities.TendersCurrent.list('-published_at', 500);
+            const response = await civant.functions.invoke('searchTenders', {
+                ...filters,
+                limit: 2000
+            });
+
+            const data = Array.isArray(response?.items)
+                ? response.items
+                : Array.isArray(response)
+                    ? response
+                    : [];
+
             setTenders(data);
         } catch (error) {
-            console.error('Error loading tenders:', error);
+            console.warn('searchTenders function unavailable, using fallback search path:', error);
+            try {
+                const fallbackData = await loadTendersFallback(filters);
+                setTenders(fallbackData);
+            } catch (fallbackError) {
+                console.error('Error loading tenders:', fallbackError);
+                setTenders([]);
+            }
         } finally {
             setLoading(false);
         }
@@ -203,7 +277,7 @@ export default function Search() {
         
         // Country filter
         if (filters.country !== 'all') {
-            filtered = filtered.filter(t => t.country === filters.country);
+            filtered = filtered.filter(t => String(t.country || '').toUpperCase() === filters.country);
         }
         
         // Source filter
@@ -321,8 +395,11 @@ export default function Search() {
     const hasActiveFilters = !areFilterSnapshotsEqual(appliedFilters, DEFAULT_FILTERS);
 
     const applySearch = () => {
-        setAppliedFilters(normalizeFilterSnapshot(currentFilters));
+        const nextFilters = normalizeFilterSnapshot(currentFilters);
+        setLoading(true);
+        setAppliedFilters(nextFilters);
         setLastSearchAt(new Date());
+        void loadTenders(nextFilters);
     };
     
     const getSourceBadge = (source) => {
