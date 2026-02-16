@@ -272,6 +272,34 @@ function parseTenderCpvCodes(value: unknown) {
   return output;
 }
 
+const CLOSED_STATUS_CODES = new Set([
+  'RES', // resolved/result
+  'ADJ', // adjudicated
+  'CAN', // cancelled
+  'DES'  // deserted/void
+]);
+
+function parseTenderDeadlineDate(value: unknown) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+
+  // Date-only deadlines should remain valid until the end of that date.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const parsed = new Date(`${raw}T23:59:59.999Z`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isClosedTenderByStatus(tender: Record<string, unknown>) {
+  const statusCode = String(tender.status_code || '').trim().toUpperCase();
+  const noticeType = String(tender.notice_type || '').trim().toLowerCase();
+  if (noticeType === 'award') return true;
+  return CLOSED_STATUS_CODES.has(statusCode);
+}
+
 function normalizeSearchFilters(raw: Record<string, unknown>) {
   return {
     keyword: String(raw.keyword || '').trim(),
@@ -334,7 +362,7 @@ function normalizeTenderForSearch(row: unknown) {
   }
 
   if (!merged.deadline_date) {
-    merged.deadline_date = data.deadline_date || data.submission_deadline || null;
+    merged.deadline_date = data.deadline_date || data.event_deadline_date || data.submission_deadline || null;
   }
 
   if (!merged.url && data.source_url) {
@@ -389,10 +417,11 @@ function isTenderMatch(tender: Record<string, unknown>, filters: ReturnType<type
     if (!Number.isNaN(days) && days > 0) {
       const now = new Date();
       const futureDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
-      const deadlineValue = String(tender.deadline_date || '');
-      if (!deadlineValue) return false;
-      const deadline = new Date(deadlineValue);
-      if (Number.isNaN(deadline.getTime())) return false;
+
+      if (isClosedTenderByStatus(tender)) return false;
+
+      const deadline = parseTenderDeadlineDate(tender.deadline_date);
+      if (!deadline) return false;
       if (deadline < now || deadline > futureDate) return false;
     }
   }
