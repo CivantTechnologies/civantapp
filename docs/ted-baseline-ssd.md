@@ -80,5 +80,32 @@ Expected wall-clock for extraction on a laptop:
 
 ## Next step after baseline
 1. Run QA over staged files (duplicates, null rates, date sanity)
-2. Add staged merge script into `TendersCurrent`/`TenderVersions` (additive only)
-3. Enable `ted_incremental:<tenant_id>` daily sync
+2. Merge a bounded first phase (last 6 months) into `TendersCurrent`/`TenderVersions`
+3. Validate DB QA pack and connector health
+4. Enable `ted_incremental:<tenant_id>` daily sync
+
+## Phase-1 merge (last 6 months)
+
+### 1) Staged QA (local SSD files)
+```bash
+cd /Users/davidmanrique/projects/Civant
+./scripts/qa-ted-baseline-staged.sh 2025-09 2026-02 /Volumes/Civant/_system/raw/ted_baseline
+```
+
+### 2) Dry run merge
+```bash
+cd /Users/davidmanrique/projects/Civant
+./scripts/rollout-ted-baseline-merge.sh civant_default 2025-09 2026-02 true
+```
+
+### 3) Real merge (write mode)
+```bash
+cd /Users/davidmanrique/projects/Civant
+export SUPABASE_DB_URL='postgresql://postgres:<PASSWORD>@db.<PROJECT_REF>.supabase.co:5432/postgres?sslmode=require'
+./scripts/rollout-ted-baseline-merge.sh civant_default 2025-09 2026-02 false
+```
+
+### 4) Post-merge DB QA
+```bash
+/opt/homebrew/opt/libpq/bin/psql "$SUPABASE_DB_URL" -v tenant_id='civant_default' -f scripts/qa-ted-baseline.sql
+```
