@@ -429,6 +429,58 @@ async function postRows({ baseUrl, appId, tenantId, table, rows, includeTenantHe
   return payload;
 }
 
+async function getRows({ baseUrl, appId, tenantId, table, query = {}, limit, includeTenantHeader }) {
+  const headers = { accept: 'application/json' };
+  if (includeTenantHeader && tenantId) headers['x-tenant-id'] = tenantId;
+
+  const params = new URLSearchParams();
+  if (query && typeof query === 'object' && Object.keys(query).length) {
+    params.set('q', JSON.stringify(query));
+  }
+  if (Number.isFinite(limit) && limit > 0) {
+    params.set('limit', String(limit));
+  }
+
+  const url = `${baseUrl}/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(table)}${params.size ? `?${params.toString()}` : ''}`;
+  let response = null;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= MAX_HTTP_RETRIES; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      response = await fetch(url, { method: 'GET', headers, signal: controller.signal });
+      clearTimeout(timer);
+      break;
+    } catch (error) {
+      clearTimeout(timer);
+      lastError = error;
+      if (attempt < MAX_HTTP_RETRIES) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+        continue;
+      }
+      throw error;
+    }
+  }
+  if (!response) throw lastError || new Error('Request failed');
+
+  const text = await response.text();
+  const payload = text
+    ? (() => {
+        try { return JSON.parse(text); } catch { return { raw: text }; }
+      })()
+    : null;
+
+  if (!response.ok) {
+    const message = payload?.error || payload?.message || `HTTP ${response.status}`;
+    const error = new Error(String(message));
+    error.status = response.status;
+    throw error;
+  }
+
+  return Array.isArray(payload) ? payload : [];
+}
+
 async function putEntityById({ baseUrl, appId, tenantId, table, id, payload, includeTenantHeader }) {
   const headers = { 'content-type': 'application/json' };
   if (includeTenantHeader && tenantId) headers['x-tenant-id'] = tenantId;
@@ -478,11 +530,152 @@ function isIngestionRunDuplicateError(message) {
   return isDuplicateError(text) && text.includes('ingestion_runs');
 }
 
+function chunkArray(items, size) {
+  const output = [];
+  for (let i = 0; i < items.length; i += size) {
+    output.push(items.slice(i, i + size));
+  }
+  return output;
+}
+
+function getRowKey(table, row) {
+  if (!row || typeof row !== 'object') return '';
+  if (table === 'canonical_tenders') {
+    return String(row.canonical_id || '').trim();
+  }
+  if (table === 'TendersCurrent') {
+    return String(row.tender_id || row.id || row.tender_uid || '').trim();
+  }
+  return '';
+}
+
+function getFingerprintForRow(table, row) {
+  if (!row || typeof row !== 'object') return '';
+  if (table === 'canonical_tenders') {
+    return String(row?.normalized_json?.fingerprint || row?.fingerprint || '').trim();
+  }
+  if (table === 'TendersCurrent') {
+    return String(row?.data?.fingerprint || row?.fingerprint || '').trim();
+  }
+  return '';
+}
+
+function normalizeComparableRow(table, row) {
+  if (!row || typeof row !== 'object') return {};
+  if (table === 'canonical_tenders') {
+    const normalized = row.normalized_json && typeof row.normalized_json === 'object' ? row.normalized_json : {};
+    const cpvCodes = Array.isArray(row.cpv_codes)
+      ? row.cpv_codes.join(',')
+      : Array.isArray(normalized.cpv_codes)
+        ? normalized.cpv_codes.join(',')
+        : String(row.cpv_codes || normalized.cpv_codes || '');
+    return {
+      title: row.title || normalized.title || null,
+      buyer_name: normalized.buyer_name || null,
+      publication_date: row.publication_date || normalized.publication_date || null,
+      deadline_date: row.deadline_date || normalized.deadline_date || null,
+      cpv_codes: cpvCodes || null,
+      estimated_value: row.estimated_value ?? normalized.estimated_value ?? null,
+      source_url: row.source_url || normalized.source_url || null
+    };
+  }
+
+  if (table === 'TendersCurrent') {
+    const data = row.data && typeof row.data === 'object' ? row.data : {};
+    const cpvCodes = Array.isArray(data.cpv_codes)
+      ? data.cpv_codes.join(',')
+      : String(row.cpv_codes || data.cpv_codes || '');
+    return {
+      title: row.title || data.title || null,
+      buyer_name: row.buyer_name || data.buyer_name || null,
+      publication_date: row.publication_date || data.publication_date || row.published_at || null,
+      deadline_date: row.deadline_date || data.deadline_date || null,
+      cpv_codes: cpvCodes || null,
+      estimated_value: row.estimated_value ?? data.estimated_value ?? null,
+      source_url: row.source_url || data.source_url || row.url || null
+    };
+  }
+
+  return {};
+}
+
+function classifyRow(table, incoming, existing) {
+  if (!existing) return 'inserted';
+
+  const incomingFingerprint = getFingerprintForRow(table, incoming);
+  const existingFingerprint = getFingerprintForRow(table, existing);
+  if (incomingFingerprint && existingFingerprint) {
+    return incomingFingerprint === existingFingerprint ? 'noop' : 'updated';
+  }
+
+  const incomingComparable = JSON.stringify(normalizeComparableRow(table, incoming));
+  const existingComparable = JSON.stringify(normalizeComparableRow(table, existing));
+  return incomingComparable === existingComparable ? 'noop' : 'updated';
+}
+
+function addPlannedStatus(metrics, status) {
+  if (status === 'inserted') metrics.inserted += 1;
+  else if (status === 'updated') metrics.updated += 1;
+  else metrics.noop += 1;
+}
+
+async function buildUpsertPlan({ baseUrl, appId, tenantId, table, rows, includeTenantHeader }) {
+  if (!rows.length || (table !== 'canonical_tenders' && table !== 'TendersCurrent')) {
+    return new Map();
+  }
+
+  const keyField = table === 'canonical_tenders' ? 'canonical_id' : 'tender_id';
+  const keys = Array.from(new Set(rows.map((row) => getRowKey(table, row)).filter(Boolean)));
+  if (!keys.length) return new Map();
+
+  const existingByKey = new Map();
+  const keyChunks = chunkArray(keys, 60);
+  for (const chunk of keyChunks) {
+    const query = { tenant_id: tenantId, [keyField]: chunk };
+    const existingRows = await getRows({
+      baseUrl,
+      appId,
+      tenantId,
+      table,
+      query,
+      limit: chunk.length + 5,
+      includeTenantHeader
+    });
+    for (const existing of existingRows) {
+      const key = getRowKey(table, existing);
+      if (key) existingByKey.set(key, existing);
+    }
+  }
+
+  const plan = new Map();
+  for (const row of rows) {
+    const key = getRowKey(table, row);
+    if (!key) continue;
+    plan.set(key, classifyRow(table, row, existingByKey.get(key)));
+  }
+  return plan;
+}
+
 async function insertBatchWithFallback({ baseUrl, appId, tenantId, table, rows, metrics, includeTenantHeader }) {
   if (!rows.length) return;
+  let upsertPlan = new Map();
+
+  try {
+    upsertPlan = await buildUpsertPlan({ baseUrl, appId, tenantId, table, rows, includeTenantHeader });
+  } catch (planError) {
+    metrics.errors.push(`${table}: failed to precompute upsert plan (${planError?.message || planError})`);
+  }
+
   try {
     await postRows({ baseUrl, appId, tenantId, table, rows, includeTenantHeader });
-    metrics.inserted += rows.length;
+    if (upsertPlan.size > 0) {
+      for (const row of rows) {
+        const key = getRowKey(table, row);
+        addPlannedStatus(metrics, upsertPlan.get(key) || 'updated');
+      }
+    } else {
+      metrics.inserted += rows.length;
+    }
     return;
   } catch (error) {
     if (rows.length === 1) {
@@ -498,7 +691,12 @@ async function insertBatchWithFallback({ baseUrl, appId, tenantId, table, rows, 
   for (const row of rows) {
     try {
       await postRows({ baseUrl, appId, tenantId, table, rows: [row], includeTenantHeader });
-      metrics.inserted += 1;
+      if (upsertPlan.size > 0) {
+        const key = getRowKey(table, row);
+        addPlannedStatus(metrics, upsertPlan.get(key) || 'updated');
+      } else {
+        metrics.inserted += 1;
+      }
     } catch (error) {
       if (isDuplicateError(error.message)) metrics.duplicates += 1;
       else {
@@ -534,8 +732,8 @@ async function main() {
   const sourceCursor = `file:${file}`;
   const startedAt = new Date().toISOString();
   const rawMetrics = { inserted: 0, duplicates: 0, failed: 0, errors: [] };
-  const canonicalMetrics = { inserted: 0, duplicates: 0, failed: 0, errors: [] };
-  const currentMetrics = { inserted: 0, duplicates: 0, failed: 0, errors: [] };
+  const canonicalMetrics = { inserted: 0, updated: 0, noop: 0, duplicates: 0, failed: 0, errors: [] };
+  const currentMetrics = { inserted: 0, updated: 0, noop: 0, duplicates: 0, failed: 0, errors: [] };
   let headers = [];
   let lineNumber = 0;
   let recordNumber = 0;
@@ -567,7 +765,11 @@ async function main() {
       deduped_in_file: dedupedInFile,
       raw_inserted: rawMetrics.inserted,
       canonical_inserted: canonicalMetrics.inserted,
+      canonical_updated: canonicalMetrics.updated,
+      canonical_noop: canonicalMetrics.noop,
       current_inserted: currentMetrics.inserted,
+      current_updated: currentMetrics.updated,
+      current_noop: currentMetrics.noop,
       raw_failed: rawMetrics.failed,
       canonical_failed: canonicalMetrics.failed,
       current_failed: currentMetrics.failed,
@@ -593,7 +795,11 @@ async function main() {
             deduped_in_file: dedupedInFile,
             raw_rows: rawMetrics.inserted,
             canonical_inserted: canonicalMetrics.inserted,
+            canonical_updated: canonicalMetrics.updated,
+            canonical_noop: canonicalMetrics.noop,
             current_inserted: currentMetrics.inserted,
+            current_updated: currentMetrics.updated,
+            current_noop: currentMetrics.noop,
             raw_failed: rawMetrics.failed,
             canonical_failed: canonicalMetrics.failed,
             current_failed: currentMetrics.failed
@@ -658,8 +864,18 @@ async function main() {
     if (dryRun) {
       rawMetrics.inserted += rawBatch.length;
       rawBatch.length = 0;
-      canonicalMetrics.inserted += canonicalBatch.length;
-      currentMetrics.inserted += currentBatch.length;
+      if (!rawOnly && canonicalBatch.length) {
+        const canonicalPlan = await buildUpsertPlan({ baseUrl, appId, tenantId, table: 'canonical_tenders', rows: canonicalBatch, includeTenantHeader });
+        const currentPlan = await buildUpsertPlan({ baseUrl, appId, tenantId, table: 'TendersCurrent', rows: currentBatch, includeTenantHeader });
+        for (const row of canonicalBatch) {
+          const key = getRowKey('canonical_tenders', row);
+          addPlannedStatus(canonicalMetrics, canonicalPlan.get(key) || 'inserted');
+        }
+        for (const row of currentBatch) {
+          const key = getRowKey('TendersCurrent', row);
+          addPlannedStatus(currentMetrics, currentPlan.get(key) || 'inserted');
+        }
+      }
       canonicalBatch.length = 0;
       currentBatch.length = 0;
       return;
@@ -773,7 +989,11 @@ async function main() {
     deduped_in_file: dedupedInFile,
     raw_rows: rawMetrics.inserted,
     canonical_inserted: canonicalMetrics.inserted,
+    canonical_updated: canonicalMetrics.updated,
+    canonical_noop: canonicalMetrics.noop,
     current_inserted: currentMetrics.inserted,
+    current_updated: currentMetrics.updated,
+    current_noop: currentMetrics.noop,
     malformed_records: malformedRecords,
     mode: rawOnly ? 'raw_only' : 'canonical_and_current'
   };
@@ -801,7 +1021,8 @@ async function main() {
     try {
       const failedCount = rawMetrics.failed + canonicalMetrics.failed + currentMetrics.failed;
       const insertedCount = currentMetrics.inserted;
-      const noopCount = Math.max(processed - insertedCount - failedCount - dedupedInFile, 0);
+      const updatedCount = currentMetrics.updated;
+      const noopCount = currentMetrics.noop;
       await postRows({
         baseUrl,
         appId,
@@ -818,9 +1039,9 @@ async function main() {
             run_id: runId,
             fetched_count: processed,
             inserted_count: insertedCount,
-            updated_count: 0,
+            updated_count: updatedCount,
             noop_count: noopCount,
-            versioned_count: 0,
+            versioned_count: updatedCount,
             deduped_in_file: dedupedInFile,
             failed_count: failedCount,
             cursor: `record:${recordNumber}:line:${lineNumber}`
