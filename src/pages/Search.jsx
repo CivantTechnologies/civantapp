@@ -89,21 +89,6 @@ function areFilterSnapshotsEqual(a, b) {
     );
 }
 
-function countActiveFilters(snapshot) {
-    const filters = normalizeFilterSnapshot(snapshot);
-    let count = 0;
-    if (filters.keyword.trim()) count += 1;
-    if (filters.country !== 'all') count += 1;
-    if (filters.source !== 'all') count += 1;
-    if (filters.buyerSearch.trim()) count += 1;
-    if (filters.cpvSearchCodes.length > 0) count += 1;
-    if (filters.deadlineWithin !== 'all') count += 1;
-    if (filters.industry !== 'all') count += 1;
-    if (filters.institutionType !== 'all') count += 1;
-    if (filters.lastTendered !== 'all') count += 1;
-    return count;
-}
-
 export default function Search() {
     const location = useLocation();
     const [tenders, setTenders] = useState([]);
@@ -332,8 +317,7 @@ export default function Search() {
     }), [keyword, country, source, buyerSearch, cpvSearchCodes, deadlineWithin, industry, institutionType, lastTendered]);
 
     const hasPendingFilterChanges = !areFilterSnapshotsEqual(currentFilters, appliedFilters);
-    const activeFilterCount = countActiveFilters(appliedFilters);
-    const hasActiveFilters = activeFilterCount > 0;
+    const hasActiveFilters = !areFilterSnapshotsEqual(appliedFilters, DEFAULT_FILTERS);
 
     const applySearch = () => {
         setAppliedFilters(currentFilters);
@@ -395,7 +379,7 @@ export default function Search() {
                             className="bg-civant-teal text-slate-950 hover:bg-civant-teal/90 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             <SearchIcon className="h-4 w-4 mr-2" />
-                            Apply Search
+                            Search
                         </Button>
                         <Button
                             type="button"
@@ -405,15 +389,10 @@ export default function Search() {
                         >
                             <Filter className="h-4 w-4 mr-2" />
                             Filters
-                            {hasActiveFilters && (
-                                <span className="ml-2 w-5 h-5 rounded-full bg-civant-teal text-slate-950 text-xs flex items-center justify-center">
-                                    {activeFilterCount}
-                                </span>
-                            )}
                         </Button>
                     </div>
                     {hasPendingFilterChanges ? (
-                        <p className="mt-2 text-xs text-amber-300">You changed filters. Click Apply Search to refresh results.</p>
+                        <p className="mt-2 text-xs text-amber-300">You changed filters. Click Search to refresh results.</p>
                     ) : null}
                     
                     {/* Expanded Filters */}
@@ -555,7 +534,7 @@ export default function Search() {
                                         disabled={!hasPendingFilterChanges}
                                         className="border-civant-teal/40 text-civant-teal hover:bg-civant-teal/10 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
-                                        Apply Search
+                                        Search
                                     </Button>
                                     <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
                                         <X className="h-4 w-4 mr-1" />
@@ -573,11 +552,6 @@ export default function Search() {
                 <p className="text-sm text-slate-400">
                     Showing <span className="font-medium text-slate-100">{filteredTenders.length}</span> tenders
                 </p>
-                {hasActiveFilters ? (
-                    <Badge className="bg-civant-teal/15 text-civant-teal border-civant-teal/30">
-                        {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} active
-                    </Badge>
-                ) : null}
             </div>
             
             {/* Results Table */}
