@@ -490,7 +490,6 @@ export default function TenderDetail() {
                         <DetailRow label="Source" value={String(tender.source || 'Not specified')} />
                         <DetailRow label="Reference" value={tenderReference} />
                         <DetailRow label="Tender status" value={tender.is_open ? 'Open' : 'Closed'} />
-                        <DetailRow label="Notice links visible" value={`${linkedNotices.length}/${linkedNoticeCount}`} />
                     </CardContent>
                 </Card>
 
@@ -533,7 +532,7 @@ export default function TenderDetail() {
                             label="Last seen"
                             value={tender.last_seen_at ? format(new Date(tender.last_seen_at), 'MMM d, yyyy HH:mm') : '-'}
                         />
-                        <DetailRow label="Notice links" value={String(tender.notice_count ?? linkedNoticeCount ?? 0)} />
+                        <DetailRow label="Linked notices" value={String(tender.notice_count ?? linkedNoticeCount ?? 0)} />
                         {Array.isArray(tender.ted_notice_ids) && tender.ted_notice_ids.length > 0 ? (
                             <DetailRow label="TED Notice IDs" value={tender.ted_notice_ids.join(', ')} mono />
                         ) : null}
@@ -541,7 +540,7 @@ export default function TenderDetail() {
                 </Card>
             </div>
 
-            {/* Sources */}
+            {/* Source Evidence */}
             <Card>
                 <CardHeader className="pb-3">
                     <button
@@ -552,98 +551,111 @@ export default function TenderDetail() {
                         <CardTitle className="text-lg font-semibold flex items-center justify-between gap-2">
                             <span className="flex items-center gap-2">
                                 <Link2 className="h-5 w-5" />
-                                Evidence / Sources
+                                Source Evidence
                             </span>
                             <span className="text-xs text-muted-foreground">
-                                {linkedNotices.length}/{linkedNoticeCount} visible
+                                {linkedNoticeCount} linked
                             </span>
                         </CardTitle>
                     </button>
                 </CardHeader>
                 {evidenceOpen ? (
                     <CardContent>
-                        {tender.url ? (
-                            <div className="mb-5 pb-4 border-b border-border/60">
-                                <a
-                                    href={tender.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
-                                >
-                                    <ExternalLink className="h-4 w-4" />
-                                    View original notice
-                                </a>
-                            </div>
-                        ) : null}
-                        {linkedNotices.length === 0 ? (
-                            linkedNoticeCount > 0 ? (
-                                <div className="text-center py-6">
-                                    <p className="text-muted-foreground">Linked notices exist but are not visible in this session.</p>
-                                    <p className="text-xs text-muted-foreground mt-1">
-                                        This can happen due to tenant permissions (RLS) or restricted source visibility.
-                                    </p>
-                                </div>
-                            ) : (
-                                <p className="text-muted-foreground text-center py-6">
-                                    No linked source notices yet. Civant continuously monitors for updates.
-                                </p>
-                            )
-                        ) : (
-                            <div className="space-y-4">
-                                {linkedNotices.map((notice) => (
-                                    <div
-                                        key={notice.notice_id}
-                                        className="relative pl-6 pb-4 border-l-2 border-border last:border-l-transparent last:pb-0"
+                        <div className="space-y-6">
+                            <div>
+                                <p className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Primary source</p>
+                                {tender.url ? (
+                                    <a
+                                        href={tender.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
                                     >
-                                        <div className="absolute left-0 top-0 transform -translate-x-1/2 w-3 h-3 rounded-full bg-background border-2 border-primary" />
-
-                                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
-                                            <Badge variant="secondary" className="w-fit">
-                                                {notice.source || 'UNKNOWN'}
-                                            </Badge>
-                                            <span className="text-sm text-muted-foreground">
-                                                source id: {notice.source_notice_id || 'n/a'}
-                                            </span>
-                                            <span className="text-sm text-muted-foreground">
-                                                notice id: {notice.notice_id || 'n/a'}
-                                            </span>
-                                            {notice.link_tier ? (
-                                                <span className="text-sm text-muted-foreground">
-                                                    tier: {notice.link_tier}
-                                                </span>
-                                            ) : null}
-                                            {notice.match_score != null ? (
-                                                <span className="text-sm text-muted-foreground">
-                                                    score: {Number(notice.match_score).toFixed(2)}
-                                                </span>
-                                            ) : null}
-                                            <span className="text-sm text-muted-foreground">
-                                                {notice.publication_date
-                                                    ? format(new Date(notice.publication_date), 'MMM d, yyyy')
-                                                    : notice.ingested_at
-                                                    ? format(new Date(notice.ingested_at), 'MMM d, yyyy HH:mm')
-                                                    : ''}
-                                            </span>
-                                        </div>
-
-                                        <p className="text-sm text-card-foreground">
-                                            {notice.title || 'No title provided'}
-                                        </p>
-                                        {notice.source_url ? (
-                                            <a
-                                                href={notice.source_url}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="inline-flex items-center text-sm text-primary mt-2 hover:underline"
-                                            >
-                                                View source notice
-                                                <ExternalLink className="h-3.5 w-3.5 ml-1" />
-                                            </a>
-                                        ) : null}
-                                    </div>
-                                ))}
+                                        <ExternalLink className="h-4 w-4" />
+                                        View original notice
+                                    </a>
+                                ) : (
+                                    <p className="text-sm text-muted-foreground">No primary source link available.</p>
+                                )}
                             </div>
-                        )}
+                            <div className="pt-4 border-t border-border/60">
+                                <div className="flex items-center justify-between gap-2 mb-3">
+                                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Linked notice history</p>
+                                    <span className="text-xs text-muted-foreground">
+                                        {linkedNotices.length} visible of {linkedNoticeCount} linked
+                                    </span>
+                                </div>
+                                {linkedNotices.length === 0 ? (
+                                    linkedNoticeCount > 0 ? (
+                                        <div className="text-center py-6">
+                                            <p className="text-muted-foreground">Linked notices exist but are not visible in this session.</p>
+                                            <p className="text-xs text-muted-foreground mt-1">
+                                                This can happen due to tenant permissions (RLS) or restricted source visibility.
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <p className="text-muted-foreground text-center py-6">
+                                            No linked notices yet. Civant continuously monitors for updates.
+                                        </p>
+                                    )
+                                ) : (
+                                    <div className="space-y-4">
+                                        {linkedNotices.map((notice) => (
+                                            <div
+                                                key={notice.notice_id}
+                                                className="relative pl-6 pb-4 border-l-2 border-border last:border-l-transparent last:pb-0"
+                                            >
+                                                <div className="absolute left-0 top-0 transform -translate-x-1/2 w-3 h-3 rounded-full bg-background border-2 border-primary" />
+
+                                                <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
+                                                    <Badge variant="secondary" className="w-fit">
+                                                        {notice.source || 'UNKNOWN'}
+                                                    </Badge>
+                                                    <span className="text-sm text-muted-foreground">
+                                                        source id: {notice.source_notice_id || 'n/a'}
+                                                    </span>
+                                                    <span className="text-sm text-muted-foreground">
+                                                        notice id: {notice.notice_id || 'n/a'}
+                                                    </span>
+                                                    {notice.link_tier ? (
+                                                        <span className="text-sm text-muted-foreground">
+                                                            tier: {notice.link_tier}
+                                                        </span>
+                                                    ) : null}
+                                                    {notice.match_score != null ? (
+                                                        <span className="text-sm text-muted-foreground">
+                                                            score: {Number(notice.match_score).toFixed(2)}
+                                                        </span>
+                                                    ) : null}
+                                                    <span className="text-sm text-muted-foreground">
+                                                        {notice.publication_date
+                                                            ? format(new Date(notice.publication_date), 'MMM d, yyyy')
+                                                            : notice.ingested_at
+                                                            ? format(new Date(notice.ingested_at), 'MMM d, yyyy HH:mm')
+                                                            : ''}
+                                                    </span>
+                                                </div>
+
+                                                <p className="text-sm text-card-foreground">
+                                                    {notice.title || 'No title provided'}
+                                                </p>
+                                                {notice.source_url ? (
+                                                    <a
+                                                        href={notice.source_url}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="inline-flex items-center text-sm text-primary mt-2 hover:underline"
+                                                    >
+                                                        View source notice
+                                                        <ExternalLink className="h-3.5 w-3.5 ml-1" />
+                                                    </a>
+                                                ) : null}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     </CardContent>
                 ) : null}
             </Card>
