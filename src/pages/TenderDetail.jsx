@@ -173,6 +173,23 @@ export default function TenderDetail() {
         }
     }, [tender]);
 
+    const primaryLinkedNotice = useMemo(() => {
+        if (!Array.isArray(linkedNotices) || linkedNotices.length === 0) return null;
+
+        const tenderSource = String(tender?.source || '').trim().toUpperCase();
+        return (
+            linkedNotices.find((notice) => String(notice?.source || '').trim().toUpperCase() === tenderSource) ||
+            linkedNotices.find((notice) => String(notice?.source || '').trim().toUpperCase() !== 'TED') ||
+            linkedNotices[0]
+        );
+    }, [linkedNotices, tender?.source]);
+
+    const primaryLinkedSourceLabel = useMemo(() => {
+        const source = String(primaryLinkedNotice?.source || '').trim();
+        if (!source) return 'linked notice';
+        return source.replace(/_/g, ' ').toLowerCase();
+    }, [primaryLinkedNotice]);
+
     useEffect(() => {
         if (isLoadingTenants) return;
         if (!activeTenantId) return;
@@ -532,7 +549,7 @@ export default function TenderDetail() {
                             label="Last seen"
                             value={tender.last_seen_at ? format(new Date(tender.last_seen_at), 'MMM d, yyyy HH:mm') : '-'}
                         />
-                        <DetailRow label="Linked notices" value={String(tender.notice_count ?? linkedNoticeCount ?? 0)} />
+                        <DetailRow label="Linked notices (visible/total)" value={`${linkedNotices.length}/${linkedNoticeCount}`} />
                         {Array.isArray(tender.ted_notice_ids) && tender.ted_notice_ids.length > 0 ? (
                             <DetailRow label="TED Notice IDs" value={tender.ted_notice_ids.join(', ')} mono />
                         ) : null}
@@ -554,7 +571,7 @@ export default function TenderDetail() {
                                 Source Evidence
                             </span>
                             <span className="text-xs text-muted-foreground">
-                                {linkedNoticeCount} linked
+                                {linkedNotices.length}/{linkedNoticeCount} visible
                             </span>
                         </CardTitle>
                     </button>
@@ -564,16 +581,31 @@ export default function TenderDetail() {
                         <div className="space-y-6">
                             <div>
                                 <p className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Primary source</p>
-                                {tender.url ? (
+                                {primaryLinkedNotice?.source_url ? (
                                     <a
-                                        href={tender.url}
+                                        href={primaryLinkedNotice.source_url}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
                                     >
                                         <ExternalLink className="h-4 w-4" />
-                                        View original notice
+                                        View primary {primaryLinkedSourceLabel}
                                     </a>
+                                ) : tender.url ? (
+                                    <div className="space-y-1.5">
+                                        <p className="text-xs text-muted-foreground">
+                                            No linked notice URL available yet. This is the canonical snapshot URL.
+                                        </p>
+                                        <a
+                                            href={tender.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+                                        >
+                                            <ExternalLink className="h-4 w-4" />
+                                            View canonical source URL
+                                        </a>
+                                    </div>
                                 ) : (
                                     <p className="text-sm text-muted-foreground">No primary source link available.</p>
                                 )}
