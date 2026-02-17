@@ -725,9 +725,9 @@ export async function searchTenders(req: RequestLike) {
   const supabase = getServerSupabase() as any;
   const body = readJsonBody<Record<string, unknown>>(req);
   const filters = normalizeSearchFilters(body);
-  const limit = normalizeLimit(body.limit, 200, 2000);
-  const pageSize = 1000;
-  const scanLimit = filters.lastTendered !== 'all' ? 50000 : 15000;
+  const limit = normalizeLimit(body.limit, 200, 500);
+  const pageSize = 500;
+  const scanLimit = filters.lastTendered !== 'all' ? 20000 : 8000;
 
   const rpcArgs = {
     p_tenant_id: tenantId,

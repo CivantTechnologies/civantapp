@@ -283,8 +283,8 @@ export default function Search() {
             }
         }
 
-        const pageSize = 2000;
-        const maxRows = filters.lastTendered !== 'all' ? 12000 : 4000;
+        const pageSize = 500;
+        const maxRows = filters.lastTendered !== 'all' ? 6000 : 2500;
         const cutoffDate = (() => {
             const days = Number.parseInt(filters.lastTendered, 10);
             if (Number.isNaN(days) || days <= 0) return null;
@@ -330,7 +330,7 @@ export default function Search() {
             const startedAtMs = Date.now();
             const response = await civant.functions.invoke('searchTenders', {
                 ...filters,
-                limit: 2000
+                limit: 500
             });
 
             const data = Array.isArray(response?.items)
