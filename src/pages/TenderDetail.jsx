@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { civant } from '@/api/civantClient';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '../utils';
@@ -64,7 +64,6 @@ function DetailRow({ label, value, mono = false }) {
 }
 
 export default function TenderDetail() {
-    const contentRef = useRef(null);
     const [tender, setTender] = useState(null);
     const [linkedNotices, setLinkedNotices] = useState([]);
     const [linkedNoticeCount, setLinkedNoticeCount] = useState(0);
@@ -74,7 +73,6 @@ export default function TenderDetail() {
     const [enrichment, setEnrichment] = useState(null);
     const [enriching, setEnriching] = useState(false);
     const [canonicalCopied, setCanonicalCopied] = useState(false);
-    const [contentWidth, setContentWidth] = useState(0);
     const { activeTenantId, isLoadingTenants } = useTenant();
 
     const urlParams = new URLSearchParams(window.location.search);
@@ -175,18 +173,6 @@ export default function TenderDetail() {
         }
     }, [tender]);
 
-    const headerLayout = useMemo(() => {
-        if (contentWidth >= 860) return 'wide';
-        return 'compact';
-    }, [contentWidth]);
-
-    const factColumns = useMemo(() => {
-        if (contentWidth >= 1280) return 5;
-        if (contentWidth >= 980) return 4;
-        if (contentWidth >= 700) return 2;
-        return 1;
-    }, [contentWidth]);
-
     useEffect(() => {
         if (isLoadingTenants) return;
         if (!activeTenantId) return;
@@ -194,27 +180,6 @@ export default function TenderDetail() {
             loadTender();
         }
     }, [tenderId, activeTenantId, isLoadingTenants]);
-
-    useEffect(() => {
-        const element = contentRef.current;
-        if (!element) return;
-
-        const updateWidth = () => setContentWidth(element.clientWidth || 0);
-        updateWidth();
-
-        if (typeof ResizeObserver === 'undefined') {
-            window.addEventListener('resize', updateWidth);
-            return () => window.removeEventListener('resize', updateWidth);
-        }
-
-        const observer = new ResizeObserver((entries) => {
-            for (const entry of entries) {
-                setContentWidth(entry.contentRect.width || 0);
-            }
-        });
-        observer.observe(element);
-        return () => observer.disconnect();
-    }, []);
 
     const loadTender = async () => {
         try {
@@ -391,9 +356,9 @@ export default function TenderDetail() {
     }
 
     return (
-        <div ref={contentRef} className="space-y-8 max-w-6xl mx-auto">
+        <div className="space-y-8 max-w-6xl mx-auto">
             <header className="space-y-6">
-                <div className={`flex gap-4 ${headerLayout === 'wide' ? 'flex-row items-center justify-between' : 'flex-col'}`}>
+                <div className="flex flex-col gap-4 md:flex-row md:items-center">
                     <Link
                         to={createPageUrl('Search')}
                         className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-card-foreground transition-colors"
@@ -402,7 +367,7 @@ export default function TenderDetail() {
                         Back to Search
                     </Link>
 
-                    <div className={`flex flex-wrap items-center gap-2 ${headerLayout === 'wide' ? 'justify-end' : 'justify-start'}`}>
+                    <div className="flex items-center gap-2 md:ml-auto">
                         <Button asChild variant="primary" className="min-w-[150px]">
                             <Link to={createPageUrl(`Alerts?buyer=${encodeURIComponent(tender.buyer_name || '')}&keyword=${encodeURIComponent(tender.title?.split(' ').slice(0, 3).join(' ') || '')}`)}>
                                 <Bell className="h-4 w-4" />
@@ -412,7 +377,7 @@ export default function TenderDetail() {
 
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <Button variant="outline" size="icon" aria-label="More actions" className={`${headerLayout === 'wide' ? 'h-11 w-11' : 'h-10 w-10'}`}>
+                                <Button variant="outline" size="icon" aria-label="More actions" className="h-11 w-11">
                                     <MoreHorizontal className="h-4 w-4" />
                                 </Button>
                             </DropdownMenuTrigger>
@@ -492,11 +457,8 @@ export default function TenderDetail() {
                     ) : null}
                 </div>
 
-                <div className="rounded-2xl border border-border/70 bg-card/35 px-4 py-4">
-                    <div
-                        className="grid gap-x-5 gap-y-4"
-                        style={{ gridTemplateColumns: `repeat(${factColumns}, minmax(0, 1fr))` }}
-                    >
+                <div className="rounded-2xl border border-border/70 bg-card/35 px-4 py-3">
+                    <div className="grid gap-x-6 gap-y-4 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
                         <KeyFactItem
                             label="Published"
                             value={publishedDate ? format(publishedDate, 'MMM d, yyyy') : 'Not specified'}
@@ -540,10 +502,7 @@ export default function TenderDetail() {
                                 )}
                             </div>
                         </div>
-                        <div
-                            className={`min-w-0 ${factColumns >= 5 ? 'max-w-[260px]' : ''}`}
-                            style={factColumns < 5 ? { gridColumn: '1 / -1' } : undefined}
-                        >
+                        <div className="min-w-0">
                             <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Status</p>
                             <div className="mt-1 flex flex-wrap items-center gap-1">
                                 <Badge className={`${getSourceBadge(tender.source)} border h-5 px-2 text-[10px] font-medium opacity-90`}>
