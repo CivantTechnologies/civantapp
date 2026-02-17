@@ -92,6 +92,10 @@ fi
 
 PLACSP_SCRIPT="${REPO_ROOT}/scripts/import-placsp-es.mjs"
 QA_SQL="${REPO_ROOT}/scripts/qa-placsp-es-incremental.sql"
+RECON_SCRIPT="${REPO_ROOT}/scripts/reconcile-ted-national.sh"
+RECONCILE_AFTER_INGEST="${RECONCILE_AFTER_INGEST:-true}"
+RECONCILE_STRICT="${RECONCILE_STRICT:-false}"
+RECONCILE_LIMIT="${RECONCILE_LIMIT:-20}"
 
 TMP_DIR="${TMPDIR:-/tmp}"
 RUN_TMP_DIR="$(mktemp -d "${TMP_DIR%/}/civant_placsp_es_XXXXXX" 2>/dev/null || mktemp -d -t civant_placsp_es)"
@@ -471,6 +475,21 @@ fi
 echo "== QA pack =="
 if [[ -f "${QA_SQL}" ]]; then
   "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off -v tenant_id="${TENANT_ID}" -f "${QA_SQL}"
+fi
+
+if [[ "${RECONCILE_AFTER_INGEST}" == "true" ]]; then
+  echo "== Reconcile TED <-> PLACSP_ES =="
+  if [[ -x "${RECON_SCRIPT}" ]]; then
+    if ! "${RECON_SCRIPT}" "${TENANT_ID}" "ES" "${RECONCILE_LIMIT}" "true" "PLACSP_ES"; then
+      if [[ "${RECONCILE_STRICT}" == "true" ]]; then
+        echo "ERROR: post-ingestion reconciliation failed (strict mode)."
+        exit 1
+      fi
+      echo "WARN: post-ingestion reconciliation failed; continuing (RECONCILE_STRICT=false)."
+    fi
+  else
+    echo "WARN: reconcile helper not found: ${RECON_SCRIPT}"
+  fi
 fi
 
 echo "== Done =="
