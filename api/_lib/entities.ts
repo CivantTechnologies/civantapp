@@ -38,6 +38,8 @@ const TENANT_SCOPED_TABLES = new Set([
   'entities',
   'entity_aliases',
   'reconciliation_queue',
+  'external_signals_ie',
+  'external_signal_rollup_ie',
   'tender_features_weekly',
   'market_signals',
   'predictions',

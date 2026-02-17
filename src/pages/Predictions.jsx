@@ -30,10 +30,49 @@ import {
   Badge
 } from '@/components/ui';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { format, addMonths, differenceInMonths } from 'date-fns';
+import { format, addDays, differenceInDays } from 'date-fns';
+
+const COUNTRY_CODE_MAP = {
+  IRL: 'IE',
+  IRE: 'IE',
+  IE: 'IE',
+  FRA: 'FR',
+  FR: 'FR',
+  ESP: 'ES',
+  ES: 'ES'
+};
+
+function normalizeCountryCode(value) {
+  const key = String(value || '').trim().toUpperCase();
+  return COUNTRY_CODE_MAP[key] || key;
+}
+
+function normalizeBuyerKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function parseCpvCodes(value) {
+  if (Array.isArray(value)) {
+    return value.map((code) => String(code || '').trim()).filter(Boolean);
+  }
+
+  if (!value) return [];
+
+  return String(value)
+    .split(',')
+    .map((code) => code.trim())
+    .filter(Boolean);
+}
 
 export default function Predictions() {
   const [tenders, setTenders] = useState([]);
+  const [externalSignalsByBuyer, setExternalSignalsByBuyer] = useState({});
   const [loading, setLoading] = useState(true);
   const [selectedCountry, setSelectedCountry] = useState('all');
   const [predictions, setPredictions] = useState([]);
@@ -53,12 +92,42 @@ export default function Predictions() {
     if (tenders.length > 0) {
       generatePredictions();
     }
-  }, [tenders, selectedCountry]);
+  }, [tenders, selectedCountry, externalSignalsByBuyer]);
 
   const loadData = async () => {
     try {
       const tendersData = await civant.entities.TendersCurrent.list('-publication_date', 2000);
-      setTenders(tendersData);
+      setTenders(Array.isArray(tendersData) ? tendersData : []);
+
+      let externalRollup = [];
+      try {
+        externalRollup = await civant.entities.external_signal_rollup_ie.filter(
+          { tenant_id: activeTenantId },
+          '-combined_external_strength_90d',
+          5000
+        );
+      } catch (externalError) {
+        console.warn('External rollup unavailable for Forecast boost:', externalError);
+      }
+
+      const signalIndex = {};
+      (Array.isArray(externalRollup) ? externalRollup : []).forEach((row) => {
+        const keys = [
+          row.buyer_name_normalized,
+          row.buyer_key,
+          row.buyer_id
+        ]
+          .map(normalizeBuyerKey)
+          .filter(Boolean);
+
+        keys.forEach((key) => {
+          if (!signalIndex[key]) {
+            signalIndex[key] = row;
+          }
+        });
+      });
+
+      setExternalSignalsByBuyer(signalIndex);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -68,7 +137,9 @@ export default function Predictions() {
 
   const generatePredictions = () => {
     const filteredTenders =
-      selectedCountry === 'all' ? tenders : tenders.filter((tender) => tender.country === selectedCountry);
+      selectedCountry === 'all'
+        ? tenders
+        : tenders.filter((tender) => normalizeCountryCode(tender.country) === selectedCountry);
 
     const buyerPatterns = {};
 
@@ -77,7 +148,7 @@ export default function Predictions() {
       if (!buyerPatterns[buyer]) {
         buyerPatterns[buyer] = {
           name: buyer,
-          country: tender.country,
+          country: normalizeCountryCode(tender.country),
           tenders: [],
           cpvCodes: {},
           avgValue: [],
@@ -87,21 +158,25 @@ export default function Predictions() {
 
       buyerPatterns[buyer].tenders.push(tender);
 
-      if (tender.cpv_codes) {
-        const codes = tender.cpv_codes.split(',');
-        codes.forEach((code) => {
+      parseCpvCodes(tender.cpv_codes).forEach((code) => {
+        if (!code) return;
           const mainCode = code.trim().substring(0, 8);
           buyerPatterns[buyer].cpvCodes[mainCode] = (buyerPatterns[buyer].cpvCodes[mainCode] || 0) + 1;
-        });
-      }
+      });
 
       if (tender.estimated_value) {
-        buyerPatterns[buyer].avgValue.push(tender.estimated_value);
+        const numericValue = Number(tender.estimated_value);
+        if (Number.isFinite(numericValue) && numericValue > 0) {
+          buyerPatterns[buyer].avgValue.push(numericValue);
+        }
       }
 
       if (tender.publication_date) {
-        const month = new Date(tender.publication_date).getMonth();
-        buyerPatterns[buyer].publicationMonths[month] = (buyerPatterns[buyer].publicationMonths[month] || 0) + 1;
+        const publicationDate = new Date(tender.publication_date);
+        if (!Number.isNaN(publicationDate.getTime())) {
+          const month = publicationDate.getMonth();
+          buyerPatterns[buyer].publicationMonths[month] = (buyerPatterns[buyer].publicationMonths[month] || 0) + 1;
+        }
       }
     });
 
@@ -113,24 +188,43 @@ export default function Predictions() {
       const sortedDates = pattern.tenders
         .filter((tender) => tender.publication_date)
         .map((tender) => new Date(tender.publication_date))
+        .filter((dateValue) => !Number.isNaN(dateValue.getTime()))
         .sort((a, b) => a - b);
 
       if (sortedDates.length < 2) return;
 
       const intervals = [];
       for (let index = 1; index < sortedDates.length; index += 1) {
-        const months = differenceInMonths(sortedDates[index], sortedDates[index - 1]);
-        if (months > 0) intervals.push(months);
+        const days = differenceInDays(sortedDates[index], sortedDates[index - 1]);
+        if (days > 0) intervals.push(days);
       }
 
       if (intervals.length === 0) return;
 
-      const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+      const avgIntervalDays = intervals.reduce((a, b) => a + b, 0) / intervals.length;
       const lastTenderDate = sortedDates[sortedDates.length - 1];
-      const monthsSinceLastTender = differenceInMonths(new Date(), lastTenderDate);
+      const daysSinceLastTender = Math.max(0, differenceInDays(new Date(), lastTenderDate));
+      const baseScore = avgIntervalDays > 0 ? daysSinceLastTender / avgIntervalDays : 0;
 
-      const likelihood =
-        monthsSinceLastTender >= avgInterval * 0.8 ? 'high' : monthsSinceLastTender >= avgInterval * 0.5 ? 'medium' : 'low';
+      const buyerSignal = pattern.country === 'IE'
+        ? externalSignalsByBuyer[normalizeBuyerKey(pattern.name)] || null
+        : null;
+
+      let signalBoost = 0;
+      if (buyerSignal) {
+        const combinedStrength = Number(buyerSignal.combined_external_strength_90d || 0);
+        const hiringCount30d = Number(buyerSignal.hiring_count_30d || 0);
+        const fundingCount30d = Number(buyerSignal.funding_count_30d || 0);
+
+        if (combinedStrength >= 0.45) signalBoost += 0.22;
+        else if (combinedStrength >= 0.3) signalBoost += 0.14;
+        else if (combinedStrength > 0) signalBoost += 0.08;
+
+        if (hiringCount30d + fundingCount30d >= 2) signalBoost += 0.06;
+      }
+
+      const compositeScore = Math.min(1.35, baseScore + signalBoost);
+      const likelihood = compositeScore >= 0.8 ? 'high' : compositeScore >= 0.5 ? 'medium' : 'low';
 
       if (likelihood === 'low') return;
 
@@ -149,7 +243,8 @@ export default function Predictions() {
         .slice(0, 2)
         .map(([month]) => Number.parseInt(month, 10));
 
-      const predictedDate = addMonths(lastTenderDate, Math.round(avgInterval));
+      const predictedDate = addDays(lastTenderDate, Math.max(1, Math.round(avgIntervalDays)));
+      const avgIntervalMonths = Math.max(1, Math.round(avgIntervalDays / 30));
 
       predictionsList.push({
         buyer: pattern.name,
@@ -157,11 +252,19 @@ export default function Predictions() {
         likelihood,
         predictedDate,
         historicalCount: pattern.tenders.length,
-        avgInterval: Math.round(avgInterval),
+        avgInterval: avgIntervalMonths,
         topCpvs,
         avgValue,
         topMonths,
-        lastTenderDate
+        lastTenderDate,
+        externalSignal: buyerSignal
+          ? {
+              strength90d: Number(buyerSignal.combined_external_strength_90d || 0),
+              hiringCount30d: Number(buyerSignal.hiring_count_30d || 0),
+              fundingCount30d: Number(buyerSignal.funding_count_30d || 0)
+            }
+          : null,
+        compositeScore
       });
     });
 
@@ -169,6 +272,9 @@ export default function Predictions() {
       const likelihoodScore = { high: 3, medium: 2, low: 1 };
       if (likelihoodScore[a.likelihood] !== likelihoodScore[b.likelihood]) {
         return likelihoodScore[b.likelihood] - likelihoodScore[a.likelihood];
+      }
+      if ((b.compositeScore || 0) !== (a.compositeScore || 0)) {
+        return (b.compositeScore || 0) - (a.compositeScore || 0);
       }
       return a.predictedDate - b.predictedDate;
     });
@@ -209,9 +315,10 @@ export default function Predictions() {
   };
 
   const getCountryFlag = (country) => {
-    if (country === 'FR') return '🇫🇷';
-    if (country === 'IE') return '🇮🇪';
-    if (country === 'ES') return '🇪🇸';
+    const normalized = normalizeCountryCode(country);
+    if (normalized === 'FR') return '🇫🇷';
+    if (normalized === 'IE') return '🇮🇪';
+    if (normalized === 'ES') return '🇪🇸';
     return '🌍';
   };
 
@@ -335,6 +442,12 @@ export default function Predictions() {
                             <p className="text-sm text-muted-foreground">
                               Based on {prediction.historicalCount} historical tenders
                             </p>
+                            {prediction.externalSignal ? (
+                              <p className="text-xs text-primary mt-1">
+                                IE external signals: strength {prediction.externalSignal.strength90d.toFixed(2)} (H30
+                                {prediction.externalSignal.hiringCount30d} / F30 {prediction.externalSignal.fundingCount30d})
+                              </p>
+                            ) : null}
                           </div>
 
                           <div className="flex flex-wrap gap-2">
