@@ -358,92 +358,16 @@ export default function TenderDetail() {
     return (
         <div className="space-y-8 max-w-6xl mx-auto">
             <header className="space-y-6">
-                <Link
-                    to={createPageUrl('Search')}
-                    className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-card-foreground transition-colors"
-                >
-                    <ArrowLeft className="h-4 w-4" />
-                    Back to Search
-                </Link>
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                    <Link
+                        to={createPageUrl('Search')}
+                        className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-card-foreground transition-colors"
+                    >
+                        <ArrowLeft className="h-4 w-4" />
+                        Back to Search
+                    </Link>
 
-                <div className="space-y-5 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <Badge className={`${getSourceBadge(tender.source)} border h-7 px-2.5 text-[11px] font-medium`}>
-                            <span className="mr-1">{getCountryFlag(effectiveCountry)}</span>
-                            {tender.source}
-                        </Badge>
-                        <Badge className={`${getCoverageBadge(tender.coverage_status)} border h-7 px-2.5 text-[11px] font-medium`}>
-                            {coverageLabel}
-                        </Badge>
-                        <Badge className={`${getVerificationBadge(tender.verification_level)} border h-7 px-2.5 text-[11px] font-medium`}>
-                            {verificationLabel}
-                        </Badge>
-                    </div>
-
-                    <div className="space-y-2 min-w-0">
-                        <p className="text-sm text-muted-foreground">{tenderReference}</p>
-                        <h1
-                            className="text-3xl font-bold text-card-foreground leading-tight"
-                            style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
-                        >
-                            {tender.title}
-                        </h1>
-                        {tender.coverage_status === 'ted_only' ? (
-                            <p className="text-sm text-violet-300">
-                                TED-only notice. Civant will keep monitoring national sources to link verification evidence.
-                            </p>
-                        ) : null}
-                    </div>
-
-                    <div className="rounded-2xl border border-border/70 bg-card/40 px-4 py-4">
-                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                            <KeyFactItem
-                                label="Published"
-                                value={publishedDate ? format(publishedDate, 'MMM d, yyyy') : 'Not specified'}
-                            />
-                            <KeyFactItem
-                                label="Deadline"
-                                value={deadlineDate ? format(deadlineDate, 'MMM d, yyyy') : 'Not specified'}
-                                helper={deadlineHelper}
-                            />
-                            <KeyFactItem label="Estimated value" value={formattedEstimatedValue} />
-                            <div className="min-w-0">
-                                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">CPV codes</p>
-                                <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                    {cpvCodes.length === 0 ? (
-                                        <span className="text-sm font-medium text-card-foreground">Not specified</span>
-                                    ) : (
-                                        <>
-                                            {cpvCodes.slice(0, 2).map((code) => (
-                                                <Badge key={code} variant="ghost" className="text-xs h-6 px-2 border border-border/60 bg-background/40">
-                                                    {code}
-                                                </Badge>
-                                            ))}
-                                            {cpvCodes.length > 2 ? (
-                                                <Popover>
-                                                    <PopoverTrigger asChild>
-                                                        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs border border-border/60 bg-background/40">
-                                                            +{cpvCodes.length - 2}
-                                                        </Button>
-                                                    </PopoverTrigger>
-                                                    <PopoverContent align="start" className="w-56">
-                                                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">All CPV codes</p>
-                                                        <div className="flex flex-wrap gap-1.5">
-                                                            {cpvCodes.map((code) => (
-                                                                <Badge key={code} variant="secondary" className="text-xs">{code}</Badge>
-                                                            ))}
-                                                        </div>
-                                                    </PopoverContent>
-                                                </Popover>
-                                            ) : null}
-                                        </>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2 xl:justify-end">
                         <Button asChild variant="primary" className="min-w-[150px]">
                             <Link to={createPageUrl(`Alerts?buyer=${encodeURIComponent(tender.buyer_name || '')}&keyword=${encodeURIComponent(tender.title?.split(' ').slice(0, 3).join(' ') || '')}`)}>
                                 <Bell className="h-4 w-4" />
@@ -513,6 +437,84 @@ export default function TenderDetail() {
                                 </DropdownMenuItem>
                             </DropdownMenuContent>
                         </DropdownMenu>
+                    </div>
+                </div>
+
+                <div className="space-y-2 min-w-0">
+                    <p className="text-sm text-muted-foreground">{tenderReference}</p>
+                    <h1
+                        className="text-3xl font-bold text-card-foreground leading-tight"
+                        style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+                    >
+                        {tender.title}
+                    </h1>
+                    {tender.coverage_status === 'ted_only' ? (
+                        <p className="text-sm text-violet-300">
+                            TED-only notice. Civant will keep monitoring national sources to link verification evidence.
+                        </p>
+                    ) : null}
+                </div>
+
+                <div className="rounded-2xl border border-border/70 bg-card/40 px-4 py-4">
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                        <KeyFactItem
+                            label="Published"
+                            value={publishedDate ? format(publishedDate, 'MMM d, yyyy') : 'Not specified'}
+                        />
+                        <KeyFactItem
+                            label="Deadline"
+                            value={deadlineDate ? format(deadlineDate, 'MMM d, yyyy') : 'Not specified'}
+                            helper={deadlineHelper}
+                        />
+                        <KeyFactItem label="Estimated value" value={formattedEstimatedValue} />
+                        <div className="min-w-0">
+                            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">CPV codes</p>
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                {cpvCodes.length === 0 ? (
+                                    <span className="text-sm font-medium text-card-foreground">Not specified</span>
+                                ) : (
+                                    <>
+                                        {cpvCodes.slice(0, 2).map((code) => (
+                                            <Badge key={code} variant="ghost" className="text-xs h-6 px-2 border border-border/60 bg-background/40">
+                                                {code}
+                                            </Badge>
+                                        ))}
+                                        {cpvCodes.length > 2 ? (
+                                            <Popover>
+                                                <PopoverTrigger asChild>
+                                                    <Button variant="ghost" size="sm" className="h-6 px-2 text-xs border border-border/60 bg-background/40">
+                                                        +{cpvCodes.length - 2}
+                                                    </Button>
+                                                </PopoverTrigger>
+                                                <PopoverContent align="start" className="w-56">
+                                                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">All CPV codes</p>
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                        {cpvCodes.map((code) => (
+                                                            <Badge key={code} variant="secondary" className="text-xs">{code}</Badge>
+                                                        ))}
+                                                    </div>
+                                                </PopoverContent>
+                                            </Popover>
+                                        ) : null}
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Status</p>
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                <Badge className={`${getSourceBadge(tender.source)} border h-6 px-2 text-[10px] font-medium`}>
+                                    <span className="mr-1">{getCountryFlag(effectiveCountry)}</span>
+                                    {tender.source}
+                                </Badge>
+                                <Badge className={`${getCoverageBadge(tender.coverage_status)} border h-6 px-2 text-[10px] font-medium`}>
+                                    {coverageLabel}
+                                </Badge>
+                                <Badge className={`${getVerificationBadge(tender.verification_level)} border h-6 px-2 text-[10px] font-medium`}>
+                                    {verificationLabel}
+                                </Badge>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
