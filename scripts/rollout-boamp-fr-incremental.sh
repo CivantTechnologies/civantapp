@@ -78,6 +78,10 @@ fi
 
 BOAMP_SCRIPT="${REPO_ROOT}/scripts/boamp/boamp-fr-incremental.mjs"
 QA_SQL="${REPO_ROOT}/scripts/qa-boamp-fr-incremental.sql"
+RECON_SCRIPT="${REPO_ROOT}/scripts/reconcile-ted-national.sh"
+RECONCILE_AFTER_INGEST="${RECONCILE_AFTER_INGEST:-true}"
+RECONCILE_STRICT="${RECONCILE_STRICT:-false}"
+RECONCILE_LIMIT="${RECONCILE_LIMIT:-25}"
 
 TMP_DIR="${TMPDIR:-/tmp}"
 TSV_FILE="$(mktemp "${TMP_DIR%/}/civant_boamp_fr_XXXXXX" 2>/dev/null || mktemp -t civant_boamp_fr)"
@@ -297,6 +301,21 @@ SQL
 echo "== QA pack =="
 if [[ -f "${QA_SQL}" ]]; then
   "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off -v tenant_id="${TENANT_ID}" -f "${QA_SQL}"
+fi
+
+if [[ "${RECONCILE_AFTER_INGEST}" == "true" ]]; then
+  echo "== Reconcile TED <-> BOAMP_FR =="
+  if [[ -x "${RECON_SCRIPT}" ]]; then
+    if ! "${RECON_SCRIPT}" "${TENANT_ID}" "FR" "${RECONCILE_LIMIT}" "true" "BOAMP_FR"; then
+      if [[ "${RECONCILE_STRICT}" == "true" ]]; then
+        echo "ERROR: post-ingestion reconciliation failed (strict mode)."
+        exit 1
+      fi
+      echo "WARN: post-ingestion reconciliation failed; continuing (RECONCILE_STRICT=false)."
+    fi
+  else
+    echo "WARN: reconcile helper not found: ${RECON_SCRIPT}"
+  fi
 fi
 
 echo "== Done =="

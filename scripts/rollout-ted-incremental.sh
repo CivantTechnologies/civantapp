@@ -87,6 +87,10 @@ fi
 
 TED_SCRIPT="${REPO_ROOT}/scripts/ted/ted-incremental-ie-fr-es.mjs"
 QA_SQL="${REPO_ROOT}/scripts/qa-ted-incremental.sql"
+RECON_SCRIPT="${REPO_ROOT}/scripts/reconcile-ted-national.sh"
+RECONCILE_AFTER_INGEST="${RECONCILE_AFTER_INGEST:-true}"
+RECONCILE_STRICT="${RECONCILE_STRICT:-false}"
+RECONCILE_LIMIT="${RECONCILE_LIMIT:-20}"
 
 TMP_DIR="${TMPDIR:-/tmp}"
 TSV_FILE="$(mktemp "${TMP_DIR%/}/civant_ted_XXXXXX" 2>/dev/null || mktemp -t civant_ted)"
@@ -331,6 +335,35 @@ SQL
 echo "== QA pack =="
 if [[ -f "${QA_SQL}" ]]; then
   "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off -v tenant_id="${TENANT_ID}" -f "${QA_SQL}"
+fi
+
+if [[ "${RECONCILE_AFTER_INGEST}" == "true" ]]; then
+  echo "== Reconcile TED <-> national by country =="
+  countries_csv="$(echo "${COUNTRIES}" | tr '[:lower:]' '[:upper:]' | tr -d ' ')"
+  IFS=',' read -r -a ted_countries <<< "${countries_csv}"
+  for c in "${ted_countries[@]}"; do
+    case "${c}" in
+      IE|IRL) country_code="IE" ;;
+      FR|FRA) country_code="FR" ;;
+      ES|ESP) country_code="ES" ;;
+      *)
+        echo "WARN: skipping unsupported country token for reconciliation: ${c}"
+        continue
+        ;;
+    esac
+    if [[ -x "${RECON_SCRIPT}" ]]; then
+      if ! "${RECON_SCRIPT}" "${TENANT_ID}" "${country_code}" "${RECONCILE_LIMIT}" "true"; then
+        if [[ "${RECONCILE_STRICT}" == "true" ]]; then
+          echo "ERROR: post-ingestion reconciliation failed for ${country_code} (strict mode)."
+          exit 1
+        fi
+        echo "WARN: post-ingestion reconciliation failed for ${country_code}; continuing (RECONCILE_STRICT=false)."
+      fi
+    else
+      echo "WARN: reconcile helper not found: ${RECON_SCRIPT}"
+      break
+    fi
+  done
 fi
 
 echo "== Done =="
