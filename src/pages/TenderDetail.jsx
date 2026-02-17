@@ -190,6 +190,21 @@ export default function TenderDetail() {
         return source.replace(/_/g, ' ').toLowerCase();
     }, [primaryLinkedNotice]);
 
+    const canonicalPrimarySourceUrl = useMemo(() => {
+        return String(tender?.primary_source_url || tender?.url || '').trim() || null;
+    }, [tender]);
+
+    const canonicalPrimarySourceKind = useMemo(() => {
+        return String(tender?.primary_source_kind || '').trim().toLowerCase();
+    }, [tender]);
+
+    const canonicalPrimarySourceLabel = useMemo(() => {
+        const source = String(tender?.primary_source_notice_source || '').trim();
+        if (source) return source.replace(/_/g, ' ').toLowerCase();
+        if (canonicalPrimarySourceKind === 'snapshot_fallback') return 'canonical snapshot';
+        return 'canonical source';
+    }, [canonicalPrimarySourceKind, tender]);
+
     useEffect(() => {
         if (isLoadingTenants) return;
         if (!activeTenantId) return;
@@ -591,19 +606,19 @@ export default function TenderDetail() {
                                         <ExternalLink className="h-4 w-4" />
                                         View primary {primaryLinkedSourceLabel}
                                     </a>
-                                ) : tender.url ? (
+                                ) : canonicalPrimarySourceUrl ? (
                                     <div className="space-y-1.5">
                                         <p className="text-xs text-muted-foreground">
-                                            No linked notice URL available yet. This is the canonical snapshot URL.
+                                            No visible linked notice URL available in this session. Showing {canonicalPrimarySourceLabel}.
                                         </p>
                                         <a
-                                            href={tender.url}
+                                            href={canonicalPrimarySourceUrl}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
                                         >
                                             <ExternalLink className="h-4 w-4" />
-                                            View canonical source URL
+                                            View {canonicalPrimarySourceLabel}
                                         </a>
                                     </div>
                                 ) : (

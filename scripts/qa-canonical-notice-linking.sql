@@ -561,4 +561,46 @@ where tgrelid = 'public."TendersCurrent"'::regclass
   and tgname = 'trg_tenderscurrent_sync_notice';
 rollback;
 
+-- 7) Primary source consistency checks.
+with link_sources as (
+  select
+    l.tenant_id,
+    l.canonical_id,
+    count(*) filter (where n.source = 'TED')::int as ted_links
+  from public.canonical_notice_links l
+  join public.notices n
+    on n.tenant_id = l.tenant_id
+   and n.notice_id = l.notice_id
+  where l.tenant_id = :'tenant_id'::text
+  group by 1,2
+)
+select
+  count(*)::int as violations_primary_source_kind_without_notice_id
+from public.canonical_tenders ct
+where ct.tenant_id = :'tenant_id'::text
+  and ct.primary_source_kind = 'linked_notice'
+  and ct.primary_source_notice_id is null;
+
+with link_sources as (
+  select
+    l.tenant_id,
+    l.canonical_id,
+    count(*) filter (where n.source = 'TED')::int as ted_links
+  from public.canonical_notice_links l
+  join public.notices n
+    on n.tenant_id = l.tenant_id
+   and n.notice_id = l.notice_id
+  where l.tenant_id = :'tenant_id'::text
+  group by 1,2
+)
+select
+  count(*)::int as violations_ted_primary_source_with_national_only
+from public.canonical_tenders ct
+join link_sources s
+  on s.tenant_id = ct.tenant_id
+ and s.canonical_id = ct.canonical_id
+where ct.tenant_id = :'tenant_id'::text
+  and ct.coverage_status = 'national_only'
+  and upper(coalesce(ct.primary_source_notice_source, '')) = 'TED';
+
 \echo '=== QA complete ==='
