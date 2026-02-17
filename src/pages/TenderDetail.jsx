@@ -432,7 +432,7 @@ export default function TenderDetail() {
                 </div>
 
                 <div className="rounded-2xl border border-border/70 bg-card/35 px-4 py-3">
-                    <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
                         <KeyFactItem
                             label="Published"
                             value={publishedDate ? format(publishedDate, 'MMM d, yyyy') : 'Not specified'}
