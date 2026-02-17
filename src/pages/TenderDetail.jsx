@@ -58,7 +58,7 @@ function DetailRow({ label, value, mono = false }) {
     return (
         <div className="flex items-start justify-between gap-4 py-3 border-b border-border/40 last:border-b-0">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
-            <p className={`text-sm text-card-foreground text-right ${mono ? 'font-mono' : 'font-medium'}`}>{value}</p>
+            <div className={`text-sm text-card-foreground text-right ${mono ? 'font-mono' : 'font-medium'}`}>{value}</div>
         </div>
     );
 }
@@ -366,199 +366,154 @@ export default function TenderDetail() {
                     Back to Search
                 </Link>
 
-                <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
-                    <div className="space-y-5 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                            <Badge className={`${getSourceBadge(tender.source)} border h-7 px-2.5 text-[11px] font-medium`}>
-                                <span className="mr-1">{getCountryFlag(effectiveCountry)}</span>
-                                {tender.source}
-                            </Badge>
-                            <Badge className={`${getCoverageBadge(tender.coverage_status)} border h-7 px-2.5 text-[11px] font-medium`}>
-                                {coverageLabel}
-                            </Badge>
-                            <Badge className={`${getVerificationBadge(tender.verification_level)} border h-7 px-2.5 text-[11px] font-medium`}>
-                                {verificationLabel}
-                            </Badge>
-                        </div>
+                <div className="space-y-5 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Badge className={`${getSourceBadge(tender.source)} border h-7 px-2.5 text-[11px] font-medium`}>
+                            <span className="mr-1">{getCountryFlag(effectiveCountry)}</span>
+                            {tender.source}
+                        </Badge>
+                        <Badge className={`${getCoverageBadge(tender.coverage_status)} border h-7 px-2.5 text-[11px] font-medium`}>
+                            {coverageLabel}
+                        </Badge>
+                        <Badge className={`${getVerificationBadge(tender.verification_level)} border h-7 px-2.5 text-[11px] font-medium`}>
+                            {verificationLabel}
+                        </Badge>
+                    </div>
 
-                        <div className="space-y-2 min-w-0">
-                            <p className="text-sm text-muted-foreground">{tenderReference}</p>
-                            <h1
-                                className="text-3xl font-bold text-card-foreground leading-tight"
-                                style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
-                            >
-                                {tender.title}
-                            </h1>
-                            {tender.coverage_status === 'ted_only' ? (
-                                <p className="text-sm text-violet-300">
-                                    TED-only notice. Civant will keep monitoring national sources to link verification evidence.
-                                </p>
-                            ) : null}
-                        </div>
+                    <div className="space-y-2 min-w-0">
+                        <p className="text-sm text-muted-foreground">{tenderReference}</p>
+                        <h1
+                            className="text-3xl font-bold text-card-foreground leading-tight"
+                            style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+                        >
+                            {tender.title}
+                        </h1>
+                        {tender.coverage_status === 'ted_only' ? (
+                            <p className="text-sm text-violet-300">
+                                TED-only notice. Civant will keep monitoring national sources to link verification evidence.
+                            </p>
+                        ) : null}
+                    </div>
 
-                        <div className="rounded-2xl border border-border/70 bg-card/40 px-4 py-4">
-                            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                                <KeyFactItem
-                                    label="Published"
-                                    value={publishedDate ? format(publishedDate, 'MMM d, yyyy') : 'Not specified'}
-                                />
-                                <KeyFactItem
-                                    label="Deadline"
-                                    value={deadlineDate ? format(deadlineDate, 'MMM d, yyyy') : 'Not specified'}
-                                    helper={deadlineHelper}
-                                />
-                                <KeyFactItem label="Estimated value" value={formattedEstimatedValue} />
-                                <div className="min-w-0">
-                                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">CPV codes</p>
-                                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                        {cpvCodes.length === 0 ? (
-                                            <span className="text-sm font-medium text-card-foreground">Not specified</span>
-                                        ) : (
-                                            <>
-                                                {cpvCodes.slice(0, 2).map((code) => (
-                                                    <Badge key={code} variant="ghost" className="text-xs h-6 px-2 border border-border/60 bg-background/40">
-                                                        {code}
-                                                    </Badge>
-                                                ))}
-                                                {cpvCodes.length > 2 ? (
-                                                    <Popover>
-                                                        <PopoverTrigger asChild>
-                                                            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs border border-border/60 bg-background/40">
-                                                                +{cpvCodes.length - 2}
-                                                            </Button>
-                                                        </PopoverTrigger>
-                                                        <PopoverContent align="start" className="w-56">
-                                                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">All CPV codes</p>
-                                                            <div className="flex flex-wrap gap-1.5">
-                                                                {cpvCodes.map((code) => (
-                                                                    <Badge key={code} variant="secondary" className="text-xs">{code}</Badge>
-                                                                ))}
-                                                            </div>
-                                                        </PopoverContent>
-                                                    </Popover>
-                                                ) : null}
-                                            </>
-                                        )}
-                                    </div>
+                    <div className="rounded-2xl border border-border/70 bg-card/40 px-4 py-4">
+                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                            <KeyFactItem
+                                label="Published"
+                                value={publishedDate ? format(publishedDate, 'MMM d, yyyy') : 'Not specified'}
+                            />
+                            <KeyFactItem
+                                label="Deadline"
+                                value={deadlineDate ? format(deadlineDate, 'MMM d, yyyy') : 'Not specified'}
+                                helper={deadlineHelper}
+                            />
+                            <KeyFactItem label="Estimated value" value={formattedEstimatedValue} />
+                            <div className="min-w-0">
+                                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">CPV codes</p>
+                                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                    {cpvCodes.length === 0 ? (
+                                        <span className="text-sm font-medium text-card-foreground">Not specified</span>
+                                    ) : (
+                                        <>
+                                            {cpvCodes.slice(0, 2).map((code) => (
+                                                <Badge key={code} variant="ghost" className="text-xs h-6 px-2 border border-border/60 bg-background/40">
+                                                    {code}
+                                                </Badge>
+                                            ))}
+                                            {cpvCodes.length > 2 ? (
+                                                <Popover>
+                                                    <PopoverTrigger asChild>
+                                                        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs border border-border/60 bg-background/40">
+                                                            +{cpvCodes.length - 2}
+                                                        </Button>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent align="start" className="w-56">
+                                                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">All CPV codes</p>
+                                                        <div className="flex flex-wrap gap-1.5">
+                                                            {cpvCodes.map((code) => (
+                                                                <Badge key={code} variant="secondary" className="text-xs">{code}</Badge>
+                                                            ))}
+                                                        </div>
+                                                    </PopoverContent>
+                                                </Popover>
+                                            ) : null}
+                                        </>
+                                    )}
                                 </div>
                             </div>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2">
-                            <Button asChild variant="primary" className="min-w-[150px]">
-                                <Link to={createPageUrl(`Alerts?buyer=${encodeURIComponent(tender.buyer_name || '')}&keyword=${encodeURIComponent(tender.title?.split(' ').slice(0, 3).join(' ') || '')}`)}>
-                                    <Bell className="h-4 w-4" />
-                                    Create Alert
-                                </Link>
-                            </Button>
-
-                            {tender.url ? (
-                                <Button asChild variant="outline">
-                                    <a href={tender.url} target="_blank" rel="noopener noreferrer">
-                                        <ExternalLink className="h-4 w-4" />
-                                        View Original
-                                    </a>
-                                </Button>
-                            ) : null}
-
-                            <Button
-                                variant="outline"
-                                onClick={handleEnrichTender}
-                                disabled={enriching || enrichment || !actionableTenderId}
-                            >
-                                {enriching ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                    <Sparkles className="h-4 w-4" />
-                                )}
-                                {enrichment ? 'Enriched' : 'AI Enrich'}
-                            </Button>
-
-                            {tender.deadline_date ? (
-                                <Button
-                                    variant="outline"
-                                    onClick={handleAddToCalendar}
-                                    disabled={integrationLoading === 'calendar' || !actionableTenderId}
-                                >
-                                    {integrationLoading === 'calendar' ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                        <CalendarPlus className="h-4 w-4" />
-                                    )}
-                                    Add to Calendar
-                                </Button>
-                            ) : null}
-
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button variant="outline" size="icon" aria-label="More actions">
-                                        <MoreHorizontal className="h-4 w-4" />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-52">
-                                    <DropdownMenuLabel>More actions</DropdownMenuLabel>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                        onSelect={(event) => {
-                                            event.preventDefault();
-                                            handleSendToSlack();
-                                        }}
-                                        disabled={integrationLoading === 'slack' || !actionableTenderId}
-                                    >
-                                        {integrationLoading === 'slack' ? (
-                                            <Loader2 className="h-4 w-4 animate-spin" />
-                                        ) : (
-                                            <MessageSquare className="h-4 w-4" />
-                                        )}
-                                        Send to Slack
-                                    </DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
                         </div>
                     </div>
 
-                    <Card className="border-border/70 bg-card/50">
-                        <CardHeader className="pb-3">
-                            <CardTitle className="text-base font-semibold">Data status</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="flex items-center justify-between gap-3">
-                                <p className="text-xs uppercase tracking-wide text-muted-foreground">Verification</p>
-                                <Badge className={`${getVerificationBadge(tender.verification_level)} border text-[11px] h-7 px-2.5`}>
-                                    {verificationLabel}
-                                </Badge>
-                            </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Button asChild variant="primary" className="min-w-[150px]">
+                            <Link to={createPageUrl(`Alerts?buyer=${encodeURIComponent(tender.buyer_name || '')}&keyword=${encodeURIComponent(tender.title?.split(' ').slice(0, 3).join(' ') || '')}`)}>
+                                <Bell className="h-4 w-4" />
+                                Create Alert
+                            </Link>
+                        </Button>
 
-                            <div className="flex items-center justify-between gap-3">
-                                <p className="text-xs uppercase tracking-wide text-muted-foreground">Coverage</p>
-                                <Badge className={`${getCoverageBadge(tender.coverage_status)} border text-[11px] h-7 px-2.5`}>
-                                    {coverageLabel}
-                                </Badge>
-                            </div>
+                        {tender.url ? (
+                            <Button asChild variant="outline">
+                                <a href={tender.url} target="_blank" rel="noopener noreferrer">
+                                    <ExternalLink className="h-4 w-4" />
+                                    View Original
+                                </a>
+                            </Button>
+                        ) : null}
 
-                            <div className="space-y-2">
-                                <p className="text-xs uppercase tracking-wide text-muted-foreground">Canonical ID</p>
-                                <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-background/40 px-3 py-2">
-                                    <p className="text-xs font-mono text-card-foreground truncate flex-1">{canonicalId || '-'}</p>
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-7 w-7"
-                                        onClick={handleCopyCanonicalId}
-                                        disabled={!canonicalId}
-                                        aria-label="Copy canonical ID"
-                                    >
-                                        {canonicalCopied ? (
-                                            <Check className="h-3.5 w-3.5 text-emerald-300" />
-                                        ) : (
-                                            <Copy className="h-3.5 w-3.5" />
-                                        )}
-                                    </Button>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
+                        <Button
+                            variant="outline"
+                            onClick={handleEnrichTender}
+                            disabled={enriching || enrichment || !actionableTenderId}
+                        >
+                            {enriching ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Sparkles className="h-4 w-4" />
+                            )}
+                            {enrichment ? 'Enriched' : 'AI Enrich'}
+                        </Button>
+
+                        {tender.deadline_date ? (
+                            <Button
+                                variant="outline"
+                                onClick={handleAddToCalendar}
+                                disabled={integrationLoading === 'calendar' || !actionableTenderId}
+                            >
+                                {integrationLoading === 'calendar' ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    <CalendarPlus className="h-4 w-4" />
+                                )}
+                                Add to Calendar
+                            </Button>
+                        ) : null}
+
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="outline" size="icon" aria-label="More actions">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-52">
+                                <DropdownMenuLabel>More actions</DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                    onSelect={(event) => {
+                                        event.preventDefault();
+                                        handleSendToSlack();
+                                    }}
+                                    disabled={integrationLoading === 'slack' || !actionableTenderId}
+                                >
+                                    {integrationLoading === 'slack' ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <MessageSquare className="h-4 w-4" />
+                                    )}
+                                    Send to Slack
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </div>
                 </div>
 
                 <div className="h-px bg-gradient-to-r from-transparent via-border/80 to-transparent" />
@@ -581,20 +536,11 @@ export default function TenderDetail() {
                     </CardHeader>
                     <CardContent>
                         <DetailRow label="Buyer" value={tender.buyer_name || 'Not specified'} />
-                        <DetailRow
-                            label="Publication date"
-                            value={publishedDate ? format(publishedDate, 'MMMM d, yyyy') : 'Not specified'}
-                        />
-                        <DetailRow
-                            label="Deadline"
-                            value={deadlineDate ? format(deadlineDate, 'MMMM d, yyyy') : 'Not specified'}
-                        />
-                        <DetailRow label="Estimated value" value={formattedEstimatedValue} />
-                        <DetailRow
-                            label="CPV"
-                            value={cpvCodes.length ? cpvCodes.join(', ') : 'Not specified'}
-                            mono={cpvCodes.length > 0}
-                        />
+                        <DetailRow label="Country" value={effectiveCountry || 'Not specified'} />
+                        <DetailRow label="Source" value={String(tender.source || 'Not specified')} />
+                        <DetailRow label="Reference" value={tenderReference} />
+                        <DetailRow label="Tender status" value={tender.is_open ? 'Open' : 'Closed'} />
+                        <DetailRow label="Notice links visible" value={`${linkedNotices.length}/${linkedNoticeCount}`} />
                     </CardContent>
                 </Card>
 
@@ -603,8 +549,32 @@ export default function TenderDetail() {
                         <CardTitle className="text-lg font-semibold">Data Integrity</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <DetailRow label="Canonical ID" value={canonicalId || '-'} mono />
-                        <DetailRow label="Coverage" value={String(tender.coverage_status || 'national_only').replace('_', ' ')} />
+                        <DetailRow
+                            label="Canonical ID"
+                            mono
+                            value={
+                                <div className="inline-flex items-center justify-end gap-1.5">
+                                    <span>{canonicalId || '-'}</span>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6 -mr-1"
+                                        onClick={handleCopyCanonicalId}
+                                        disabled={!canonicalId}
+                                        aria-label="Copy canonical ID"
+                                    >
+                                        {canonicalCopied ? (
+                                            <Check className="h-3.5 w-3.5 text-emerald-300" />
+                                        ) : (
+                                            <Copy className="h-3.5 w-3.5" />
+                                        )}
+                                    </Button>
+                                </div>
+                            }
+                        />
+                        <DetailRow label="Coverage" value={coverageLabel} />
+                        <DetailRow label="Verification" value={verificationLabel} />
                         <DetailRow
                             label="First seen"
                             value={tender.first_seen_at ? format(new Date(tender.first_seen_at), 'MMM d, yyyy HH:mm') : '-'}
@@ -613,7 +583,7 @@ export default function TenderDetail() {
                             label="Last seen"
                             value={tender.last_seen_at ? format(new Date(tender.last_seen_at), 'MMM d, yyyy HH:mm') : '-'}
                         />
-                        <DetailRow label="Verification" value={String(tender.verification_level || 'unverified').replace('_', ' ')} />
+                        <DetailRow label="Notice links" value={String(tender.notice_count ?? linkedNoticeCount ?? 0)} />
                         {Array.isArray(tender.ted_notice_ids) && tender.ted_notice_ids.length > 0 ? (
                             <DetailRow label="TED Notice IDs" value={tender.ted_notice_ids.join(', ')} mono />
                         ) : null}
