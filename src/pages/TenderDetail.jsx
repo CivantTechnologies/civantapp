@@ -348,6 +348,18 @@ export default function TenderDetail() {
                                 Create Alert
                             </Link>
                         </Button>
+                        <Button
+                            variant="outline"
+                            onClick={handleEnrichTender}
+                            disabled={enriching || enrichment || !actionableTenderId}
+                        >
+                            {enriching ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Sparkles className="h-4 w-4" />
+                            )}
+                            {enrichment ? 'Enriched' : 'AI Enrich'}
+                        </Button>
 
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -358,31 +370,6 @@ export default function TenderDetail() {
                             <DropdownMenuContent align="end" className="w-52">
                                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                 <DropdownMenuSeparator />
-                                {tender.url ? (
-                                    <DropdownMenuItem
-                                        onSelect={(event) => {
-                                            event.preventDefault();
-                                            window.open(tender.url, '_blank', 'noopener,noreferrer');
-                                        }}
-                                    >
-                                        <ExternalLink className="h-4 w-4" />
-                                        View Original
-                                    </DropdownMenuItem>
-                                ) : null}
-                                <DropdownMenuItem
-                                    onSelect={(event) => {
-                                        event.preventDefault();
-                                        handleEnrichTender();
-                                    }}
-                                    disabled={enriching || enrichment || !actionableTenderId}
-                                >
-                                    {enriching ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                        <Sparkles className="h-4 w-4" />
-                                    )}
-                                    {enrichment ? 'Enriched' : 'AI Enrich'}
-                                </DropdownMenuItem>
                                 <DropdownMenuItem
                                     onSelect={(event) => {
                                         event.preventDefault();
@@ -575,6 +562,19 @@ export default function TenderDetail() {
                 </CardHeader>
                 {evidenceOpen ? (
                     <CardContent>
+                        {tender.url ? (
+                            <div className="mb-5 pb-4 border-b border-border/60">
+                                <a
+                                    href={tender.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+                                >
+                                    <ExternalLink className="h-4 w-4" />
+                                    View original notice
+                                </a>
+                            </div>
+                        ) : null}
                         {linkedNotices.length === 0 ? (
                             linkedNoticeCount > 0 ? (
                                 <div className="text-center py-6">
