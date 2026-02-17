@@ -236,32 +236,6 @@ export default function TenderDetail() {
         }
     };
 
-    const getSourceBadge = (source) => {
-        const colors = {
-            BOAMP_FR: 'bg-secondary/70 text-secondary-foreground border-border/80',
-            TED: 'bg-primary/15 text-primary border-primary/30',
-            ETENDERS_IE: 'bg-primary/12 text-card-foreground border-border/80',
-            PLACSP_ES: 'bg-primary/10 text-card-foreground border-border/80'
-        };
-        return colors[source] || 'bg-secondary/60 text-secondary-foreground border-border/70';
-    };
-
-    const getCoverageBadge = (coverageStatus) => {
-        if (coverageStatus === 'linked') return 'bg-emerald-500/12 text-emerald-200 border-emerald-400/35';
-        if (coverageStatus === 'ted_only') return 'bg-violet-500/12 text-violet-200 border-violet-400/35';
-        return 'bg-slate-900/50 text-slate-300 border-slate-700';
-    };
-
-    const getVerificationBadge = (verificationLevel) => {
-        if (verificationLevel === 'verified') return 'bg-emerald-500/12 text-emerald-200 border-emerald-400/35';
-        if (verificationLevel === 'partially_verified') return 'bg-amber-500/12 text-amber-200 border-amber-400/35';
-        return 'bg-slate-900/50 text-slate-300 border-slate-700';
-    };
-
-    const getCountryFlag = (country) => {
-        return country === 'FR' ? '🇫🇷' : country === 'IE' ? '🇮🇪' : country === 'ES' ? '🇪🇸' : '🌍';
-    };
-
     const handleAddToCalendar = async () => {
         if (!actionableTenderId) return;
         setIntegrationLoading('calendar');
@@ -458,7 +432,7 @@ export default function TenderDetail() {
                 </div>
 
                 <div className="rounded-2xl border border-border/70 bg-card/35 px-4 py-3">
-                    <div className="grid gap-x-6 gap-y-4 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
+                    <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">
                         <KeyFactItem
                             label="Published"
                             value={publishedDate ? format(publishedDate, 'MMM d, yyyy') : 'Not specified'}
@@ -500,21 +474,6 @@ export default function TenderDetail() {
                                         ) : null}
                                     </>
                                 )}
-                            </div>
-                        </div>
-                        <div className="min-w-0">
-                            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Status</p>
-                            <div className="mt-1 flex flex-wrap items-center gap-1">
-                                <Badge className={`${getSourceBadge(tender.source)} border h-5 px-2 text-[10px] font-medium opacity-90`}>
-                                    <span className="mr-1">{getCountryFlag(effectiveCountry)}</span>
-                                    {tender.source}
-                                </Badge>
-                                <Badge className={`${getCoverageBadge(tender.coverage_status)} border h-5 px-2 text-[10px] font-medium opacity-90`}>
-                                    {coverageLabel}
-                                </Badge>
-                                <Badge className={`${getVerificationBadge(tender.verification_level)} border h-5 px-2 text-[10px] font-medium opacity-90`}>
-                                    {verificationLabel}
-                                </Badge>
                             </div>
                         </div>
                     </div>
