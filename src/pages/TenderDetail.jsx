@@ -375,52 +375,54 @@ export default function TenderDetail() {
                             </Link>
                         </Button>
 
-                        {tender.url ? (
-                            <Button asChild variant="outline">
-                                <a href={tender.url} target="_blank" rel="noopener noreferrer">
-                                    <ExternalLink className="h-4 w-4" />
-                                    View Original
-                                </a>
-                            </Button>
-                        ) : null}
-
-                        <Button
-                            variant="outline"
-                            onClick={handleEnrichTender}
-                            disabled={enriching || enrichment || !actionableTenderId}
-                        >
-                            {enriching ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                                <Sparkles className="h-4 w-4" />
-                            )}
-                            {enrichment ? 'Enriched' : 'AI Enrich'}
-                        </Button>
-
-                        {tender.deadline_date ? (
-                            <Button
-                                variant="outline"
-                                onClick={handleAddToCalendar}
-                                disabled={integrationLoading === 'calendar' || !actionableTenderId}
-                            >
-                                {integrationLoading === 'calendar' ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                    <CalendarPlus className="h-4 w-4" />
-                                )}
-                                Add to Calendar
-                            </Button>
-                        ) : null}
-
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <Button variant="outline" size="icon" aria-label="More actions">
+                                <Button variant="outline" size="icon" aria-label="More actions" className="h-11 w-11">
                                     <MoreHorizontal className="h-4 w-4" />
                                 </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-52">
-                                <DropdownMenuLabel>More actions</DropdownMenuLabel>
+                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                 <DropdownMenuSeparator />
+                                {tender.url ? (
+                                    <DropdownMenuItem
+                                        onSelect={(event) => {
+                                            event.preventDefault();
+                                            window.open(tender.url, '_blank', 'noopener,noreferrer');
+                                        }}
+                                    >
+                                        <ExternalLink className="h-4 w-4" />
+                                        View Original
+                                    </DropdownMenuItem>
+                                ) : null}
+                                <DropdownMenuItem
+                                    onSelect={(event) => {
+                                        event.preventDefault();
+                                        handleEnrichTender();
+                                    }}
+                                    disabled={enriching || enrichment || !actionableTenderId}
+                                >
+                                    {enriching ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <Sparkles className="h-4 w-4" />
+                                    )}
+                                    {enrichment ? 'Enriched' : 'AI Enrich'}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                    onSelect={(event) => {
+                                        event.preventDefault();
+                                        handleAddToCalendar();
+                                    }}
+                                    disabled={!tender.deadline_date || integrationLoading === 'calendar' || !actionableTenderId}
+                                >
+                                    {integrationLoading === 'calendar' ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <CalendarPlus className="h-4 w-4" />
+                                    )}
+                                    Add to Calendar
+                                </DropdownMenuItem>
                                 <DropdownMenuItem
                                     onSelect={(event) => {
                                         event.preventDefault();
@@ -455,8 +457,8 @@ export default function TenderDetail() {
                     ) : null}
                 </div>
 
-                <div className="rounded-2xl border border-border/70 bg-card/40 px-4 py-4">
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                <div className="rounded-2xl border border-border/70 bg-card/35 px-4 py-3">
+                    <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                         <KeyFactItem
                             label="Published"
                             value={publishedDate ? format(publishedDate, 'MMM d, yyyy') : 'Not specified'}
@@ -500,17 +502,17 @@ export default function TenderDetail() {
                                 )}
                             </div>
                         </div>
-                        <div className="min-w-0">
+                        <div className="min-w-0 max-w-[260px]">
                             <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Status</p>
-                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                <Badge className={`${getSourceBadge(tender.source)} border h-6 px-2 text-[10px] font-medium`}>
+                            <div className="mt-1 flex flex-wrap items-center gap-1">
+                                <Badge className={`${getSourceBadge(tender.source)} border h-5 px-2 text-[10px] font-medium opacity-90`}>
                                     <span className="mr-1">{getCountryFlag(effectiveCountry)}</span>
                                     {tender.source}
                                 </Badge>
-                                <Badge className={`${getCoverageBadge(tender.coverage_status)} border h-6 px-2 text-[10px] font-medium`}>
+                                <Badge className={`${getCoverageBadge(tender.coverage_status)} border h-5 px-2 text-[10px] font-medium opacity-90`}>
                                     {coverageLabel}
                                 </Badge>
-                                <Badge className={`${getVerificationBadge(tender.verification_level)} border h-6 px-2 text-[10px] font-medium`}>
+                                <Badge className={`${getVerificationBadge(tender.verification_level)} border h-5 px-2 text-[10px] font-medium opacity-90`}>
                                     {verificationLabel}
                                 </Badge>
                             </div>
