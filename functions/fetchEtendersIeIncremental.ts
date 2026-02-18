@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createClientFromRequest } from './civantSdk.ts';
+import { offloadPayload } from './payloadOffload.ts';
 
 // Official eTenders portal HTML listing for "Latest CfTs" (no auth)
 const BASE_URL = 'https://www.etenders.gov.ie';
@@ -266,13 +267,29 @@ Deno.serve(async (req) => {
 
         const versionHash = await sha256Hex(JSON.stringify(versionBasis));
 
+        const offload = await offloadPayload({
+          civant,
+          tenantId,
+          tableName: 'TendersCurrent',
+          primaryKey: tenderId,
+          payload: data
+        });
+
+        const payloadMeta = offload.offloaded ? {
+          raw_object_key: offload.raw_object_key,
+          payload_hash_sha256: offload.payload_hash_sha256,
+          payload_bytes: offload.payload_bytes,
+          payload_stored_at: offload.payload_stored_at
+        } : {};
+
         upserts.push({
           current: {
             tenant_id: tenantId,
             tender_id: tenderId,
             source: 'ETENDERS_IE',
             published_at: publishedIso,
-            data
+            data,
+            ...payloadMeta
           },
           version: {
             tenant_id: tenantId,

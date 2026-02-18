@@ -1,4 +1,5 @@
 import { createClientFromRequest } from './civantSdk.ts';
+import { offloadPayload } from './payloadOffload.ts';
 
 const getErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -116,6 +117,25 @@ Deno.serve(async (req) => {
                     last_seen_at: new Date().toISOString(),
                     version_count: 1
                 };
+
+                const data = { ...tenderData };
+                const publishedIso = tenderData.publication_date
+                    ? `${tenderData.publication_date}T00:00:00.000Z`
+                    : new Date().toISOString();
+
+                const offload = await offloadPayload({
+                    civant,
+                    tenantId,
+                    tableName: 'TendersCurrent',
+                    primaryKey: tenderData.tender_uid,
+                    payload: data
+                });
+                const payloadMeta = offload.offloaded ? {
+                    raw_object_key: offload.raw_object_key,
+                    payload_hash_sha256: offload.payload_hash_sha256,
+                    payload_bytes: offload.payload_bytes,
+                    payload_stored_at: offload.payload_stored_at
+                } : {};
                 
                 // Check if exists
                 const existing = await civant.asServiceRole.entities.TendersCurrent.filter({
@@ -126,17 +146,34 @@ Deno.serve(async (req) => {
                     // Update if fingerprint changed
                     if (existing[0].fingerprint !== fingerprint) {
                         await civant.asServiceRole.entities.TendersCurrent.update(existing[0].id, {
-                            ...tenderData,
-                            version_count: (existing[0].version_count || 1) + 1
+                            tenant_id: tenantId,
+                            tender_id: tenderData.tender_uid,
+                            source: tenderData.source,
+                            published_at: publishedIso,
+                            data: {
+                                ...data,
+                                version_count: (existing[0].version_count || 1) + 1
+                            },
+                            ...payloadMeta
                         });
                         updated++;
                     }
                 } else {
                     // Insert new
-                    await civant.asServiceRole.entities.TendersCurrent.create(tenderData);
+                    await civant.asServiceRole.entities.TendersCurrent.create({
+                        tenant_id: tenantId,
+                        tender_id: tenderData.tender_uid,
+                        source: tenderData.source,
+                        published_at: publishedIso,
+                        data,
+                        ...payloadMeta
+                    });
                     inserted++;
                 }
             } catch (error: unknown) {
+                if ((error as { payloadOffloadFatal?: boolean })?.payloadOffloadFatal) {
+                    throw error;
+                }
                 errors.push({
                     record: String(record.title || record.source_notice_id || 'unknown_record'),
                     error: getErrorMessage(error)
