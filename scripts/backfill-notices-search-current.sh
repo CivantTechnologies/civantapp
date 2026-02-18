@@ -91,7 +91,7 @@ while true; do
     cursor_canonical_id_sql="'${cursor_canonical_id}'"
   fi
 
-  started_ms="$(python3 - <<'PY'\nimport time\nprint(int(time.time()*1000))\nPY)"
+  started_ms="$(python3 -c 'import time; print(int(time.time()*1000))')"
 
   batch_line="$("${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -qAt -F $'\t' -c \
     "select processed, inserted, updated, coalesce(next_cursor_updated_at::text,''), coalesce(next_cursor_canonical_id,''), done from public.backfill_notices_search_current_batch('${TENANT_ID}', ${BATCH_SIZE}, ${cursor_updated_at_sql}, ${cursor_canonical_id_sql});")"
@@ -103,7 +103,7 @@ while true; do
   next_cursor_canonical_id="$(echo "${batch_line}" | awk -F $'\t' '{print $5}')"
   done_flag="$(echo "${batch_line}" | awk -F $'\t' '{print $6}')"
 
-  ended_ms="$(python3 - <<'PY'\nimport time\nprint(int(time.time()*1000))\nPY)"
+  ended_ms="$(python3 -c 'import time; print(int(time.time()*1000))')"
   elapsed_ms="$((ended_ms - started_ms))"
 
   if [[ -z "${processed}" ]]; then processed="0"; fi
@@ -119,6 +119,11 @@ while true; do
     next_cursor_canonical_id_sql="'${next_cursor_canonical_id}'"
   fi
 
+  done_sql="false"
+  if [[ "${done_flag}" == "t" || "${done_flag}" == "true" ]]; then
+    done_sql="true"
+  fi
+
   # Update checkpoint.
   update_sql=$(
     cat <<SQL
@@ -128,7 +133,7 @@ set
   cursor_canonical_id = ${next_cursor_canonical_id_sql},
   processed_rows = processed_rows + ${processed},
   updated_at = now(),
-  completed_at = case when ${done_flag} then now() else completed_at end
+  completed_at = case when ${done_sql} then now() else completed_at end
 where tenant_id = '${TENANT_ID}';
 SQL
   )
