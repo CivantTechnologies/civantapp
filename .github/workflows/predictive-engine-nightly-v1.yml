@@ -1,0 +1,59 @@
+name: "Predictive Engine Nightly Full V1"
+
+on:
+  schedule:
+    # Daily at 02:35 UTC.
+    - cron: "35 2 * * *"
+  workflow_dispatch:
+    inputs:
+      tenant_id:
+        description: "Tenant id (defaults to civant_default)"
+        required: false
+        default: "civant_default"
+      max_pairs:
+        description: "Max buyer/category pairs"
+        required: false
+        default: "25000"
+
+concurrency:
+  group: "predictive-engine-nightly-v1"
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      CIVANT_TENANT_ID: ${{ secrets.CIVANT_TENANT_ID }}
+      DISPATCH_TENANT_ID: ${{ github.event.inputs.tenant_id }}
+      DISPATCH_MAX_PAIRS: ${{ github.event.inputs.max_pairs }}
+      PSQL_BIN: psql
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install psql
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Run nightly full predictive compute
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TENANT_ID="${CIVANT_TENANT_ID:-${DISPATCH_TENANT_ID:-civant_default}}"
+          MAX_PAIRS="${DISPATCH_MAX_PAIRS:-25000}"
+
+          if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
+            echo "ERROR: SUPABASE_DB_URL secret is required."
+            exit 1
+          fi
+
+          ./scripts/rollout-predictive-engine-v1.sh "${TENANT_ID}" "full" "" "${MAX_PAIRS}" "true" "v1.0.0"

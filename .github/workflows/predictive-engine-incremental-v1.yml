@@ -1,0 +1,65 @@
+name: "Predictive Engine Incremental V1"
+
+on:
+  schedule:
+    # Hourly at minute 8.
+    - cron: "8 * * * *"
+  workflow_dispatch:
+    inputs:
+      tenant_id:
+        description: "Tenant id (defaults to civant_default)"
+        required: false
+        default: "civant_default"
+      since_iso:
+        description: "Optional since timestamp (ISO). Leave blank to use last successful run."
+        required: false
+        default: ""
+      max_pairs:
+        description: "Max impacted buyer/category pairs to process"
+        required: false
+        default: "5000"
+
+concurrency:
+  group: "predictive-engine-incremental-v1"
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      CIVANT_TENANT_ID: ${{ secrets.CIVANT_TENANT_ID }}
+      DISPATCH_TENANT_ID: ${{ github.event.inputs.tenant_id }}
+      DISPATCH_SINCE_ISO: ${{ github.event.inputs.since_iso }}
+      DISPATCH_MAX_PAIRS: ${{ github.event.inputs.max_pairs }}
+      PSQL_BIN: psql
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install psql
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Run incremental predictive compute
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TENANT_ID="${CIVANT_TENANT_ID:-${DISPATCH_TENANT_ID:-civant_default}}"
+          SINCE_ISO="${DISPATCH_SINCE_ISO:-}"
+          MAX_PAIRS="${DISPATCH_MAX_PAIRS:-5000}"
+
+          if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
+            echo "ERROR: SUPABASE_DB_URL secret is required."
+            exit 1
+          fi
+
+          ./scripts/rollout-predictive-engine-v1.sh "${TENANT_ID}" "incremental" "${SINCE_ISO}" "${MAX_PAIRS}" "false" "v1.0.0"
