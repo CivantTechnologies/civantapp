@@ -70,6 +70,13 @@ function parseCpvCodes(value) {
     .filter(Boolean);
 }
 
+function signalIndexKey(countryCode, buyerName) {
+  const country = normalizeCountryCode(countryCode);
+  const buyerKey = normalizeBuyerKey(buyerName);
+  if (!country || !buyerKey) return '';
+  return `${country}|${buyerKey}`;
+}
+
 export default function Predictions() {
   const [tenders, setTenders] = useState([]);
   const [externalSignalsByBuyer, setExternalSignalsByBuyer] = useState({});
@@ -99,31 +106,35 @@ export default function Predictions() {
       const tendersData = await civant.entities.TendersCurrent.list('-publication_date', 2000);
       setTenders(Array.isArray(tendersData) ? tendersData : []);
 
-      let externalRollup = [];
-      try {
-        externalRollup = await civant.entities.external_signal_rollup_ie.filter(
-          { tenant_id: activeTenantId },
-          '-combined_external_strength_90d',
-          5000
-        );
-      } catch (externalError) {
-        console.warn('External rollup unavailable for Forecast boost:', externalError);
-      }
-
       const signalIndex = {};
-      (Array.isArray(externalRollup) ? externalRollup : []).forEach((row) => {
-        const keys = [
-          row.buyer_name_normalized,
-          row.buyer_key,
-          row.buyer_id
-        ]
-          .map(normalizeBuyerKey)
-          .filter(Boolean);
+      const rollupSources = [
+        { entity: 'external_signal_rollup_ie', country: 'IE' },
+        { entity: 'external_signal_rollup_fr', country: 'FR' },
+        { entity: 'external_signal_rollup_es', country: 'ES' }
+      ];
 
-        keys.forEach((key) => {
-          if (!signalIndex[key]) {
-            signalIndex[key] = row;
-          }
+      const rollupResults = await Promise.allSettled(
+        rollupSources.map(({ entity }) => civant.entities[entity].filter({ tenant_id: activeTenantId }, '-combined_external_strength_90d', 5000))
+      );
+
+      rollupResults.forEach((result, index) => {
+        const { country, entity } = rollupSources[index];
+        if (result.status !== 'fulfilled') {
+          console.warn(`External rollup unavailable for ${country}: ${entity}`, result.reason);
+          return;
+        }
+
+        const rows = Array.isArray(result.value) ? result.value : [];
+        rows.forEach((row) => {
+          const keys = [
+            signalIndexKey(country, row.buyer_name_normalized),
+            signalIndexKey(country, row.buyer_key),
+            signalIndexKey(country, row.buyer_id)
+          ].filter(Boolean);
+
+          keys.forEach((key) => {
+            if (!signalIndex[key]) signalIndex[key] = row;
+          });
         });
       });
 
@@ -206,9 +217,7 @@ export default function Predictions() {
       const daysSinceLastTender = Math.max(0, differenceInDays(new Date(), lastTenderDate));
       const baseScore = avgIntervalDays > 0 ? daysSinceLastTender / avgIntervalDays : 0;
 
-      const buyerSignal = pattern.country === 'IE'
-        ? externalSignalsByBuyer[normalizeBuyerKey(pattern.name)] || null
-        : null;
+      const buyerSignal = externalSignalsByBuyer[signalIndexKey(pattern.country, pattern.name)] || null;
 
       let signalBoost = 0;
       if (buyerSignal) {
@@ -444,7 +453,7 @@ export default function Predictions() {
                             </p>
                             {prediction.externalSignal ? (
                               <p className="text-xs text-primary mt-1">
-                                IE external signals: strength {prediction.externalSignal.strength90d.toFixed(2)} (H30
+                                External signals: strength {prediction.externalSignal.strength90d.toFixed(2)} (H30
                                 {prediction.externalSignal.hiringCount30d} / F30 {prediction.externalSignal.fundingCount30d})
                               </p>
                             ) : null}
