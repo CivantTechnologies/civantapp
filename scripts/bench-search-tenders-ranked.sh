@@ -62,14 +62,14 @@ for ((i=1;i<=N;i++)); do
     4) keyword="'grant'"; country="'IE'"; source="'TED'"; deadline_within="120" ;;
   esac
 
-  start_ms="$(python3 - <<'PY'\nimport time\nprint(int(time.time()*1000))\nPY)"
+  start_ms="$(python3 -c 'import time; print(int(time.time()*1000))')"
 
   # Count rows to avoid transferring full payload.
   "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -qAt -c \
     "select count(*) from public.search_tenders_ranked('${TENANT_ID}'::text, 200, ${keyword}, ${country}, ${source}, null, null, ${deadline_within}, null, null, ${last_tendered});" \
     >/dev/null
 
-  end_ms="$(python3 - <<'PY'\nimport time\nprint(int(time.time()*1000))\nPY)"
+  end_ms="$(python3 -c 'import time; print(int(time.time()*1000))')"
   echo $((end_ms - start_ms)) >> "${tmp_file}"
 done
 
@@ -87,4 +87,3 @@ def pct(p):
 print(f"[bench] samples={len(xs)} min={xs[0]} p50={pct(0.50):.1f} p95={pct(0.95):.1f} max={xs[-1]}")
 print(f"[bench] mean={statistics.mean(xs):.1f} stdev={statistics.pstdev(xs):.1f}")
 PY
-
