@@ -148,7 +148,7 @@ SQL
 
   pct="?"
   if [[ -n "${total_rows_now}" && "${total_rows_now}" != "0" ]]; then
-    pct="$(python3 - <<PY\np=${processed_rows_now}; t=${total_rows_now};\nprint(f\"{(p/t)*100:.2f}\")\nPY)"
+    pct="$(python3 -c "p=int('${processed_rows_now}'); t=int('${total_rows_now}'); print(f'{(p/t)*100:.2f}')")"
   fi
 
   echo "[backfill] processed=${processed} inserted=${inserted} updated=${updated} elapsed_ms=${elapsed_ms} total_processed=${processed_rows_now}/${total_rows_now:-?} (${pct}%)"
