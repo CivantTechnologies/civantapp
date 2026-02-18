@@ -28,6 +28,52 @@ if [[ -z "${DATABASE_URL}" ]]; then
   exit 1
 fi
 
+RETRIES="${RETRIES:-8}"
+RETRY_SLEEP_SEC="${RETRY_SLEEP_SEC:-5}"
+BATCH_SLEEP_MS="${BATCH_SLEEP_MS:-0}"
+TAB=$'\t'
+
+is_transient_psql_error() {
+  echo "${1:-}" | grep -Eqi "(timeout expired|operation timed out|could not connect|server closed the connection|terminating connection|connection timed out)"
+}
+
+psql_eval() {
+  if [[ "$#" -lt 1 ]]; then
+    echo "[backfill] ERROR: psql_eval requires at least 1 arg (SQL)" >&2
+    return 2
+  fi
+  local sql="${@: -1}"
+  local -a extra_args=()
+  if [[ "$#" -gt 1 ]]; then
+    extra_args=("${@:1:$#-1}")
+  fi
+  local attempt=1
+  local out rc
+
+  while true; do
+    out="$("${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 "${extra_args[@]}" -c "${sql}" 2>&1)" && {
+      printf "%s" "${out}"
+      return 0
+    }
+    rc=$?
+
+    if is_transient_psql_error "${out}"; then
+      if [[ "${attempt}" -ge "${RETRIES}" ]]; then
+        echo "[backfill] ERROR: psql failed after ${RETRIES} attempts" >&2
+        echo "${out}" >&2
+        return "${rc}"
+      fi
+      echo "[backfill] transient psql error (attempt ${attempt}/${RETRIES}); retrying in $((RETRY_SLEEP_SEC * attempt))s" >&2
+      sleep "$((RETRY_SLEEP_SEC * attempt))"
+      attempt="$((attempt + 1))"
+      continue
+    fi
+
+    echo "${out}" >&2
+    return "${rc}"
+  done
+}
+
 TENANT_ID_RAW="${1:-${TENANT_ID:-}}"
 if [[ -z "${TENANT_ID_RAW}" ]]; then
   echo "ERROR: TENANT_ID is required."
@@ -65,10 +111,10 @@ end
 SQL
 )
 
-"${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -q -c "${ensure_state_sql}"
+psql_eval -q "${ensure_state_sql}" >/dev/null
 
 while true; do
-  state_line="$("${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -qAt -F $'\t' -c \
+  state_line="$(psql_eval -qAt -F "${TAB}" \
     "select coalesce(cursor_updated_at::text,''), coalesce(cursor_canonical_id,''), processed_rows::text, coalesce(total_rows::text,'') , coalesce(completed_at::text,'') from public.notices_search_backfill_state where tenant_id='${TENANT_ID}' limit 1;")"
 
   cursor_updated_at="$(echo "${state_line}" | awk -F $'\t' '{print $1}')"
@@ -91,9 +137,9 @@ while true; do
     cursor_canonical_id_sql="'${cursor_canonical_id}'"
   fi
 
-  started_ms="$(python3 - <<'PY'\nimport time\nprint(int(time.time()*1000))\nPY)"
+  started_ms="$(python3 -c 'import time; print(int(time.time()*1000))')"
 
-  batch_line="$("${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -qAt -F $'\t' -c \
+  batch_line="$(psql_eval -qAt -F "${TAB}" \
     "select processed, inserted, updated, coalesce(next_cursor_updated_at::text,''), coalesce(next_cursor_canonical_id,''), done from public.backfill_notices_search_current_batch('${TENANT_ID}', ${BATCH_SIZE}, ${cursor_updated_at_sql}, ${cursor_canonical_id_sql});")"
 
   processed="$(echo "${batch_line}" | awk -F $'\t' '{print $1}')"
@@ -103,7 +149,7 @@ while true; do
   next_cursor_canonical_id="$(echo "${batch_line}" | awk -F $'\t' '{print $5}')"
   done_flag="$(echo "${batch_line}" | awk -F $'\t' '{print $6}')"
 
-  ended_ms="$(python3 - <<'PY'\nimport time\nprint(int(time.time()*1000))\nPY)"
+  ended_ms="$(python3 -c 'import time; print(int(time.time()*1000))')"
   elapsed_ms="$((ended_ms - started_ms))"
 
   if [[ -z "${processed}" ]]; then processed="0"; fi
@@ -119,6 +165,11 @@ while true; do
     next_cursor_canonical_id_sql="'${next_cursor_canonical_id}'"
   fi
 
+  done_sql="false"
+  if [[ "${done_flag}" == "t" || "${done_flag}" == "true" ]]; then
+    done_sql="true"
+  fi
+
   # Update checkpoint.
   update_sql=$(
     cat <<SQL
@@ -128,25 +179,29 @@ set
   cursor_canonical_id = ${next_cursor_canonical_id_sql},
   processed_rows = processed_rows + ${processed},
   updated_at = now(),
-  completed_at = case when ${done_flag} then now() else completed_at end
+  completed_at = case when ${done_sql} then now() else completed_at end
 where tenant_id = '${TENANT_ID}';
 SQL
   )
 
-  "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -q -c "${update_sql}"
+  psql_eval -q "${update_sql}" >/dev/null
 
   # Refresh progress values for logging.
-  progress_line="$("${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -qAt -F $'\t' -c \
+  progress_line="$(psql_eval -qAt -F "${TAB}" \
     "select processed_rows::text, coalesce(total_rows::text,'') from public.notices_search_backfill_state where tenant_id='${TENANT_ID}' limit 1;")"
   processed_rows_now="$(echo "${progress_line}" | awk -F $'\t' '{print $1}')"
   total_rows_now="$(echo "${progress_line}" | awk -F $'\t' '{print $2}')"
 
   pct="?"
   if [[ -n "${total_rows_now}" && "${total_rows_now}" != "0" ]]; then
-    pct="$(python3 - <<PY\np=${processed_rows_now}; t=${total_rows_now};\nprint(f\"{(p/t)*100:.2f}\")\nPY)"
+    pct="$(python3 -c "p=int('${processed_rows_now}'); t=int('${total_rows_now}'); print(f'{(p/t)*100:.2f}')")"
   fi
 
   echo "[backfill] processed=${processed} inserted=${inserted} updated=${updated} elapsed_ms=${elapsed_ms} total_processed=${processed_rows_now}/${total_rows_now:-?} (${pct}%)"
+
+  if [[ "${BATCH_SLEEP_MS}" =~ ^[0-9]+$ ]] && [[ "${BATCH_SLEEP_MS}" -gt 0 ]]; then
+    sleep "$(python3 -c "print(${BATCH_SLEEP_MS}/1000)")"
+  fi
 
   if [[ "${done_flag}" == "t" || "${done_flag}" == "true" || "${processed}" == "0" ]]; then
     echo "[backfill] done."
