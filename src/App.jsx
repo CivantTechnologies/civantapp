@@ -137,6 +137,9 @@ function ProtectedRoutes() {
         }
       />
 
+      <Route path="/Predictions" element={<Navigate to="/Forecast" replace />} />
+      <Route path="/predictions" element={<Navigate to="/Forecast" replace />} />
+
       {Object.entries(Pages)
         .filter(([path]) => path !== 'System')
         .map(([path, Page]) => (

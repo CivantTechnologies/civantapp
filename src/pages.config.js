@@ -10,7 +10,7 @@ const Connectors = lazy(() => import('./pages/Connectors'));
 const Insights = lazy(() => import('./pages/Insights'));
 const Integrations = lazy(() => import('./pages/Integrations'));
 const PipelineAdmin = lazy(() => import('./pages/PipelineAdmin'));
-const Predictions = lazy(() => import('./pages/Predictions'));
+const Forecast = lazy(() => import('./pages/Predictions'));
 const Profile = lazy(() => import('./pages/Profile'));
 const Search = lazy(() => import('./pages/Search'));
 const TenderDetail = lazy(() => import('./pages/TenderDetail'));
@@ -24,7 +24,7 @@ export const PAGES = {
     "Insights": Insights,
     "Integrations": Integrations,
     "PipelineAdmin": PipelineAdmin,
-    "Predictions": Predictions,
+    "Forecast": Forecast,
     "Profile": Profile,
     "Search": Search,
     "System": System,

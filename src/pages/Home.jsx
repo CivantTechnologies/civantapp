@@ -216,7 +216,7 @@ export default function Home() {
                         </Link>
                     </Button>
                     <Button asChild variant="secondary">
-                        <Link to={createPageUrl('Predictions')}>
+                        <Link to={createPageUrl('Forecast')}>
                             View predictions
                         </Link>
                     </Button>
