@@ -85,7 +85,9 @@ const TENANT_SCOPED_TABLES = new Set([
   'user_profiles',
   'Competitors',
   'Alerts',
-  'AlertEvents'
+  'AlertEvents',
+  'payload_offload_failures',
+  'payload_offload_state'
 ]);
 
 type DynamicRequest = RequestLike & {

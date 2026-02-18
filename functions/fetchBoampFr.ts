@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createClientFromRequest } from './civantSdk.ts';
+import { offloadPayload } from './payloadOffload.ts';
 
 // BOAMP OpenDataSoft API endpoint
 const BOAMP_API_URL = 'https://www.data.gouv.fr/api/1/datasets/aife-5f26fe1d2c9aa8d76b3a90dd/resources/';
@@ -242,6 +243,14 @@ Deno.serve(async (req) => {
                     }
 
                     const normalized = normalizeBoampRecord(raw);
+                    const data = { ...normalized };
+                    if (typeof data.raw_json === 'string') {
+                        try {
+                            data.raw_json = JSON.parse(data.raw_json);
+                        } catch {
+                            // keep as string if not valid JSON
+                        }
+                    }
 
                     if (!normalized.tender_uid || !normalized.title) {
                         errors.push(`Missing required fields in record: ${raw.idweb || 'unknown'}`);
@@ -259,14 +268,38 @@ Deno.serve(async (req) => {
                     
                     const now = new Date().toISOString();
                     
+                    const publishedIso = normalized.publication_date
+                        ? `${normalized.publication_date}T00:00:00.000Z`
+                        : now;
+
+                    const offload = await offloadPayload({
+                        civant,
+                        tenantId,
+                        tableName: 'TendersCurrent',
+                        primaryKey: normalized.tender_uid,
+                        payload: data
+                    });
+                    const payloadMeta = offload.offloaded ? {
+                        raw_object_key: offload.raw_object_key,
+                        payload_hash_sha256: offload.payload_hash_sha256,
+                        payload_bytes: offload.payload_bytes,
+                        payload_stored_at: offload.payload_stored_at
+                    } : {};
+
                     if (existing.length === 0) {
                         // New tender
-                        normalized.first_seen_at = now;
-                        normalized.last_seen_at = now;
-                        normalized.version_count = 1;
-                        normalized.tenant_id = tenantId;
-                        
-                        await civant.asServiceRole.entities.TendersCurrent.create(normalized);
+                        data.first_seen_at = now;
+                        data.last_seen_at = now;
+                        data.version_count = 1;
+
+                        await civant.asServiceRole.entities.TendersCurrent.create({
+                            tenant_id: tenantId,
+                            tender_id: normalized.tender_uid,
+                            source: normalized.source,
+                            published_at: publishedIso,
+                            data,
+                            ...payloadMeta
+                        });
                         
                         // Create initial version record
                         await civant.asServiceRole.entities.TenderVersions.create({
@@ -285,7 +318,12 @@ Deno.serve(async (req) => {
                         const current = existing[0];
                         
                         // Update last_seen_at
-                        const updateData = { last_seen_at: now, tenant_id: tenantId };
+                        const updateData = {
+                            tenant_id: tenantId,
+                            published_at: publishedIso,
+                            data,
+                            ...payloadMeta
+                        };
                         
                         if (current.fingerprint !== fingerprint) {
                             // Fingerprint changed - create new version
@@ -321,21 +359,25 @@ Deno.serve(async (req) => {
                                 fingerprint: fingerprint
                             });
                             
-                            updateData.fingerprint = fingerprint;
-                            updateData.version_count = newVersionNum;
-                            updateData.title = normalized.title;
-                            updateData.buyer_name = normalized.buyer_name;
-                            updateData.deadline_date = normalized.deadline_date;
-                            updateData.estimated_value = normalized.estimated_value;
-                            updateData.raw_json = normalized.raw_json;
+                            data.fingerprint = fingerprint;
+                            data.version_count = newVersionNum;
+                            data.title = normalized.title;
+                            data.buyer_name = normalized.buyer_name;
+                            data.deadline_date = normalized.deadline_date;
+                            data.estimated_value = normalized.estimated_value;
+                            data.raw_json = data.raw_json ?? normalized.raw_json;
                             
                             versionedCount++;
                         }
-                        
+
+                        data.last_seen_at = now;
                         await civant.asServiceRole.entities.TendersCurrent.update(current.id, updateData);
                         updatedCount++;
                         }
                         } catch (recordError) {
+                        if (recordError?.payloadOffloadFatal) {
+                        throw recordError;
+                        }
                         errors.push(`Record processing error (${raw.idweb || 'unknown'}): ${recordError.message}`);
                         if (errors.length > 50) {
                         throw new Error('Too many record errors, aborting');

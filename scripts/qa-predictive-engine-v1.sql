@@ -120,6 +120,34 @@ from public.run_predictive_engine_v1(
   false
 );
 
+-- Metrics: buyer resolution and confidence distribution
+\echo '== QA Metrics: Buyer resolution =='
+select count(distinct case when buyer_entity_id like 'unresolved:%' then buyer_entity_id end) as unresolved_buyer_keys
+from public.signals
+where tenant_id = :'tenant_id';
+
+select count(*) as buyer_aliases_count
+from public.buyer_aliases
+where tenant_id = :'tenant_id';
+
+select
+  count(*) as total_signals,
+  sum((buyer_entity_id not like 'unresolved:%')::int) as resolved_signals,
+  round(100.0 * sum((buyer_entity_id not like 'unresolved:%')::int) / nullif(count(*), 0), 2) as resolved_pct
+from public.signals
+where tenant_id = :'tenant_id';
+
+select confidence_band, count(*)
+from public.predictions_current
+where tenant_id = :'tenant_id'
+group by confidence_band
+order by count(*) desc;
+
+select count(*) as confidence_ge_60
+from public.predictions_current
+where tenant_id = :'tenant_id'
+  and confidence >= 60;
+
 -- Assertions
 
 select set_config('app.qa_tenant_id', :'tenant_id', true);
