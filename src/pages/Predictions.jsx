@@ -33,18 +33,33 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { format, addDays, differenceInDays } from 'date-fns';
 
 const COUNTRY_CODE_MAP = {
+  IRELAND: 'IE',
   IRL: 'IE',
   IRE: 'IE',
   IE: 'IE',
+  FRANCE: 'FR',
   FRA: 'FR',
   FR: 'FR',
+  SPAIN: 'ES',
+  ESPANA: 'ES',
+  'ESPAÑA': 'ES',
   ESP: 'ES',
   ES: 'ES'
 };
 
-function normalizeCountryCode(value) {
+function inferCountryFromSource(source) {
+  const normalized = String(source || '').trim().toUpperCase();
+  if (!normalized) return '';
+  if (normalized.includes('ETENDERS_IE')) return 'IE';
+  if (normalized.includes('BOAMP_FR')) return 'FR';
+  if (normalized.includes('PLACSP_ES')) return 'ES';
+  return '';
+}
+
+function normalizeCountryCode(value, source) {
   const key = String(value || '').trim().toUpperCase();
-  return COUNTRY_CODE_MAP[key] || key;
+  if (COUNTRY_CODE_MAP[key]) return COUNTRY_CODE_MAP[key];
+  return inferCountryFromSource(source) || key;
 }
 
 function normalizeBuyerKey(value) {
@@ -58,16 +73,77 @@ function normalizeBuyerKey(value) {
 }
 
 function parseCpvCodes(value) {
-  if (Array.isArray(value)) {
-    return value.map((code) => String(code || '').trim()).filter(Boolean);
-  }
+  const out = [];
+  const seen = new Set();
 
-  if (!value) return [];
+  const pushCode = (raw) => {
+    const digits = String(raw || '').replace(/\D/g, '').slice(0, 8);
+    if (digits.length < 2 || seen.has(digits)) return;
+    seen.add(digits);
+    out.push(digits);
+  };
 
-  return String(value)
-    .split(',')
-    .map((code) => code.trim())
-    .filter(Boolean);
+  const walk = (input) => {
+    if (!input) return;
+    if (Array.isArray(input)) {
+      input.forEach(walk);
+      return;
+    }
+    if (typeof input === 'object') {
+      Object.values(input).forEach(walk);
+      return;
+    }
+
+    const text = String(input || '').trim();
+    if (!text) return;
+
+    if ((text.startsWith('[') && text.endsWith(']')) || (text.startsWith('{') && text.endsWith('}'))) {
+      try {
+        walk(JSON.parse(text));
+      } catch {
+        // continue with regex parse
+      }
+    }
+
+    const matches = text.match(/\d{2,8}/g) || [];
+    matches.forEach(pushCode);
+  };
+
+  walk(value);
+  return out;
+}
+
+function parseAmount(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const normalized = String(value || '').replace(/[^0-9.-]/g, '');
+  if (!normalized) return null;
+  const num = Number(normalized);
+  return Number.isFinite(num) ? num : null;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function median(values) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const half = Math.floor(sorted.length / 2);
+  if (sorted.length % 2) return sorted[half];
+  return (sorted[half - 1] + sorted[half]) / 2;
+}
+
+function pickBestBuyerName(namesByCount, fallback = 'Unknown') {
+  let winner = fallback;
+  let maxCount = -1;
+  Object.entries(namesByCount || {}).forEach(([name, count]) => {
+    const asNumber = Number(count || 0);
+    if (asNumber > maxCount || (asNumber === maxCount && name.length > winner.length)) {
+      winner = name;
+      maxCount = asNumber;
+    }
+  });
+  return winner;
 }
 
 function signalIndexKey(countryCode, buyerName) {
@@ -96,15 +172,50 @@ export default function Predictions() {
   }, [activeTenantId, isLoadingTenants]);
 
   useEffect(() => {
-    if (tenders.length > 0) {
-      generatePredictions();
-    }
+    if (tenders.length > 0) generatePredictions();
+    else setPredictions([]);
   }, [tenders, selectedCountry, externalSignalsByBuyer]);
 
   const loadData = async () => {
     try {
-      const tendersData = await civant.entities.TendersCurrent.list('-publication_date', 2000);
-      setTenders(Array.isArray(tendersData) ? tendersData : []);
+      const tendersData = await civant.entities.canonical_tenders.filter(
+        { tenant_id: activeTenantId },
+        '-last_seen_at',
+        5000
+      );
+
+      const normalizedTenders = (Array.isArray(tendersData) ? tendersData : [])
+        .map((tender) => {
+          const country = normalizeCountryCode(
+            tender.country || tender.country_code || tender.country_iso,
+            tender.source
+          );
+          const publicationDate =
+            String(tender.publication_date || tender.first_seen_at || tender.last_seen_at || '').slice(0, 10);
+          const buyerName =
+            tender.buyer_name_raw ||
+            tender.buyer_name ||
+            tender.buyer_name_norm ||
+            'Unknown';
+          const estimatedValue = parseAmount(
+            tender.estimated_value ??
+            tender.data?.estimated_value ??
+            tender.normalized_json?.estimated_value
+          );
+
+          return {
+            ...tender,
+            id: tender.canonical_id || tender.id,
+            buyer_name: buyerName,
+            country,
+            publication_date: publicationDate,
+            cpv_codes: parseCpvCodes(tender.cpv_codes),
+            estimated_value: estimatedValue
+          };
+        })
+        .filter((tender) => Boolean(tender.id) && Boolean(tender.publication_date) && Boolean(tender.country));
+
+      setTenders(normalizedTenders);
 
       const signalIndex = {};
       const rollupSources = [
@@ -155,11 +266,18 @@ export default function Predictions() {
     const buyerPatterns = {};
 
     filteredTenders.forEach((tender) => {
-      const buyer = tender.buyer_name || 'Unknown';
-      if (!buyerPatterns[buyer]) {
-        buyerPatterns[buyer] = {
-          name: buyer,
-          country: normalizeCountryCode(tender.country),
+      const buyerName = String(tender.buyer_name || 'Unknown').trim() || 'Unknown';
+      const country = normalizeCountryCode(tender.country, tender.source);
+      const buyerKey = normalizeBuyerKey(buyerName);
+      if (!country || !buyerKey) return;
+
+      const key = `${country}|${buyerKey}`;
+      if (!buyerPatterns[key]) {
+        buyerPatterns[key] = {
+          key,
+          buyerKey,
+          displayNames: {},
+          country,
           tenders: [],
           cpvCodes: {},
           avgValue: [],
@@ -167,26 +285,24 @@ export default function Predictions() {
         };
       }
 
-      buyerPatterns[buyer].tenders.push(tender);
+      buyerPatterns[key].displayNames[buyerName] = (buyerPatterns[key].displayNames[buyerName] || 0) + 1;
+      buyerPatterns[key].tenders.push(tender);
 
       parseCpvCodes(tender.cpv_codes).forEach((code) => {
         if (!code) return;
-          const mainCode = code.trim().substring(0, 8);
-          buyerPatterns[buyer].cpvCodes[mainCode] = (buyerPatterns[buyer].cpvCodes[mainCode] || 0) + 1;
+        const mainCode = code.trim().substring(0, 8);
+        buyerPatterns[key].cpvCodes[mainCode] = (buyerPatterns[key].cpvCodes[mainCode] || 0) + 1;
       });
 
-      if (tender.estimated_value) {
-        const numericValue = Number(tender.estimated_value);
-        if (Number.isFinite(numericValue) && numericValue > 0) {
-          buyerPatterns[buyer].avgValue.push(numericValue);
-        }
+      if (Number.isFinite(tender.estimated_value) && tender.estimated_value > 0) {
+        buyerPatterns[key].avgValue.push(Number(tender.estimated_value));
       }
 
       if (tender.publication_date) {
         const publicationDate = new Date(tender.publication_date);
         if (!Number.isNaN(publicationDate.getTime())) {
           const month = publicationDate.getMonth();
-          buyerPatterns[buyer].publicationMonths[month] = (buyerPatterns[buyer].publicationMonths[month] || 0) + 1;
+          buyerPatterns[key].publicationMonths[month] = (buyerPatterns[key].publicationMonths[month] || 0) + 1;
         }
       }
     });
@@ -196,9 +312,14 @@ export default function Predictions() {
     Object.values(buyerPatterns).forEach((pattern) => {
       if (pattern.tenders.length < 2) return;
 
-      const sortedDates = pattern.tenders
-        .filter((tender) => tender.publication_date)
-        .map((tender) => new Date(tender.publication_date))
+      const uniquePublicationDays = [...new Set(
+        pattern.tenders
+          .map((tender) => String(tender.publication_date || '').slice(0, 10))
+          .filter(Boolean)
+      )];
+
+      const sortedDates = uniquePublicationDays
+        .map((day) => new Date(day))
         .filter((dateValue) => !Number.isNaN(dateValue.getTime()))
         .sort((a, b) => a - b);
 
@@ -210,16 +331,26 @@ export default function Predictions() {
         if (days > 0) intervals.push(days);
       }
 
-      if (intervals.length === 0) return;
+      if (!intervals.length) return;
 
       const avgIntervalDays = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+      const medianIntervalDays = median(intervals);
+      if (!Number.isFinite(medianIntervalDays) || medianIntervalDays <= 0) return;
+
+      const variance = intervals.reduce((sum, days) => sum + ((days - avgIntervalDays) ** 2), 0) / intervals.length;
+      const stdDev = Math.sqrt(variance);
+      const cadenceConsistency = clamp(1 - (stdDev / Math.max(avgIntervalDays, 1)), 0, 1);
+      const sampleCoverage = clamp(intervals.length / 8, 0, 1);
+
       const lastTenderDate = sortedDates[sortedDates.length - 1];
       const daysSinceLastTender = Math.max(0, differenceInDays(new Date(), lastTenderDate));
-      const baseScore = avgIntervalDays > 0 ? daysSinceLastTender / avgIntervalDays : 0;
+      const recurrenceProgress = clamp(daysSinceLastTender / medianIntervalDays, 0, 1.35);
 
-      const buyerSignal = externalSignalsByBuyer[signalIndexKey(pattern.country, pattern.name)] || null;
+      const buyerSignal =
+        externalSignalsByBuyer[signalIndexKey(pattern.country, pickBestBuyerName(pattern.displayNames))] || null;
 
       let signalBoost = 0;
+      let signalEvidence = 0;
       if (buyerSignal) {
         const combinedStrength = Number(buyerSignal.combined_external_strength_90d || 0);
         const hiringCount30d = Number(buyerSignal.hiring_count_30d || 0);
@@ -230,10 +361,27 @@ export default function Predictions() {
         else if (combinedStrength > 0) signalBoost += 0.08;
 
         if (hiringCount30d + fundingCount30d >= 2) signalBoost += 0.06;
+
+        signalEvidence = clamp((combinedStrength * 1.5) + (hiringCount30d + fundingCount30d >= 2 ? 0.2 : 0), 0, 1);
       }
 
-      const compositeScore = Math.min(1.35, baseScore + signalBoost);
-      const likelihood = compositeScore >= 0.8 ? 'high' : compositeScore >= 0.5 ? 'medium' : 'low';
+      const confidenceScore = clamp(
+        (cadenceConsistency * 0.38) +
+        (sampleCoverage * 0.27) +
+        (Math.min(1, recurrenceProgress) * 0.2) +
+        (signalEvidence * 0.15),
+        0.1,
+        0.99
+      );
+
+      const compositeScore = clamp(
+        (recurrenceProgress * 0.82) +
+        (confidenceScore * 0.18) +
+        signalBoost,
+        0,
+        1.5
+      );
+      const likelihood = compositeScore >= 0.95 ? 'high' : compositeScore >= 0.65 ? 'medium' : 'low';
 
       if (likelihood === 'low') return;
 
@@ -252,11 +400,11 @@ export default function Predictions() {
         .slice(0, 2)
         .map(([month]) => Number.parseInt(month, 10));
 
-      const predictedDate = addDays(lastTenderDate, Math.max(1, Math.round(avgIntervalDays)));
+      const predictedDate = addDays(lastTenderDate, Math.max(1, Math.round(medianIntervalDays)));
       const avgIntervalMonths = Math.max(1, Math.round(avgIntervalDays / 30));
 
       predictionsList.push({
-        buyer: pattern.name,
+        buyer: pickBestBuyerName(pattern.displayNames),
         country: pattern.country,
         likelihood,
         predictedDate,
@@ -266,6 +414,9 @@ export default function Predictions() {
         avgValue,
         topMonths,
         lastTenderDate,
+        confidenceScore,
+        recurrenceProgress,
+        cadenceConsistency,
         externalSignal: buyerSignal
           ? {
               strength90d: Number(buyerSignal.combined_external_strength_90d || 0),
@@ -351,7 +502,7 @@ export default function Predictions() {
               <Sparkles className="h-6 w-6 text-primary" />
               Tender Panorama
             </PageTitle>
-            <PageDescription>AI-powered forecasts based on historical contract award patterns.</PageDescription>
+            <PageDescription>AI-powered forecasts based on canonical tender cadence and external signals.</PageDescription>
           </div>
         </div>
 
@@ -450,6 +601,9 @@ export default function Predictions() {
                             <h3 className="font-semibold text-card-foreground mb-1 truncate">{prediction.buyer}</h3>
                             <p className="text-sm text-muted-foreground">
                               Based on {prediction.historicalCount} historical tenders
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Confidence {Math.round((prediction.confidenceScore || 0) * 100)}%
                             </p>
                             {prediction.externalSignal ? (
                               <p className="text-xs text-primary mt-1">
