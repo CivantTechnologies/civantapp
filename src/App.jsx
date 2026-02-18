@@ -99,6 +99,8 @@ function RequireSystemRole({ children }) {
 }
 
 function ProtectedRoutes() {
+  const nonSystemPages = Object.entries(Pages).filter(([path]) => path !== 'System');
+
   return (
     <Routes>
       <Route
@@ -113,18 +115,6 @@ function ProtectedRoutes() {
       />
 
       <Route
-        path="/System"
-        element={
-          <RequireSystemRole>
-            <LayoutWrapper currentPageName="System">
-              <Suspense fallback={<RouteLoader />}>
-                <SystemPage />
-              </Suspense>
-            </LayoutWrapper>
-          </RequireSystemRole>
-        }
-      />
-      <Route
         path="/system"
         element={
           <RequireSystemRole>
@@ -136,25 +126,35 @@ function ProtectedRoutes() {
           </RequireSystemRole>
         }
       />
+      <Route path="/System" caseSensitive element={<Navigate to="/system" replace />} />
 
-      <Route path="/Predictions" element={<Navigate to="/Forecast" replace />} />
-      <Route path="/predictions" element={<Navigate to="/Forecast" replace />} />
+      <Route path="/Predictions" caseSensitive element={<Navigate to="/forecast" replace />} />
+      <Route path="/predictions" element={<Navigate to="/forecast" replace />} />
 
-      {Object.entries(Pages)
-        .filter(([path]) => path !== 'System')
-        .map(([path, Page]) => (
+      {nonSystemPages
+        .filter(([path]) => path !== path.toLowerCase())
+        .map(([path]) => (
           <Route
-            key={path}
+            key={`legacy-${path}`}
             path={`/${path}`}
-            element={
-              <LayoutWrapper currentPageName={path}>
-                <Suspense fallback={<RouteLoader />}>
-                  <Page />
-                </Suspense>
-              </LayoutWrapper>
-            }
+            caseSensitive
+            element={<Navigate to={`/${path.toLowerCase()}`} replace />}
           />
         ))}
+
+      {nonSystemPages.map(([path, Page]) => (
+        <Route
+          key={path}
+          path={`/${path.toLowerCase()}`}
+          element={
+            <LayoutWrapper currentPageName={path}>
+              <Suspense fallback={<RouteLoader />}>
+                <Page />
+              </Suspense>
+            </LayoutWrapper>
+          }
+        />
+      ))}
 
       <Route path="*" element={<PageNotFound />} />
     </Routes>
