@@ -1,0 +1,32 @@
+name: DB Guardrails Canary (Stop Bleeding)
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    # Hourly canary (UTC) - cheap checks only.
+    - cron: "23 * * * *"
+
+jobs:
+  canary:
+    name: Canary (cheap)
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.DB_GUARDRAILS_STOP_BLEEDING_DISABLED != 'true' }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install psql
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Run SQL guardrails (canary)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "${SUPABASE_DB_URL}" ]; then
+            echo "Missing required secret SUPABASE_DB_URL"
+            exit 1
+          fi
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -v guardrail_mode=canary -f scripts/guardrails-stop-bleeding.sql
