@@ -136,6 +136,7 @@ declare
   v_extonly_confidence int;
   v_extonly_tier int;
   v_incremental_success int;
+  v_latest_full_computed int;
 begin
   select count(*) into v_pred_count
   from public.predictions_current
@@ -205,6 +206,19 @@ begin
 
   if v_incremental_success < 1 then
     raise exception 'FAIL: incremental run did not complete successfully';
+  end if;
+
+  select coalesce((metadata_json->>'computed_prediction_rows')::int, 0)
+  into v_latest_full_computed
+  from public.prediction_runs
+  where tenant_id = v_tenant
+    and run_type = 'full'
+    and status = 'success'
+  order by started_at desc
+  limit 1;
+
+  if coalesce(v_latest_full_computed, 0) < 1 then
+    raise exception 'FAIL: run metadata shows zero computed prediction rows';
   end if;
 end $$;
 
