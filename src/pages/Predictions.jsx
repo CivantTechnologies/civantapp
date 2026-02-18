@@ -1,872 +1,425 @@
-import React, { useEffect, useState } from 'react';
-import { civant } from '@/api/civantClient';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { createPageUrl } from '../utils';
+import { format } from 'date-fns';
+import { Building2, Calendar, Clock, Loader2, Target, TrendingUp } from 'lucide-react';
+
+import { civant } from '@/api/civantClient';
 import { useTenant } from '@/lib/tenant';
+import { createPageUrl } from '../utils';
 import {
-  TrendingUp,
-  Building2,
-  Calendar,
-  Target,
-  Loader2,
-  ArrowRight,
-  Sparkles,
-  Clock,
-  DollarSign,
-  MessageSquare
-} from 'lucide-react';
-import FeedbackDialog from '../components/predictions/FeedbackDialog';
-import {
-  Page,
-  PageHeader,
-  PageTitle,
-  PageDescription,
-  PageBody,
+  Badge,
+  Button,
   Card,
+  CardContent,
   CardHeader,
   CardTitle,
-  CardContent,
-  Button,
-  Badge
+  Page,
+  PageBody,
+  PageDescription,
+  PageHeader,
+  PageTitle
 } from '@/components/ui';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { format, addDays, differenceInDays } from 'date-fns';
 
-const COUNTRY_CODE_MAP = {
-  IRELAND: 'IE',
-  IRL: 'IE',
-  IRE: 'IE',
-  IE: 'IE',
-  FRANCE: 'FR',
-  FRA: 'FR',
-  FR: 'FR',
-  SPAIN: 'ES',
-  ESPANA: 'ES',
-  'ESPAÑA': 'ES',
-  ESP: 'ES',
-  ES: 'ES'
+const COUNTRY_OPTIONS = [
+  { value: 'all', label: 'All Countries' },
+  { value: 'IE', label: 'Ireland' },
+  { value: 'FR', label: 'France' },
+  { value: 'ES', label: 'Spain' }
+];
+
+const COUNTRY_FLAGS = {
+  IE: '🇮🇪',
+  FR: '🇫🇷',
+  ES: '🇪🇸'
 };
 
-function inferCountryFromSource(source) {
-  const normalized = String(source || '').trim().toUpperCase();
-  if (!normalized) return '';
-  if (normalized.includes('ETENDERS_IE')) return 'IE';
-  if (normalized.includes('BOAMP_FR')) return 'FR';
-  if (normalized.includes('PLACSP_ES')) return 'ES';
-  return '';
+const WINDOW_LABELS = {
+  next_30: 'Next 30 days',
+  m1_3: '1-3 months',
+  m3_6: '3-6 months',
+  m6_12: '6-12 months'
+};
+
+function getConfidenceBadgeClass(band) {
+  switch (String(band || '').toLowerCase()) {
+    case 'very high':
+      return 'bg-civant-teal/15 text-civant-teal border-civant-teal/40';
+    case 'high':
+      return 'bg-blue-500/15 text-blue-300 border-blue-400/35';
+    case 'medium':
+      return 'bg-amber-500/15 text-amber-300 border-amber-400/35';
+    default:
+      return 'bg-slate-500/15 text-slate-300 border-slate-400/30';
+  }
 }
 
-function normalizeCountryCode(value, source) {
-  const key = String(value || '').trim().toUpperCase();
-  if (COUNTRY_CODE_MAP[key]) return COUNTRY_CODE_MAP[key];
-  return inferCountryFromSource(source) || key;
+function formatPct(value) {
+  const n = Number(value || 0);
+  return `${Math.round(n * 100)}%`;
 }
 
-function normalizeBuyerKey(value) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
+function formatDate(value) {
+  if (!value) return 'N/A';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return format(d, 'MMM d, yyyy');
 }
 
-function parseCpvCodes(value) {
-  const out = [];
-  const seen = new Set();
-
-  const pushCode = (raw) => {
-    const digits = String(raw || '').replace(/\D/g, '').slice(0, 8);
-    if (digits.length < 2 || seen.has(digits)) return;
-    seen.add(digits);
-    out.push(digits);
-  };
-
-  const walk = (input) => {
-    if (!input) return;
-    if (Array.isArray(input)) {
-      input.forEach(walk);
-      return;
-    }
-    if (typeof input === 'object') {
-      Object.values(input).forEach(walk);
-      return;
-    }
-
-    const text = String(input || '').trim();
-    if (!text) return;
-
-    if ((text.startsWith('[') && text.endsWith(']')) || (text.startsWith('{') && text.endsWith('}'))) {
-      try {
-        walk(JSON.parse(text));
-      } catch {
-        // continue with regex parse
-      }
-    }
-
-    const matches = text.match(/\d{2,8}/g) || [];
-    matches.forEach(pushCode);
-  };
-
-  walk(value);
+function toMap(rows, keyField) {
+  const out = new Map();
+  (rows || []).forEach((row) => {
+    const key = row?.[keyField];
+    if (!key) return;
+    out.set(key, row);
+  });
   return out;
 }
 
-function parseAmount(value) {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  const normalized = String(value || '').replace(/[^0-9.-]/g, '');
-  if (!normalized) return null;
-  const num = Number(normalized);
-  return Number.isFinite(num) ? num : null;
-}
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function median(values) {
-  if (!values.length) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const half = Math.floor(sorted.length / 2);
-  if (sorted.length % 2) return sorted[half];
-  return (sorted[half - 1] + sorted[half]) / 2;
-}
-
-function pickBestBuyerName(namesByCount, fallback = 'Unknown') {
-  let winner = fallback;
-  let maxCount = -1;
-  Object.entries(namesByCount || {}).forEach(([name, count]) => {
-    const asNumber = Number(count || 0);
-    if (asNumber > maxCount || (asNumber === maxCount && name.length > winner.length)) {
-      winner = name;
-      maxCount = asNumber;
-    }
+function toGroupedDrivers(rows) {
+  const out = new Map();
+  (rows || []).forEach((row) => {
+    const key = row?.prediction_id;
+    if (!key) return;
+    const list = out.get(key) || [];
+    list.push(row);
+    out.set(key, list);
   });
-  return winner;
-}
 
-function signalIndexKey(countryCode, buyerName) {
-  const country = normalizeCountryCode(countryCode);
-  const buyerKey = normalizeBuyerKey(buyerName);
-  if (!country || !buyerKey) return '';
-  return `${country}|${buyerKey}`;
+  for (const [key, list] of out.entries()) {
+    list.sort((a, b) => Number(b?.contribution || 0) - Number(a?.contribution || 0));
+    out.set(key, list);
+  }
+
+  return out;
 }
 
 export default function Predictions() {
-  const [tenders, setTenders] = useState([]);
-  const [externalSignalsByBuyer, setExternalSignalsByBuyer] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [selectedCountry, setSelectedCountry] = useState('all');
-  const [predictions, setPredictions] = useState([]);
-  const [aiPredictions, setAiPredictions] = useState({});
-  const [loadingAI, setLoadingAI] = useState(false);
-  const [feedbackDialog, setFeedbackDialog] = useState({ open: false, prediction: null, buyer: null });
   const { activeTenantId, isLoadingTenants } = useTenant();
+
+  const [selectedCountry, setSelectedCountry] = useState('all');
+  const [loading, setLoading] = useState(true);
+  const [predictions, setPredictions] = useState([]);
+  const [scorecardsByPrediction, setScorecardsByPrediction] = useState(new Map());
+  const [driversByPrediction, setDriversByPrediction] = useState(new Map());
+  const [latestRuns, setLatestRuns] = useState([]);
 
   useEffect(() => {
     if (isLoadingTenants) return;
     if (!activeTenantId) return;
+    void loadForecast();
+  }, [activeTenantId, isLoadingTenants, selectedCountry]);
+
+  const loadForecast = async () => {
     setLoading(true);
-    void loadData();
-  }, [activeTenantId, isLoadingTenants]);
 
-  useEffect(() => {
-    if (tenders.length > 0) generatePredictions();
-    else setPredictions([]);
-  }, [tenders, selectedCountry, externalSignalsByBuyer]);
-
-  const loadData = async () => {
     try {
-      const tendersData = await civant.entities.canonical_tenders.filter(
+      const baseQuery = { tenant_id: activeTenantId };
+      if (selectedCountry !== 'all') {
+        baseQuery.region = selectedCountry;
+      }
+
+      const predictionFields = [
+        'prediction_id',
+        'buyer_entity_id',
+        'buyer_display_name',
+        'cpv_cluster_id',
+        'cpv_cluster_label',
+        'region',
+        'next_window_label',
+        'expected_window_start',
+        'expected_window_end',
+        'probability',
+        'confidence',
+        'confidence_band',
+        'forecast_score',
+        'fallback_tier',
+        'drivers_count',
+        'evidence_count',
+        'last_computed_at'
+      ].join(',');
+
+      const predictionRows = await civant.entities.predictions_current.filter(
+        baseQuery,
+        '-forecast_score,-probability',
+        250,
+        0,
+        predictionFields
+      );
+
+      setPredictions(Array.isArray(predictionRows) ? predictionRows : []);
+
+      const ids = (predictionRows || [])
+        .map((row) => row?.prediction_id)
+        .filter(Boolean);
+
+      if (ids.length > 0) {
+        const [scorecards, drivers] = await Promise.all([
+          civant.entities.prediction_scorecard.filter(
+            { tenant_id: activeTenantId, prediction_id: ids },
+            '-total_score',
+            500,
+            0,
+            'prediction_id,total_score,cycle_score,timing_score,behavioural_score,structural_score,external_signal_score,data_quality_score,created_at'
+          ),
+          civant.entities.prediction_drivers.filter(
+            { tenant_id: activeTenantId, prediction_id: ids },
+            '-contribution',
+            2000,
+            0,
+            'prediction_id,driver_type,label,contribution,narrative,evidence_refs,created_at'
+          )
+        ]);
+
+        setScorecardsByPrediction(toMap(scorecards || [], 'prediction_id'));
+        setDriversByPrediction(toGroupedDrivers(drivers || []));
+      } else {
+        setScorecardsByPrediction(new Map());
+        setDriversByPrediction(new Map());
+      }
+
+      const runs = await civant.entities.prediction_runs.filter(
         { tenant_id: activeTenantId },
-        '-last_seen_at',
-        5000
+        '-started_at',
+        20,
+        0,
+        'run_id,run_type,status,started_at,finished_at,pairs_processed,error_message'
       );
-
-      const normalizedTenders = (Array.isArray(tendersData) ? tendersData : [])
-        .map((tender) => {
-          const country = normalizeCountryCode(
-            tender.country || tender.country_code || tender.country_iso,
-            tender.source
-          );
-          const publicationDate =
-            String(tender.publication_date || tender.first_seen_at || tender.last_seen_at || '').slice(0, 10);
-          const buyerName =
-            tender.buyer_name_raw ||
-            tender.buyer_name ||
-            tender.buyer_name_norm ||
-            'Unknown';
-          const estimatedValue = parseAmount(
-            tender.estimated_value ??
-            tender.data?.estimated_value ??
-            tender.normalized_json?.estimated_value
-          );
-
-          return {
-            ...tender,
-            id: tender.canonical_id || tender.id,
-            buyer_name: buyerName,
-            country,
-            publication_date: publicationDate,
-            cpv_codes: parseCpvCodes(tender.cpv_codes),
-            estimated_value: estimatedValue
-          };
-        })
-        .filter((tender) => Boolean(tender.id) && Boolean(tender.publication_date) && Boolean(tender.country));
-
-      setTenders(normalizedTenders);
-
-      const signalIndex = {};
-      const rollupSources = [
-        { entity: 'external_signal_rollup_ie', country: 'IE' },
-        { entity: 'external_signal_rollup_fr', country: 'FR' },
-        { entity: 'external_signal_rollup_es', country: 'ES' }
-      ];
-
-      const rollupResults = await Promise.allSettled(
-        rollupSources.map(({ entity }) => civant.entities[entity].filter({ tenant_id: activeTenantId }, '-combined_external_strength_90d', 5000))
-      );
-
-      rollupResults.forEach((result, index) => {
-        const { country, entity } = rollupSources[index];
-        if (result.status !== 'fulfilled') {
-          console.warn(`External rollup unavailable for ${country}: ${entity}`, result.reason);
-          return;
-        }
-
-        const rows = Array.isArray(result.value) ? result.value : [];
-        rows.forEach((row) => {
-          const keys = [
-            signalIndexKey(country, row.buyer_name_normalized),
-            signalIndexKey(country, row.buyer_key),
-            signalIndexKey(country, row.buyer_id)
-          ].filter(Boolean);
-
-          keys.forEach((key) => {
-            if (!signalIndex[key]) signalIndex[key] = row;
-          });
-        });
-      });
-
-      setExternalSignalsByBuyer(signalIndex);
+      setLatestRuns(Array.isArray(runs) ? runs : []);
     } catch (error) {
-      console.error('Error loading data:', error);
+      console.error('Failed to load forecast data:', error);
+      setPredictions([]);
+      setScorecardsByPrediction(new Map());
+      setDriversByPrediction(new Map());
+      setLatestRuns([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const generatePredictions = () => {
-    const filteredTenders =
-      selectedCountry === 'all'
-        ? tenders
-        : tenders.filter((tender) => normalizeCountryCode(tender.country) === selectedCountry);
+  const stats = useMemo(() => {
+    const high = predictions.filter((row) => {
+      const confidence = Number(row?.confidence || 0);
+      return confidence >= 60;
+    }).length;
 
-    const buyerPatterns = {};
+    const medium = predictions.filter((row) => {
+      const confidence = Number(row?.confidence || 0);
+      return confidence >= 40 && confidence < 60;
+    }).length;
 
-    filteredTenders.forEach((tender) => {
-      const buyerName = String(tender.buyer_name || 'Unknown').trim() || 'Unknown';
-      const country = normalizeCountryCode(tender.country, tender.source);
-      const buyerKey = normalizeBuyerKey(buyerName);
-      if (!country || !buyerKey) return;
-
-      const key = `${country}|${buyerKey}`;
-      if (!buyerPatterns[key]) {
-        buyerPatterns[key] = {
-          key,
-          buyerKey,
-          displayNames: {},
-          country,
-          tenders: [],
-          cpvCodes: {},
-          avgValue: [],
-          publicationMonths: {}
-        };
-      }
-
-      buyerPatterns[key].displayNames[buyerName] = (buyerPatterns[key].displayNames[buyerName] || 0) + 1;
-      buyerPatterns[key].tenders.push(tender);
-
-      parseCpvCodes(tender.cpv_codes).forEach((code) => {
-        if (!code) return;
-        const mainCode = code.trim().substring(0, 8);
-        buyerPatterns[key].cpvCodes[mainCode] = (buyerPatterns[key].cpvCodes[mainCode] || 0) + 1;
-      });
-
-      if (Number.isFinite(tender.estimated_value) && tender.estimated_value > 0) {
-        buyerPatterns[key].avgValue.push(Number(tender.estimated_value));
-      }
-
-      if (tender.publication_date) {
-        const publicationDate = new Date(tender.publication_date);
-        if (!Number.isNaN(publicationDate.getTime())) {
-          const month = publicationDate.getMonth();
-          buyerPatterns[key].publicationMonths[month] = (buyerPatterns[key].publicationMonths[month] || 0) + 1;
-        }
-      }
-    });
-
-    const predictionsList = [];
-
-    Object.values(buyerPatterns).forEach((pattern) => {
-      if (pattern.tenders.length < 2) return;
-
-      const uniquePublicationDays = [...new Set(
-        pattern.tenders
-          .map((tender) => String(tender.publication_date || '').slice(0, 10))
-          .filter(Boolean)
-      )];
-
-      const sortedDates = uniquePublicationDays
-        .map((day) => new Date(day))
-        .filter((dateValue) => !Number.isNaN(dateValue.getTime()))
-        .sort((a, b) => a - b);
-
-      if (sortedDates.length < 2) return;
-
-      const intervals = [];
-      for (let index = 1; index < sortedDates.length; index += 1) {
-        const days = differenceInDays(sortedDates[index], sortedDates[index - 1]);
-        if (days > 0) intervals.push(days);
-      }
-
-      if (!intervals.length) return;
-
-      const avgIntervalDays = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-      const medianIntervalDays = median(intervals);
-      if (!Number.isFinite(medianIntervalDays) || medianIntervalDays <= 0) return;
-
-      const variance = intervals.reduce((sum, days) => sum + ((days - avgIntervalDays) ** 2), 0) / intervals.length;
-      const stdDev = Math.sqrt(variance);
-      const cadenceConsistency = clamp(1 - (stdDev / Math.max(avgIntervalDays, 1)), 0, 1);
-      const sampleCoverage = clamp(intervals.length / 8, 0, 1);
-
-      const lastTenderDate = sortedDates[sortedDates.length - 1];
-      const daysSinceLastTender = Math.max(0, differenceInDays(new Date(), lastTenderDate));
-      const recurrenceProgress = clamp(daysSinceLastTender / medianIntervalDays, 0, 1.35);
-
-      const buyerSignal =
-        externalSignalsByBuyer[signalIndexKey(pattern.country, pickBestBuyerName(pattern.displayNames))] || null;
-
-      let signalBoost = 0;
-      let signalEvidence = 0;
-      if (buyerSignal) {
-        const combinedStrength = Number(buyerSignal.combined_external_strength_90d || 0);
-        const hiringCount30d = Number(buyerSignal.hiring_count_30d || 0);
-        const fundingCount30d = Number(buyerSignal.funding_count_30d || 0);
-
-        if (combinedStrength >= 0.45) signalBoost += 0.22;
-        else if (combinedStrength >= 0.3) signalBoost += 0.14;
-        else if (combinedStrength > 0) signalBoost += 0.08;
-
-        if (hiringCount30d + fundingCount30d >= 2) signalBoost += 0.06;
-
-        signalEvidence = clamp((combinedStrength * 1.5) + (hiringCount30d + fundingCount30d >= 2 ? 0.2 : 0), 0, 1);
-      }
-
-      const confidenceScore = clamp(
-        (cadenceConsistency * 0.38) +
-        (sampleCoverage * 0.27) +
-        (Math.min(1, recurrenceProgress) * 0.2) +
-        (signalEvidence * 0.15),
-        0.1,
-        0.99
-      );
-
-      const compositeScore = clamp(
-        (recurrenceProgress * 0.82) +
-        (confidenceScore * 0.18) +
-        signalBoost,
-        0,
-        1.5
-      );
-      const likelihood = compositeScore >= 0.95 ? 'high' : compositeScore >= 0.65 ? 'medium' : 'low';
-
-      if (likelihood === 'low') return;
-
-      const topCpvs = Object.entries(pattern.cpvCodes)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 3)
-        .map(([code]) => code);
-
-      const avgValue =
-        pattern.avgValue.length > 0
-          ? pattern.avgValue.reduce((a, b) => a + b, 0) / pattern.avgValue.length
-          : null;
-
-      const topMonths = Object.entries(pattern.publicationMonths)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 2)
-        .map(([month]) => Number.parseInt(month, 10));
-
-      const predictedDate = addDays(lastTenderDate, Math.max(1, Math.round(medianIntervalDays)));
-      const avgIntervalMonths = Math.max(1, Math.round(avgIntervalDays / 30));
-
-      predictionsList.push({
-        buyer: pickBestBuyerName(pattern.displayNames),
-        country: pattern.country,
-        likelihood,
-        predictedDate,
-        historicalCount: pattern.tenders.length,
-        avgInterval: avgIntervalMonths,
-        topCpvs,
-        avgValue,
-        topMonths,
-        lastTenderDate,
-        confidenceScore,
-        recurrenceProgress,
-        cadenceConsistency,
-        externalSignal: buyerSignal
-          ? {
-              strength90d: Number(buyerSignal.combined_external_strength_90d || 0),
-              hiringCount30d: Number(buyerSignal.hiring_count_30d || 0),
-              fundingCount30d: Number(buyerSignal.funding_count_30d || 0)
-            }
-          : null,
-        compositeScore
-      });
-    });
-
-    predictionsList.sort((a, b) => {
-      const likelihoodScore = { high: 3, medium: 2, low: 1 };
-      if (likelihoodScore[a.likelihood] !== likelihoodScore[b.likelihood]) {
-        return likelihoodScore[b.likelihood] - likelihoodScore[a.likelihood];
-      }
-      if ((b.compositeScore || 0) !== (a.compositeScore || 0)) {
-        return (b.compositeScore || 0) - (a.compositeScore || 0);
-      }
-      return a.predictedDate - b.predictedDate;
-    });
-
-    setPredictions(predictionsList);
-  };
-
-  const fetchAIPrediction = async (buyer, country) => {
-    if (aiPredictions[buyer]) return;
-
-    setLoadingAI(true);
-    try {
-      const response = await civant.functions.invoke('predictTenders', {
-        buyer_name: buyer,
-        country
-      });
-
-      if (response.data.success) {
-        setAiPredictions((previous) => ({
-          ...previous,
-          [buyer]: response.data
-        }));
-      }
-    } catch (error) {
-      console.error('AI prediction failed:', error);
-    } finally {
-      setLoadingAI(false);
-    }
-  };
-
-  const getLikelihoodBadge = (likelihood) => {
-    const colors = {
-      high: 'bg-emerald-500/15 text-emerald-200 border-emerald-400/40',
-      medium: 'bg-amber-500/15 text-amber-200 border-amber-400/40',
-      low: 'bg-secondary text-secondary-foreground border-border'
+    return {
+      total: predictions.length,
+      high,
+      medium
     };
-    return colors[likelihood] || colors.low;
-  };
+  }, [predictions]);
 
-  const getCountryFlag = (country) => {
-    const normalized = normalizeCountryCode(country);
-    if (normalized === 'FR') return '🇫🇷';
-    if (normalized === 'IE') return '🇮🇪';
-    if (normalized === 'ES') return '🇪🇸';
-    return '🌍';
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  const latestRun = latestRuns[0] || null;
 
   return (
-    <Page className="space-y-8">
-      <PageHeader className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-        <div className="space-y-3">
-          <span className="inline-flex w-fit rounded-full border border-primary/30 bg-primary/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
-            Civant Intelligence
-          </span>
-          <div className="space-y-2">
-            <PageTitle className="flex items-center gap-2">
-              <Sparkles className="h-6 w-6 text-primary" />
-              Tender Panorama
-            </PageTitle>
-            <PageDescription>AI-powered forecasts based on canonical tender cadence and external signals.</PageDescription>
+    <Page>
+      <PageHeader>
+        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <PageTitle>Tender Panorama</PageTitle>
+            <PageDescription>
+              Read-only forecast outputs from the scheduled deterministic engine (no UI-triggered compute).
+            </PageDescription>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Select value={selectedCountry} onValueChange={setSelectedCountry}>
+              <SelectTrigger className="w-[180px] bg-civant-navy/50 border-civant-border text-card-foreground">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {COUNTRY_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
-
-        <Select value={selectedCountry} onValueChange={setSelectedCountry}>
-          <SelectTrigger className="w-full sm:w-48 bg-card/70 border-border text-card-foreground">
-            <SelectValue placeholder="All countries" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Countries</SelectItem>
-            <SelectItem value="FR">🇫🇷 France</SelectItem>
-            <SelectItem value="IE">🇮🇪 Ireland</SelectItem>
-            <SelectItem value="ES">🇪🇸 Spain</SelectItem>
-          </SelectContent>
-        </Select>
       </PageHeader>
 
-      <PageBody>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-xl bg-primary/15 border border-primary/30">
-                  <Target className="h-5 w-5 text-primary" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">High Likelihood</p>
-                  <p className="text-2xl font-bold text-card-foreground">
-                    {predictions.filter((prediction) => prediction.likelihood === 'high').length}
-                  </p>
-                </div>
+      <PageBody className="space-y-6">
+        {latestRun ? (
+          <Card className="bg-civant-navy/60 border-civant-border">
+            <CardContent className="pt-5 flex flex-col gap-2 text-sm md:flex-row md:items-center md:justify-between">
+              <div className="flex items-center gap-2">
+                <Badge className={latestRun.status === 'success' ? 'bg-civant-teal/15 text-civant-teal border-civant-teal/35' : 'bg-rose-500/15 text-rose-300 border-rose-400/35'}>
+                  {String(latestRun.status || 'unknown').toUpperCase()}
+                </Badge>
+                <span className="text-muted-foreground">{latestRun.run_type} run</span>
+              </div>
+              <div className="text-muted-foreground">
+                Last run: {formatDate(latestRun.finished_at || latestRun.started_at)}
+                {' · '}
+                Pairs: {Number(latestRun.pairs_processed || 0)}
               </div>
             </CardContent>
           </Card>
+        ) : null}
 
-          <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-xl bg-secondary border border-border/70">
-                  <TrendingUp className="h-5 w-5 text-card-foreground" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Medium Likelihood</p>
-                  <p className="text-2xl font-bold text-card-foreground">
-                    {predictions.filter((prediction) => prediction.likelihood === 'medium').length}
-                  </p>
-                </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card className="bg-civant-navy/60 border-civant-border">
+            <CardContent className="pt-6 flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">High Confidence</p>
+                <p className="text-3xl font-bold text-card-foreground">{stats.high}</p>
               </div>
+              <Target className="w-8 h-8 text-civant-teal" />
             </CardContent>
           </Card>
 
-          <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-xl bg-secondary border border-border/70">
-                  <Building2 className="h-5 w-5 text-primary" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Predictions</p>
-                  <p className="text-2xl font-bold text-card-foreground">{predictions.length}</p>
-                </div>
+          <Card className="bg-civant-navy/60 border-civant-border">
+            <CardContent className="pt-6 flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Medium Confidence</p>
+                <p className="text-3xl font-bold text-card-foreground">{stats.medium}</p>
               </div>
+              <TrendingUp className="w-8 h-8 text-civant-teal" />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-civant-navy/60 border-civant-border">
+            <CardContent className="pt-6 flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Total Forecasts</p>
+                <p className="text-3xl font-bold text-card-foreground">{stats.total}</p>
+              </div>
+              <Building2 className="w-8 h-8 text-civant-teal" />
             </CardContent>
           </Card>
         </div>
 
-        <div className="space-y-4 mt-4">
-          {predictions.length === 0 ? (
-            <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
-              <CardContent className="py-14 text-center">
-                <Sparkles className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold text-card-foreground mb-2">No predictions available</h3>
-                <p className="text-muted-foreground">More historical data is needed to generate accurate predictions.</p>
-              </CardContent>
-            </Card>
-          ) : (
-            predictions.map((prediction, index) => {
-              const aiData = aiPredictions[prediction.buyer];
+        {loading ? (
+          <Card className="bg-civant-navy/60 border-civant-border">
+            <CardContent className="py-12 flex items-center justify-center gap-3 text-muted-foreground">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Loading forecast outputs...
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {!loading && predictions.length === 0 ? (
+          <Card className="bg-civant-navy/60 border-civant-border">
+            <CardContent className="py-12 text-center text-muted-foreground">
+              No forecast rows yet for this filter. Run the scheduled predictive jobs or execute a manual rollout.
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {!loading && predictions.length > 0 ? (
+          <div className="space-y-4">
+            {predictions.map((prediction) => {
+              const scorecard = scorecardsByPrediction.get(prediction.prediction_id);
+              const drivers = (driversByPrediction.get(prediction.prediction_id) || []).slice(0, 3);
 
               return (
-                <Card
-                  key={index}
-                  className="border border-civant-border bg-civant-navy/55 shadow-none hover:border-primary/40 transition-colors"
-                >
-                  <CardContent className="p-6">
-                    <div className="flex items-start gap-4">
-                      <div className="flex flex-col items-center gap-2 pt-1">
-                        <span className="text-2xl">{getCountryFlag(prediction.country)}</span>
-                        <Badge className={`${getLikelihoodBadge(prediction.likelihood)} border text-xs uppercase`}>
-                          {prediction.likelihood}
-                        </Badge>
+                <Card key={prediction.prediction_id} className="bg-civant-navy/65 border-civant-border">
+                  <CardHeader className="pb-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                          <span className="text-xl">{COUNTRY_FLAGS[prediction.region] || '🌍'}</span>
+                          <Badge className={getConfidenceBadgeClass(prediction.confidence_band)}>
+                            {prediction.confidence_band}
+                          </Badge>
+                          <Badge variant="outline" className="border-civant-border text-muted-foreground">
+                            {WINDOW_LABELS[prediction.next_window_label] || prediction.next_window_label}
+                          </Badge>
+                        </div>
+                        <CardTitle className="text-card-foreground text-xl">
+                          {prediction.buyer_display_name || prediction.buyer_entity_id}
+                        </CardTitle>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          {prediction.cpv_cluster_label || prediction.cpv_cluster_id} · {prediction.region}
+                        </p>
                       </div>
 
-                      <div className="flex-1 min-w-0">
-                        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 mb-4">
-                          <div className="min-w-0">
-                            <h3 className="font-semibold text-card-foreground mb-1 truncate">{prediction.buyer}</h3>
-                            <p className="text-sm text-muted-foreground">
-                              Based on {prediction.historicalCount} historical tenders
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Confidence {Math.round((prediction.confidenceScore || 0) * 100)}%
-                            </p>
-                            {prediction.externalSignal ? (
-                              <p className="text-xs text-primary mt-1">
-                                External signals: strength {prediction.externalSignal.strength90d.toFixed(2)} (H30
-                                {prediction.externalSignal.hiringCount30d} / F30 {prediction.externalSignal.fundingCount30d})
-                              </p>
-                            ) : null}
-                          </div>
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" className="border-civant-border" asChild>
+                          <Link to={createPageUrl(`search?buyer=${encodeURIComponent(prediction.buyer_display_name || prediction.buyer_entity_id || '')}`)}>
+                            View related tenders
+                          </Link>
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
 
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="border-border/80 bg-card/40 hover:bg-card/70"
-                              onClick={() =>
-                                setFeedbackDialog({
-                                  open: true,
-                                  prediction: { predicted_date: format(prediction.predictedDate, 'yyyy-MM-dd') },
-                                  buyer: prediction.buyer
-                                })
-                              }
-                            >
-                              <MessageSquare className="h-4 w-4 mr-1" />
-                              Feedback
-                            </Button>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                      <div className="rounded-lg border border-civant-border bg-civant-navy/60 p-3">
+                        <p className="text-xs text-muted-foreground">Probability</p>
+                        <p className="text-lg font-semibold text-card-foreground">{formatPct(prediction.probability)}</p>
+                      </div>
+                      <div className="rounded-lg border border-civant-border bg-civant-navy/60 p-3">
+                        <p className="text-xs text-muted-foreground">Confidence</p>
+                        <p className="text-lg font-semibold text-card-foreground">{Number(prediction.confidence || 0)}%</p>
+                      </div>
+                      <div className="rounded-lg border border-civant-border bg-civant-navy/60 p-3">
+                        <p className="text-xs text-muted-foreground">Forecast Score</p>
+                        <p className="text-lg font-semibold text-card-foreground">{Number(prediction.forecast_score || 0)}</p>
+                      </div>
+                      <div className="rounded-lg border border-civant-border bg-civant-navy/60 p-3">
+                        <p className="text-xs text-muted-foreground">Expected Window</p>
+                        <p className="text-sm font-semibold text-card-foreground">
+                          {formatDate(prediction.expected_window_start)} - {formatDate(prediction.expected_window_end)}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-civant-border bg-civant-navy/60 p-3">
+                        <p className="text-xs text-muted-foreground">Fallback Tier</p>
+                        <p className="text-lg font-semibold text-card-foreground">{Number(prediction.fallback_tier || 0)}</p>
+                      </div>
+                    </div>
 
-                            {!aiData ? (
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                className="bg-primary/20 text-primary border border-primary/30 hover:bg-primary/25"
-                                onClick={() => fetchAIPrediction(prediction.buyer, prediction.country)}
-                                disabled={loadingAI}
-                              >
-                                {loadingAI ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <>
-                                    <Sparkles className="h-4 w-4 mr-1" />
-                                    AI Analysis
-                                  </>
-                                )}
-                              </Button>
-                            ) : null}
+                    {scorecard ? (
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 text-xs">
+                        <div className="rounded border border-civant-border p-2 text-muted-foreground">Cycle {scorecard.cycle_score}</div>
+                        <div className="rounded border border-civant-border p-2 text-muted-foreground">Timing {scorecard.timing_score}</div>
+                        <div className="rounded border border-civant-border p-2 text-muted-foreground">Behaviour {scorecard.behavioural_score}</div>
+                        <div className="rounded border border-civant-border p-2 text-muted-foreground">Structural {scorecard.structural_score}</div>
+                        <div className="rounded border border-civant-border p-2 text-muted-foreground">External {scorecard.external_signal_score}</div>
+                        <div className="rounded border border-civant-border p-2 text-muted-foreground">Data quality {scorecard.data_quality_score}</div>
+                      </div>
+                    ) : null}
 
-                            <Link to={createPageUrl(`Search?buyer=${encodeURIComponent(prediction.buyer)}`)}>
-                              <Button variant="ghost" size="sm">
-                                View History
-                                <ArrowRight className="h-4 w-4 ml-1" />
-                              </Button>
-                            </Link>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
-                          <div className="rounded-lg border border-border/70 bg-muted/25 p-3">
-                            <div className="flex items-center gap-2 mb-1">
-                              <Calendar className="h-4 w-4 text-muted-foreground" />
-                              <p className="text-xs text-muted-foreground">Predicted Date</p>
-                            </div>
-                            <p className="text-sm font-semibold text-card-foreground">
-                              {format(prediction.predictedDate, 'MMM yyyy')}
-                            </p>
-                          </div>
-
-                          <div className="rounded-lg border border-border/70 bg-muted/25 p-3">
-                            <div className="flex items-center gap-2 mb-1">
-                              <Clock className="h-4 w-4 text-muted-foreground" />
-                              <p className="text-xs text-muted-foreground">Average Interval</p>
-                            </div>
-                            <p className="text-sm font-semibold text-card-foreground">{prediction.avgInterval} months</p>
-                          </div>
-
-                          {prediction.avgValue ? (
-                            <div className="rounded-lg border border-border/70 bg-muted/25 p-3">
-                              <div className="flex items-center gap-2 mb-1">
-                                <DollarSign className="h-4 w-4 text-muted-foreground" />
-                                <p className="text-xs text-muted-foreground">Expected Value</p>
-                              </div>
-                              <p className="text-sm font-semibold text-card-foreground">
-                                {new Intl.NumberFormat('en', {
-                                  style: 'currency',
-                                  currency: 'EUR',
-                                  notation: 'compact',
-                                  maximumFractionDigits: 1
-                                }).format(prediction.avgValue)}
-                              </p>
-                            </div>
-                          ) : null}
-
-                          <div className="rounded-lg border border-border/70 bg-muted/25 p-3">
-                            <div className="flex items-center gap-2 mb-1">
-                              <Calendar className="h-4 w-4 text-muted-foreground" />
-                              <p className="text-xs text-muted-foreground">Last Tender</p>
-                            </div>
-                            <p className="text-sm font-semibold text-card-foreground">
-                              {format(prediction.lastTenderDate, 'MMM yyyy')}
-                            </p>
-                          </div>
-                        </div>
-
-                        {prediction.topCpvs.length > 0 ? (
-                          <div className="mb-2">
-                            <p className="text-xs text-muted-foreground mb-1">Likely Categories (CPV)</p>
-                            <div className="flex flex-wrap gap-1">
-                              {prediction.topCpvs.map((cpv, cpvIndex) => (
-                                <Badge key={cpvIndex} variant="outline" className="text-xs border-border/70">
-                                  {cpv}
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground mb-2">Top Drivers</p>
+                      {drivers.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No driver details yet.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {drivers.map((driver, idx) => (
+                            <div key={`${prediction.prediction_id}-${driver.driver_type}-${idx}`} className="rounded-lg border border-civant-border p-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-sm font-medium text-card-foreground">{driver.label}</p>
+                                <Badge variant="outline" className="border-civant-border text-muted-foreground">
+                                  {Number(driver.contribution || 0).toFixed(3)}
                                 </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {aiData && aiData.predictions ? (
-                          <div className="mt-4 pt-4 border-t border-border/70">
-                            <div className="flex items-center gap-2 mb-3">
-                              <Sparkles className="h-4 w-4 text-primary" />
-                              <h4 className="text-sm font-semibold text-card-foreground">AI-Powered Forecast</h4>
-                            </div>
-
-                            {aiData.analysis ? (
-                              <div className="mb-3 p-3 rounded-lg border border-primary/20 bg-primary/10">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                                  <div>
-                                    <span className="text-muted-foreground">Avg Interval:</span>
-                                    <span className="ml-1 font-medium text-card-foreground">
-                                      {Math.round(aiData.analysis.avg_interval_days || 0)} days
-                                    </span>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Trend:</span>
-                                    <span className="ml-1 font-medium text-card-foreground capitalize">
-                                      {aiData.analysis.trend}
-                                    </span>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Seasonality:</span>
-                                    <span className="ml-1 font-medium text-card-foreground">
-                                      {aiData.analysis.seasonality_detected ? 'Detected' : 'None'}
-                                    </span>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Data Quality:</span>
-                                    <span className="ml-1 font-medium text-card-foreground capitalize">
-                                      {aiData.analysis.data_quality}
-                                    </span>
-                                  </div>
-                                </div>
                               </div>
-                            ) : null}
-
-                            <div className="space-y-3">
-                              {aiData.predictions.slice(0, 3).map((pred, predIndex) => (
-                                <div key={predIndex} className="p-3 rounded-lg border border-border/70 bg-muted/25">
-                                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-                                    <div className="flex items-center gap-2">
-                                      <Calendar className="h-3 w-3 text-muted-foreground" />
-                                      <span className="font-medium text-card-foreground">
-                                        {format(new Date(pred.predicted_date), 'MMM d, yyyy')}
-                                      </span>
-                                    </div>
-                                    <div className="flex flex-wrap gap-1">
-                                      <Badge className={`${getLikelihoodBadge(pred.confidence_level)} text-xs`}>
-                                        {pred.confidence_score
-                                          ? `${Math.round(pred.confidence_score * 100)}%`
-                                          : pred.confidence_level}
-                                      </Badge>
-                                      {pred.tender_type ? (
-                                        <Badge variant="outline" className="text-xs border-border/70">
-                                          {pred.tender_type === 'framework_renewal' && '🔄 '}
-                                          {pred.tender_type === 'annual_maintenance' && '🔧 '}
-                                          {pred.tender_type.replace(/_/g, ' ')}
-                                        </Badge>
-                                      ) : null}
-                                    </div>
-                                  </div>
-
-                                  {pred.estimated_value_range ? (
-                                    <div className="text-xs text-muted-foreground mb-2">
-                                      <span className="font-medium text-card-foreground">Value:</span>{' '}
-                                      {new Intl.NumberFormat('en', {
-                                        style: 'currency',
-                                        currency: 'EUR',
-                                        notation: 'compact'
-                                      }).format(pred.estimated_value_range.min)}
-                                      {' - '}
-                                      {new Intl.NumberFormat('en', {
-                                        style: 'currency',
-                                        currency: 'EUR',
-                                        notation: 'compact'
-                                      }).format(pred.estimated_value_range.max)}
-                                    </div>
-                                  ) : null}
-
-                                  {pred.contract_basis ? (
-                                    <div className="text-xs text-muted-foreground mb-2">
-                                      <span className="font-medium text-card-foreground">Basis:</span> {pred.contract_basis}
-                                    </div>
-                                  ) : null}
-
-                                  {pred.renewal_likelihood ? (
-                                    <div className="text-xs text-muted-foreground mb-2">
-                                      <span className="font-medium text-card-foreground">Renewal:</span> {pred.renewal_likelihood}
-                                    </div>
-                                  ) : null}
-
-                                  {pred.seasonality_factor ? (
-                                    <div className="text-xs text-muted-foreground mb-2">
-                                      <span className="font-medium text-card-foreground">Seasonality:</span> {pred.seasonality_factor}
-                                    </div>
-                                  ) : null}
-
-                                  {pred.key_indicators && pred.key_indicators.length > 0 ? (
-                                    <div className="text-xs text-muted-foreground">
-                                      <span className="font-medium text-card-foreground">Key Factors:</span>
-                                      <ul className="mt-1 ml-4 list-disc">
-                                        {pred.key_indicators.slice(0, 2).map((indicator, indicatorIndex) => (
-                                          <li key={indicatorIndex}>{indicator}</li>
-                                        ))}
-                                      </ul>
-                                    </div>
-                                  ) : null}
-                                </div>
-                              ))}
+                              <p className="mt-1 text-sm text-muted-foreground">{driver.narrative}</p>
                             </div>
-                          </div>
-                        ) : null}
-                      </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="text-xs text-muted-foreground flex items-center gap-2">
+                      <Calendar className="w-3.5 h-3.5" /> Last computed {formatDate(prediction.last_computed_at)}
+                      <Clock className="w-3.5 h-3.5 ml-2" /> {Number(prediction.drivers_count || 0)} drivers · {Number(prediction.evidence_count || 0)} evidence refs
                     </div>
                   </CardContent>
                 </Card>
               );
-            })
-          )}
-        </div>
-
-        <Card className="border border-primary/30 bg-primary/10 shadow-none mt-2">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-card-foreground">
-              <Sparkles className="h-5 w-5 text-primary" />
-              How Predictions Work
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              <li>Analyzes historical tender patterns from each buyer</li>
-              <li>Calculates average intervals between tenders</li>
-              <li>Identifies common CPV categories and value ranges</li>
-              <li>Predicts likelihood based on time since last tender</li>
-            </ul>
-          </CardContent>
-        </Card>
+            })}
+          </div>
+        ) : null}
       </PageBody>
-
-      {feedbackDialog.open ? (
-        <FeedbackDialog
-          prediction={feedbackDialog.prediction}
-          buyerName={feedbackDialog.buyer}
-          open={feedbackDialog.open}
-          onOpenChange={(open) => setFeedbackDialog({ ...feedbackDialog, open })}
-        />
-      ) : null}
     </Page>
   );
 }

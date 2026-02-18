@@ -1,0 +1,59 @@
+name: "Predictive Signals Normalize V1"
+
+on:
+  schedule:
+    # Every 15 minutes.
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      tenant_id:
+        description: "Tenant id (defaults to civant_default)"
+        required: false
+        default: "civant_default"
+      since_iso:
+        description: "Optional since timestamp (ISO). Leave blank to auto-window."
+        required: false
+        default: ""
+
+concurrency:
+  group: "predictive-signals-v1"
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      CIVANT_TENANT_ID: ${{ secrets.CIVANT_TENANT_ID }}
+      DISPATCH_TENANT_ID: ${{ github.event.inputs.tenant_id }}
+      DISPATCH_SINCE_ISO: ${{ github.event.inputs.since_iso }}
+      PSQL_BIN: psql
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install psql
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Normalize signals only
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TENANT_ID="${CIVANT_TENANT_ID:-${DISPATCH_TENANT_ID:-civant_default}}"
+          SINCE_ISO="${DISPATCH_SINCE_ISO:-}"
+
+          if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
+            echo "ERROR: SUPABASE_DB_URL secret is required."
+            exit 1
+          fi
+
+          ./scripts/rollout-predictive-engine-v1.sh "${TENANT_ID}" "signals_only" "${SINCE_ISO}" "4000" "true" "v1.0.0"

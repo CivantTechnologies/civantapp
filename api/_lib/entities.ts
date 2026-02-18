@@ -22,6 +22,12 @@ const NOTICES_FIELD_MAP: Record<string, string> = {
 const INGESTION_RUNS_FIELD_MAP: Record<string, string> = {
   id: 'run_id'
 };
+const PREDICTIONS_CURRENT_FIELD_MAP: Record<string, string> = {
+  id: 'prediction_id'
+};
+const PREDICTION_RUNS_FIELD_MAP: Record<string, string> = {
+  id: 'run_id'
+};
 
 const ENTITY_TABLE_MAP: Record<string, string> = {
   User: 'users',
@@ -44,6 +50,20 @@ const TENANT_SCOPED_TABLES = new Set([
   'external_signal_rollup_ie',
   'external_signal_rollup_fr',
   'external_signal_rollup_es',
+  'cpv_cluster',
+  'cpv_cluster_map',
+  'buyer_aliases',
+  'external_signal_raw',
+  'signal_mappings',
+  'external_signal_to_cpv',
+  'signals',
+  'buyer_category_stats',
+  'predictions_current',
+  'prediction_drivers',
+  'prediction_scorecard',
+  'prediction_runs',
+  'prediction_extensions',
+  'prediction_inputs_snapshot',
   'tender_features_weekly',
   'market_signals',
   'predictions',
@@ -158,6 +178,12 @@ function mapFieldForTable(tableName: string, field: string) {
   }
   if (tableName === 'ingestion_runs') {
     return INGESTION_RUNS_FIELD_MAP[field] || field;
+  }
+  if (tableName === 'predictions_current') {
+    return PREDICTIONS_CURRENT_FIELD_MAP[field] || field;
+  }
+  if (tableName === 'prediction_runs') {
+    return PREDICTION_RUNS_FIELD_MAP[field] || field;
   }
   return field;
 }
@@ -297,6 +323,18 @@ function normalizeEntityRow(tableName: string, row: unknown) {
   }
   if (tableName === 'canonical_tenders') {
     return normalizeCanonicalTenderRow(row);
+  }
+  if (tableName === 'predictions_current' && row && typeof row === 'object') {
+    const base = row as Record<string, unknown>;
+    if (!base.id && base.prediction_id) {
+      return { ...base, id: base.prediction_id };
+    }
+  }
+  if (tableName === 'prediction_runs' && row && typeof row === 'object') {
+    const base = row as Record<string, unknown>;
+    if (!base.id && base.run_id) {
+      return { ...base, id: base.run_id };
+    }
   }
   if (tableName === 'ingestion_runs' && row && typeof row === 'object') {
     const base = row as Record<string, unknown>;

@@ -221,14 +221,93 @@ export default function Insights() {
         setSelectedBuyer(buyerName);
         
         try {
-            const response = await civant.functions.invoke('predictTenders', {
-                buyer_name: buyerName,
-                country: country
-            });
-            
-            if (response.data.success) {
-                setAiAnalysis(response.data);
+            const predictionQuery = {
+                tenant_id: activeTenantId,
+                buyer_display_name: { $ilike: `%${buyerName}%` }
+            };
+
+            const normalizedCountry = String(country || '').trim().toUpperCase();
+            if (normalizedCountry) {
+                predictionQuery.region = normalizedCountry;
             }
+
+            const predictionRows = await civant.entities.predictions_current.filter(
+                predictionQuery,
+                '-forecast_score,-probability',
+                5,
+                0,
+                'prediction_id,buyer_display_name,cpv_cluster_label,next_window_label,expected_window_start,expected_window_end,probability,confidence,confidence_band,forecast_score,last_computed_at,region'
+            );
+
+            if (!Array.isArray(predictionRows) || predictionRows.length === 0) {
+                setAiAnalysis(null);
+                return;
+            }
+
+            const predictionIds = predictionRows.map((row) => row.prediction_id).filter(Boolean);
+            const [scorecards, drivers] = await Promise.all([
+                civant.entities.prediction_scorecard.filter(
+                    { tenant_id: activeTenantId, prediction_id: predictionIds },
+                    '-total_score',
+                    20,
+                    0,
+                    'prediction_id,total_score,data_quality_score'
+                ),
+                civant.entities.prediction_drivers.filter(
+                    { tenant_id: activeTenantId, prediction_id: predictionIds },
+                    '-contribution',
+                    100,
+                    0,
+                    'prediction_id,label,narrative,contribution'
+                )
+            ]);
+
+            const scorecardByPrediction = new Map((scorecards || []).map((row) => [row.prediction_id, row]));
+            const driversByPrediction = new Map();
+            (drivers || []).forEach((row) => {
+                const list = driversByPrediction.get(row.prediction_id) || [];
+                list.push(row);
+                driversByPrediction.set(row.prediction_id, list);
+            });
+
+            const avgIntervalDays = Math.round(
+                predictionRows.reduce((sum, row) => {
+                    const start = new Date(row.expected_window_start || row.last_computed_at || Date.now());
+                    return sum + Math.max(1, differenceInDays(start, new Date()));
+                }, 0) / predictionRows.length
+            );
+            const avgConfidence = predictionRows.reduce((sum, row) => sum + Number(row.confidence || 0), 0) / predictionRows.length;
+            const avgProbability = predictionRows.reduce((sum, row) => sum + Number(row.probability || 0), 0) / predictionRows.length;
+
+            setAiAnalysis({
+                success: true,
+                analysis: {
+                    avg_interval_days: avgIntervalDays,
+                    seasonality_detected: predictionRows.length > 1,
+                    trend: avgProbability >= 0.65 ? 'rising' : avgProbability >= 0.45 ? 'stable' : 'softening',
+                    data_quality: avgConfidence >= 75 ? 'high' : avgConfidence >= 50 ? 'medium' : 'low'
+                },
+                predictions: predictionRows.map((row) => {
+                    const rowDrivers = (driversByPrediction.get(row.prediction_id) || [])
+                        .sort((a, b) => Number(b.contribution || 0) - Number(a.contribution || 0))
+                        .slice(0, 3);
+                    const quality = scorecardByPrediction.get(row.prediction_id);
+                    const confidenceScore = Number(row.confidence || 0) / 100;
+                    return {
+                        predicted_date: row.expected_window_start,
+                        estimated_value_range: null,
+                        confidence_score: confidenceScore,
+                        confidence_level: row.confidence_band ? String(row.confidence_band).toLowerCase() : 'medium',
+                        seasonality_factor: row.next_window_label,
+                        expected_cpv_codes: row.cpv_cluster_label ? [row.cpv_cluster_label] : [],
+                        key_indicators: [
+                            `Forecast score ${Number(row.forecast_score || 0)}`,
+                            ...(quality ? [`Data quality score ${Number(quality.data_quality_score || 0)}`] : []),
+                            ...rowDrivers.map((driver) => driver.label)
+                        ].slice(0, 4)
+                    };
+                })
+            });
         } catch (error) {
             console.error('Analysis failed:', error);
             setAiAnalysis(null);
