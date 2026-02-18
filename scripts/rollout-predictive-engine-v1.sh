@@ -115,6 +115,8 @@ select
   started_at,
   finished_at,
   pairs_processed,
+  metadata_json->>'computed_prediction_rows' as computed_prediction_rows,
+  metadata_json->>'skipped_pairs' as skipped_pairs,
   coalesce(error_message, '') as error_message
 from public.prediction_runs
 where tenant_id = :'tenant_id'

@@ -66,7 +66,9 @@ Half-life defaults:
 - Tier 1: buyer-level history + CPV baseline adjustment.
 - Tier 2: behavioural twins in same region + cluster + similar volume.
 - Tier 3: country-level CPV cadence baseline.
-- Tier 4: external-only fallback, allowed only when effective external strength >= 0.8 and behavioural fingerprint exists.
+- Tier 4: sparse fallback with conservative defaults and capped confidence.
+  - Hard guard: if no behavioural fingerprint exists, no prediction row is emitted.
+  - External-only paths remain blocked unless behavioural evidence exists.
 
 ## Windowing
 Forecast window labels (`next_window_label`):
@@ -95,6 +97,15 @@ Nightly/full equivalent:
 ```bash
 ./scripts/rollout-predictive-engine-v1.sh civant_default full "" 25000 true v1.0.0
 ```
+
+Run health diagnostics for a real tenant:
+```bash
+/opt/homebrew/opt/libpq/bin/psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -v tenant_id="civant_default" -f scripts/qa-predictive-engine-health.sql
+```
+
+`rollout-predictive-engine-v1.sh` now prints per-run metadata:
+- `computed_prediction_rows`
+- `skipped_pairs`
 
 QA smoke pack:
 ```bash
