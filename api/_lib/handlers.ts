@@ -784,7 +784,7 @@ export async function searchTenders(req: RequestLike) {
 
   while (scannedRows < scanLimit && results.length < candidateLimit) {
     let qb = supabase
-      .from('canonical_tenders')
+      .from('notices_search_current')
       .select('*')
       .eq('tenant_id', tenantId)
       .order('last_seen_at', { ascending: false })

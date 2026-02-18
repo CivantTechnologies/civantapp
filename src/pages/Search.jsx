@@ -296,8 +296,8 @@ export default function Search() {
 
         while (rows.length < maxRows) {
             const batch = Object.keys(query).length > 0
-                ? await civant.entities.canonical_tenders.filter(query, '-last_seen_at', pageSize, skip)
-                : await civant.entities.canonical_tenders.list('-last_seen_at', pageSize, skip);
+                ? await civant.entities.notices_search_current.filter(query, '-last_seen_at', pageSize, skip)
+                : await civant.entities.notices_search_current.list('-last_seen_at', pageSize, skip);
 
             if (!Array.isArray(batch) || batch.length === 0) break;
 
