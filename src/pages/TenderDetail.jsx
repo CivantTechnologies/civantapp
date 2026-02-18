@@ -63,6 +63,39 @@ function DetailRow({ label, value, mono = false }) {
     );
 }
 
+function parseTedNoticeIds(value) {
+    if (Array.isArray(value)) {
+        return value.map((item) => String(item || '').trim()).filter(Boolean);
+    }
+
+    const raw = String(value || '').trim();
+    if (!raw) return [];
+
+    if (raw.startsWith('{') && raw.endsWith('}')) {
+        return raw
+            .slice(1, -1)
+            .split(',')
+            .map((item) => item.replace(/^"+|"+$/g, '').trim())
+            .filter(Boolean);
+    }
+
+    if (raw.startsWith('[') && raw.endsWith(']')) {
+        try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+                return parsed.map((item) => String(item || '').trim()).filter(Boolean);
+            }
+        } catch {
+            // fall through
+        }
+    }
+
+    return raw
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+}
+
 export default function TenderDetail() {
     const [tender, setTender] = useState(null);
     const [linkedNotices, setLinkedNotices] = useState([]);
@@ -93,6 +126,17 @@ export default function TenderDetail() {
     }, [linkedNotices, tender]);
 
     const canonicalId = useMemo(() => String(tender?.canonical_id || tender?.id || ''), [tender]);
+    const tedNoticeIds = useMemo(() => {
+        const fromTender = parseTedNoticeIds(tender?.ted_notice_ids);
+        const fromLinks = Array.isArray(linkedNotices)
+            ? linkedNotices
+                .filter((notice) => String(notice?.source || '').trim().toUpperCase() === 'TED')
+                .map((notice) => String(notice?.source_notice_id || '').trim())
+                .filter(Boolean)
+            : [];
+
+        return Array.from(new Set([...fromTender, ...fromLinks]));
+    }, [tender?.ted_notice_ids, linkedNotices]);
 
     const effectiveCountry = useMemo(() => {
         const explicit = String(tender?.country || '').trim().toUpperCase();
@@ -217,7 +261,10 @@ export default function TenderDetail() {
         try {
             const data = await civant.entities.canonical_tenders.filter({ id: tenderId });
             if (data.length > 0) {
-                setTender(data[0]);
+                setTender({
+                    ...data[0],
+                    ted_notice_ids: parseTedNoticeIds(data[0]?.ted_notice_ids)
+                });
 
                 const canonicalIdValue = data[0].canonical_id || data[0].id;
                 const links = await civant.entities.canonical_notice_links.filter(
@@ -565,8 +612,8 @@ export default function TenderDetail() {
                             value={tender.last_seen_at ? format(new Date(tender.last_seen_at), 'MMM d, yyyy HH:mm') : '-'}
                         />
                         <DetailRow label="Linked notices (visible/total)" value={`${linkedNotices.length}/${linkedNoticeCount}`} />
-                        {Array.isArray(tender.ted_notice_ids) && tender.ted_notice_ids.length > 0 ? (
-                            <DetailRow label="TED Notice IDs" value={tender.ted_notice_ids.join(', ')} mono />
+                        {tedNoticeIds.length > 0 ? (
+                            <DetailRow label="TED Notice IDs" value={tedNoticeIds.join(', ')} mono />
                         ) : null}
                     </CardContent>
                 </Card>

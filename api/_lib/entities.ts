@@ -38,6 +38,12 @@ const TENANT_SCOPED_TABLES = new Set([
   'entities',
   'entity_aliases',
   'reconciliation_queue',
+  'external_signals_ie',
+  'external_signals_fr',
+  'external_signals_es',
+  'external_signal_rollup_ie',
+  'external_signal_rollup_fr',
+  'external_signal_rollup_es',
   'tender_features_weekly',
   'market_signals',
   'predictions',
@@ -74,6 +80,43 @@ function parseJson(value: unknown): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+function parseTextArray(value: unknown) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item || '').trim())
+      .filter(Boolean);
+  }
+
+  const raw = String(value || '').trim();
+  if (!raw) return [] as string[];
+
+  if (raw.startsWith('{') && raw.endsWith('}')) {
+    return raw
+      .slice(1, -1)
+      .split(',')
+      .map((item) => item.replace(/^"+|"+$/g, '').trim())
+      .filter(Boolean);
+  }
+
+  if (raw.startsWith('[') && raw.endsWith(']')) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((item) => String(item || '').trim())
+          .filter(Boolean);
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  return raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function parseStringParam(value: unknown) {
@@ -236,6 +279,14 @@ function normalizeCanonicalTenderRow(row: unknown) {
   if (!merged.url && base.source_url) {
     merged.url = base.source_url;
   }
+
+  const tedNoticeIds = parseTextArray(
+    merged.ted_notice_ids ??
+    (base.normalized_json && typeof base.normalized_json === 'object' && !Array.isArray(base.normalized_json)
+      ? (base.normalized_json as Record<string, unknown>).ted_notice_ids
+      : null)
+  );
+  merged.ted_notice_ids = tedNoticeIds;
 
   return merged;
 }
