@@ -19,6 +19,13 @@ const CANONICAL_TENDERS_FIELD_MAP: Record<string, string> = {
 const NOTICES_FIELD_MAP: Record<string, string> = {
   id: 'notice_id'
 };
+const NOTICES_SEARCH_CURRENT_FIELD_MAP: Record<string, string> = {
+  id: 'canonical_id',
+  tender_uid: 'canonical_id',
+  publication_date: 'publication_date',
+  first_seen_at: 'first_seen_at',
+  last_seen_at: 'last_seen_at'
+};
 const INGESTION_RUNS_FIELD_MAP: Record<string, string> = {
   id: 'run_id'
 };
@@ -41,6 +48,7 @@ const TENANT_SCOPED_TABLES = new Set([
   'canonical_tenders',
   'notices',
   'canonical_notice_links',
+  'notices_search_current',
   'entities',
   'entity_aliases',
   'reconciliation_queue',
@@ -175,6 +183,9 @@ function mapFieldForTable(tableName: string, field: string) {
   }
   if (tableName === 'notices') {
     return NOTICES_FIELD_MAP[field] || field;
+  }
+  if (tableName === 'notices_search_current') {
+    return NOTICES_SEARCH_CURRENT_FIELD_MAP[field] || field;
   }
   if (tableName === 'ingestion_runs') {
     return INGESTION_RUNS_FIELD_MAP[field] || field;
