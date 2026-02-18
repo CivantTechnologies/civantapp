@@ -31,19 +31,27 @@ fi
 RETRIES="${RETRIES:-8}"
 RETRY_SLEEP_SEC="${RETRY_SLEEP_SEC:-5}"
 BATCH_SLEEP_MS="${BATCH_SLEEP_MS:-0}"
+TAB=$'\t'
 
 is_transient_psql_error() {
   echo "${1:-}" | grep -Eqi "(timeout expired|operation timed out|could not connect|server closed the connection|terminating connection|connection timed out)"
 }
 
 psql_eval() {
-  local extra_args="${1:-}"; shift || true
-  local sql="${1:-}"
+  if [[ "$#" -lt 1 ]]; then
+    echo "[backfill] ERROR: psql_eval requires at least 1 arg (SQL)" >&2
+    return 2
+  fi
+  local sql="${@: -1}"
+  local -a extra_args=()
+  if [[ "$#" -gt 1 ]]; then
+    extra_args=("${@:1:$#-1}")
+  fi
   local attempt=1
   local out rc
 
   while true; do
-    out="$("${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 ${extra_args} -c "${sql}" 2>&1)" && {
+    out="$("${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 "${extra_args[@]}" -c "${sql}" 2>&1)" && {
       printf "%s" "${out}"
       return 0
     }
@@ -103,10 +111,10 @@ end
 SQL
 )
 
-psql_eval "-q" "${ensure_state_sql}" >/dev/null
+psql_eval -q "${ensure_state_sql}" >/dev/null
 
 while true; do
-  state_line="$(psql_eval "-qAt -F $'\t'" \
+  state_line="$(psql_eval -qAt -F "${TAB}" \
     "select coalesce(cursor_updated_at::text,''), coalesce(cursor_canonical_id,''), processed_rows::text, coalesce(total_rows::text,'') , coalesce(completed_at::text,'') from public.notices_search_backfill_state where tenant_id='${TENANT_ID}' limit 1;")"
 
   cursor_updated_at="$(echo "${state_line}" | awk -F $'\t' '{print $1}')"
@@ -131,7 +139,7 @@ while true; do
 
   started_ms="$(python3 -c 'import time; print(int(time.time()*1000))')"
 
-  batch_line="$(psql_eval "-qAt -F $'\t'" \
+  batch_line="$(psql_eval -qAt -F "${TAB}" \
     "select processed, inserted, updated, coalesce(next_cursor_updated_at::text,''), coalesce(next_cursor_canonical_id,''), done from public.backfill_notices_search_current_batch('${TENANT_ID}', ${BATCH_SIZE}, ${cursor_updated_at_sql}, ${cursor_canonical_id_sql});")"
 
   processed="$(echo "${batch_line}" | awk -F $'\t' '{print $1}')"
@@ -176,10 +184,10 @@ where tenant_id = '${TENANT_ID}';
 SQL
   )
 
-  psql_eval "-q" "${update_sql}" >/dev/null
+  psql_eval -q "${update_sql}" >/dev/null
 
   # Refresh progress values for logging.
-  progress_line="$(psql_eval "-qAt -F $'\t'" \
+  progress_line="$(psql_eval -qAt -F "${TAB}" \
     "select processed_rows::text, coalesce(total_rows::text,'') from public.notices_search_backfill_state where tenant_id='${TENANT_ID}' limit 1;")"
   processed_rows_now="$(echo "${progress_line}" | awk -F $'\t' '{print $1}')"
   total_rows_now="$(echo "${progress_line}" | awk -F $'\t' '{print $2}')"
