@@ -1,22 +1,14 @@
 import { createClientFromRequest } from './civantSdk.ts';
 import { runPipeline } from './pipeline/steps.ts';
+import { requireAdminForTenant } from './requireAdmin.ts';
+import { getTenantFromHeader } from './getTenantFromHeader.ts';
 
 Deno.serve(async (req) => {
   try {
     const civant = createClientFromRequest(req);
-    const user = await civant.auth.me();
-
-    if (!user || user.role !== 'admin') {
-      return Response.json({ error: 'Unauthorized - Admin access required' }, { status: 403 });
-    }
-
+    const tenantId = getTenantFromHeader(req);
+    await requireAdminForTenant({ civant, req, tenantId });
     const body = await req.json().catch(() => ({}));
-    const tenant_id = String(
-      body.tenant_id
-      || req.headers.get('X-Tenant-Id')
-      || Deno.env.get('DEFAULT_TENANT_ID')
-      || 'civant_default'
-    );
     const source = String(body.source || 'MANUAL');
     const documents = Array.isArray(body.documents) ? body.documents : [];
     const run_id = String(body.run_id || `run_${Date.now()}`);
@@ -27,7 +19,7 @@ Deno.serve(async (req) => {
 
     const result = await runPipeline(civant, {
       run_id,
-      tenant_id,
+      tenant_id: tenantId,
       source,
       cursor: body.cursor,
       documents

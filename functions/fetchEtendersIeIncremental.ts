@@ -1,6 +1,8 @@
 // @ts-nocheck
 import { createClientFromRequest } from './civantSdk.ts';
 import { offloadPayload } from './payloadOffload.ts';
+import { requireAdminForTenant } from './requireAdmin.ts';
+import { getTenantFromHeader } from './getTenantFromHeader.ts';
 
 // Official eTenders portal HTML listing for "Latest CfTs" (no auth)
 const BASE_URL = 'https://www.etenders.gov.ie';
@@ -98,15 +100,6 @@ async function sha256Hex(text: string) {
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-function coerceTenantId(body: any, req: Request) {
-  return String(
-    body?.tenant_id
-      || req.headers.get('X-Tenant-Id')
-      || Deno.env.get('DEFAULT_TENANT_ID')
-      || 'civant_default'
-  );
-}
-
 function asStartDate(raw: unknown) {
   const s = String(raw || '').trim();
   if (!s) return null;
@@ -119,14 +112,9 @@ function asStartDate(raw: unknown) {
 Deno.serve(async (req) => {
   try {
     const civant = createClientFromRequest(req);
-    const user = await civant.auth.me();
-
-    if (!user || user.role !== 'admin') {
-      return Response.json({ error: 'Admin access required' }, { status: 403 });
-    }
-
+    const tenantId = getTenantFromHeader(req);
+    await requireAdminForTenant({ civant, req, tenantId });
     const body = await req.json().catch(() => ({}));
-    const tenantId = coerceTenantId(body, req);
     const connectorKey = `etenders_ie_incremental:${tenantId}`;
 
     const dryRun = Boolean(body?.dry_run);

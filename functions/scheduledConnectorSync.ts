@@ -17,6 +17,11 @@ type ConnectorConfigRecord = {
 };
 
 type ConnectorExecutionResponse = {
+    success?: boolean;
+    fetched_count?: number;
+    inserted_count?: number;
+    updated_count?: number;
+    error?: string;
     data?: {
         success?: boolean;
         fetched_count?: number;
@@ -25,6 +30,58 @@ type ConnectorExecutionResponse = {
         error?: string;
     };
 };
+
+async function invokeFunctionWithTenant(
+    req: Request,
+    tenantId: string,
+    functionName: string,
+    payload: Record<string, unknown>
+) {
+    const url = new URL(req.url);
+    const appId = req.headers.get('X-App-Id')
+        || url.searchParams.get('app_id')
+        || Deno.env.get('CIVANT_APP_ID')
+        || '';
+    if (!appId) {
+        throw new Error('Civant app id is required. Provide X-App-Id header or CIVANT_APP_ID env var.');
+    }
+
+    const baseUrl = Deno.env.get('CIVANT_API_BASE_URL')
+        || Deno.env.get('CIVANT_APP_BASE_URL')
+        || `${url.protocol}//${url.host}`;
+
+    const authHeader = String(req.headers.get('Authorization') || '');
+    const response = await fetch(`${baseUrl}/apps/${appId}/functions/${functionName}`, {
+        method: 'POST',
+        headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            'X-App-Id': appId,
+            'x-tenant-id': tenantId,
+            ...(authHeader ? { Authorization: authHeader } : {})
+        },
+        body: JSON.stringify(payload || {})
+    });
+
+    const raw = await response.text();
+    const data = raw ? (() => {
+        try {
+            return JSON.parse(raw);
+        } catch {
+            return raw;
+        }
+    })() : null;
+
+    if (!response.ok) {
+        throw new Error(
+            typeof data === 'object' && data && 'error' in data
+                ? String((data as Record<string, unknown>).error)
+                : `Function ${functionName} failed with status ${response.status}`
+        );
+    }
+
+    return data;
+}
 
 Deno.serve(async (req) => {
     try {
@@ -95,32 +152,38 @@ Deno.serve(async (req) => {
             
             // Run the connector
             try {
-                const params = { tenant_id: config.tenant_id, days_since: 7, limit: 100, mode: 'incremental' };
+                const tenantId = String(config.tenant_id || '').trim().toLowerCase();
+                if (!tenantId) {
+                    throw new Error(`Missing tenant_id for connector ${config.connector_id}`);
+                }
+
+                const params = { days_since: 7, limit: 100, mode: 'incremental' };
                 let response: ConnectorExecutionResponse | undefined;
                 
                 switch (config.connector_id) {
                     case 'BOAMP_FR':
-                        response = await civant.asServiceRole.functions.invoke('fetchBoampFr', params);
+                        response = await invokeFunctionWithTenant(req, tenantId, 'fetchBoampFr', params);
                         break;
                     case 'TED_FR':
-                        response = await civant.asServiceRole.functions.invoke('fetchTed', { ...params, country: 'FR' });
+                        response = await invokeFunctionWithTenant(req, tenantId, 'fetchTed', { ...params, country: 'FR' });
                         break;
                     case 'TED_IE':
-                        response = await civant.asServiceRole.functions.invoke('fetchTed', { ...params, country: 'IE' });
+                        response = await invokeFunctionWithTenant(req, tenantId, 'fetchTed', { ...params, country: 'IE' });
                         break;
                     case 'ETENDERS_IE':
-                        response = await civant.asServiceRole.functions.invoke('fetchIreland', params);
+                        response = await invokeFunctionWithTenant(req, tenantId, 'fetchIreland', params);
                         break;
                     case 'ETENDERS_IE_INCREMENTAL':
-                        response = await civant.asServiceRole.functions.invoke('fetchEtendersIeIncremental', params);
+                        response = await invokeFunctionWithTenant(req, tenantId, 'fetchEtendersIeIncremental', params);
                         break;
                 }
                 
                 const updateData: Record<string, unknown> = {
                     total_runs: (config.total_runs || 0) + 1
                 };
+                const connectorResult = response?.data || response;
                 
-                if (response?.data?.success) {
+                if (connectorResult?.success) {
                     updateData.last_successful_run = now.toISOString();
                     updateData.successful_runs = (config.successful_runs || 0) + 1;
                     updateData.last_error = null;
@@ -129,12 +192,12 @@ Deno.serve(async (req) => {
                     results.push({
                         connector_id: config.connector_id,
                         success: true,
-                        fetched: response.data.fetched_count || 0,
-                        inserted: response.data.inserted_count || 0,
-                        updated: response.data.updated_count || 0
+                        fetched: connectorResult.fetched_count || 0,
+                        inserted: connectorResult.inserted_count || 0,
+                        updated: connectorResult.updated_count || 0
                     });
                 } else {
-                    const errorMsg = response?.data?.error || 'Unknown error';
+                    const errorMsg = connectorResult?.error || 'Unknown error';
                     updateData.last_error = errorMsg;
                     updateData.last_error_at = now.toISOString();
                     
