@@ -189,7 +189,7 @@ export default function Search() {
     const [lastTendered, setLastTendered] = useState('all');
     const [openOnly, setOpenOnly] = useState(false);
     const [sortBy, setSortBy] = useState('relevance');
-    const [appliedFilters, setAppliedFilters] = useState(DEFAULT_FILTERS);
+    const [appliedFilters, setAppliedFilters] = useState(() => normalizeFilterSnapshot(DEFAULT_FILTERS));
     const [lastSearchAt, setLastSearchAt] = useState(null);
     
     useEffect(() => {
@@ -201,7 +201,7 @@ export default function Search() {
 
     useEffect(() => {
         const params = new URLSearchParams(location.search);
-        const hasQueryParams = Array.from(params.keys()).length > 0;
+        const hasQueryParams = String(location.search || '').length > 1;
         const allowedCountries = new Set(['all', 'FR', 'IE', 'ES']);
         const allowedSources = new Set(['all', 'BOAMP_FR', 'TED', 'ETENDERS_IE', 'PLACSP_ES']);
         const allowedDeadlineWithin = new Set(['all', '7', '14', '30', '60', '90', '180', '365']);
@@ -526,7 +526,7 @@ export default function Search() {
         setLastTendered(DEFAULT_FILTERS.lastTendered);
         setOpenOnly(DEFAULT_FILTERS.openOnly);
         setSortBy(DEFAULT_FILTERS.sortBy);
-        setAppliedFilters(DEFAULT_FILTERS);
+        setAppliedFilters(normalizeFilterSnapshot(DEFAULT_FILTERS));
     };
     
     const currentFilters = useMemo(() => ({
