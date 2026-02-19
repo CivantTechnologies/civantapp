@@ -1,6 +1,8 @@
 // @ts-nocheck
 import { createClientFromRequest } from './civantSdk.ts';
 import { offloadPayload } from './payloadOffload.ts';
+import { requireAdminForTenant } from './requireAdmin.ts';
+import { getTenantFromHeader } from './getTenantFromHeader.ts';
 
 // Irish procurement sources
 // Primary: eTenders.gov.ie (official government portal)
@@ -102,19 +104,9 @@ function normalizeIrishRecord(raw) {
 Deno.serve(async (req) => {
     try {
         const civant = createClientFromRequest(req);
-        const user = await civant.auth.me();
-        
-        if (!user || user.role !== 'admin') {
-            return Response.json({ error: 'Admin access required' }, { status: 403 });
-        }
-        
+        const tenantId = getTenantFromHeader(req);
+        await requireAdminForTenant({ civant, req, tenantId });
         const body = await req.json().catch(() => ({}));
-        const tenantId = String(
-            body.tenant_id
-            || req.headers.get('X-Tenant-Id')
-            || Deno.env.get('DEFAULT_TENANT_ID')
-            || 'civant_default'
-        );
         const mode = body.mode || 'incremental';
         const limit = body.limit || 100;
         
