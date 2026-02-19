@@ -450,7 +450,7 @@ export default function TenderDetail() {
                                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
-                                    onSelect={(event) => {
+                                    onSelect={(/** @type {Event} */ event) => {
                                         event.preventDefault();
                                         handleAddToCalendar();
                                     }}
@@ -464,7 +464,7 @@ export default function TenderDetail() {
                                     Add to Calendar
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
-                                    onSelect={(event) => {
+                                    onSelect={(/** @type {Event} */ event) => {
                                         event.preventDefault();
                                         handleSendToSlack();
                                     }}
