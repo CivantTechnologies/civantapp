@@ -32,6 +32,7 @@ COUNTRY_RAW="${2:-${COUNTRY:-}}"
 RECON_LIMIT="${3:-${RECON_LIMIT:-2500}}"
 APPLY_RAW="${4:-${APPLY_RECONCILE:-true}}"
 NATIONAL_SOURCES_CSV="${5:-${NATIONAL_SOURCES_CSV:-}}"
+STATEMENT_TIMEOUT="${STATEMENT_TIMEOUT:-0}"
 
 if [[ -z "${TENANT_ID}" || -z "${COUNTRY_RAW}" ]]; then
   echo "ERROR: TENANT_ID and COUNTRY are required."
@@ -89,7 +90,9 @@ fi
 echo "== Reconcile TED to national =="
 echo "tenant_id=${TENANT_ID} country=${COUNTRY} limit=${RECON_LIMIT} apply=${APPLY} national_sources=${NATIONAL_SOURCES_CSV:-<auto>}"
 
-result="$(${PSQL_BIN} "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off -qtA -F '|' <<SQL
+result="$(${PSQL_BIN} "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off -qtA -F '|' -v statement_timeout="${STATEMENT_TIMEOUT}" <<SQL
+set statement_timeout = :'statement_timeout';
+
 select
   scanned_count,
   relinked_count,

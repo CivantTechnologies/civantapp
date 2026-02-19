@@ -36,7 +36,7 @@ jobs:
     timeout-minutes: 60
 
     env:
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_POOLER_URL || secrets.SUPABASE_DB_URL }}
       CIVANT_TENANT_ID: ${{ secrets.CIVANT_TENANT_ID }}
       DISPATCH_TENANT_ID: ${{ github.event.inputs.tenant_id }}
       DISPATCH_START_DATE: ${{ github.event.inputs.start_date }}
@@ -81,4 +81,15 @@ jobs:
           fi
 
           export MAX_PAGES
-          ./scripts/rollout-placsp-es-incremental.sh "${TENANT_ID}" "${START_DATE}" "${DRY_RUN}"
+          for attempt in 1 2; do
+            if ./scripts/rollout-placsp-es-incremental.sh "${TENANT_ID}" "${START_DATE}" "${DRY_RUN}"; then
+              exit 0
+            fi
+            echo "WARN: PLACSP incremental attempt ${attempt}/2 failed."
+            if [[ "${attempt}" -lt 2 ]]; then
+              sleep 15
+            fi
+          done
+
+          echo "ERROR: PLACSP incremental failed after 2 attempts."
+          exit 1

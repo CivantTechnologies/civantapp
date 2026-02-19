@@ -36,6 +36,7 @@ APP_ID="${APP_ID:-civantapp}"
 MAX_PAGES="${MAX_PAGES:-40}"
 LOOKBACK_MINUTES="${LOOKBACK_MINUTES:-180}"
 BATCH_SIZE="${BATCH_SIZE:-120}"
+STATEMENT_TIMEOUT="${STATEMENT_TIMEOUT:-0}"
 
 if [[ -z "${TENANT_ID}" ]]; then
   echo "ERROR: TENANT_ID is required."
@@ -145,7 +146,7 @@ if [[ "${DRY_RUN}" != "true" ]]; then
     exit 1
   fi
 
-  "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off <<SQL >/dev/null
+  "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off -v statement_timeout="${STATEMENT_TIMEOUT}" <<SQL >/dev/null
 insert into public."ConnectorConfig" (tenant_id, connector_key, enabled, config, updated_at)
 values ('${TENANT_ID}', '${CONNECTOR_KEY}', true, '{}'::jsonb, now())
 on conflict (connector_key) do update
@@ -327,8 +328,9 @@ fi
 
 echo "== Upserting extracted PLACSP rows into Supabase =="
 
-if ! "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off -v tenant_id="${TENANT_ID}" -v connector_key="${CONNECTOR_KEY}" -v run_id="${RUN_ID}" -v max_entry_updated="${MAX_ENTRY_UPDATED}" -v parsed_records="${PARSED_RECORDS}" -v processed="${PROCESSED}" -v deduped_in_run="${DEDUPED_IN_RUN}" -v pages="${PAGES}" -v feeds="${FEEDS}" <<SQL
+if ! "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off -v statement_timeout="${STATEMENT_TIMEOUT}" -v tenant_id="${TENANT_ID}" -v connector_key="${CONNECTOR_KEY}" -v run_id="${RUN_ID}" -v max_entry_updated="${MAX_ENTRY_UPDATED}" -v parsed_records="${PARSED_RECORDS}" -v processed="${PROCESSED}" -v deduped_in_run="${DEDUPED_IN_RUN}" -v pages="${PAGES}" -v feeds="${FEEDS}" <<SQL
 begin;
+set local statement_timeout = :'statement_timeout';
 
 create temp table tmp_placsp_es_line_raw (
   line text

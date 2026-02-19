@@ -71,6 +71,7 @@ else
 fi
 
 export PGCONNECT_TIMEOUT="${PGCONNECT_TIMEOUT:-15}"
+STATEMENT_TIMEOUT="${STATEMENT_TIMEOUT:-0}"
 
 ETENDERS_SCRIPT="${REPO_ROOT}/scripts/etenders/etenders-ie-incremental.mjs"
 QA_SQL="${REPO_ROOT}/scripts/qa-etenders-ie-incremental.sql"
@@ -166,8 +167,9 @@ fi
 
 if [[ ! -s "${TSV_FILE}" ]]; then
   echo "-- no rows fetched; recording successful noop connector run"
-  "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off <<SQL
+  "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off -v statement_timeout="${STATEMENT_TIMEOUT}" <<SQL
 begin;
+set local statement_timeout = :'statement_timeout';
 
 insert into public."ConnectorConfig" (tenant_id, connector_key, enabled, config, updated_at)
 values ('${TENANT_ID}', '${CONNECTOR_KEY}', true, '{}'::jsonb, now())
@@ -215,8 +217,9 @@ fi
 
 echo "== Upserting into Supabase =="
 
-"${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off <<SQL
+"${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off -v statement_timeout="${STATEMENT_TIMEOUT}" <<SQL
 begin;
+set local statement_timeout = :'statement_timeout';
 
 -- Ensure connector config row exists (per tenant).
 insert into public."ConnectorConfig" (tenant_id, connector_key, enabled, config, updated_at)

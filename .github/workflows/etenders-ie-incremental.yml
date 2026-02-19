@@ -33,7 +33,7 @@ jobs:
 
     env:
       # Stored in GitHub repo secrets. Must include sslmode=require.
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_POOLER_URL || secrets.SUPABASE_DB_URL }}
       # Optional. If not set, workflow_dispatch default is used; schedule defaults to civant_default.
       CIVANT_TENANT_ID: ${{ secrets.CIVANT_TENANT_ID }}
       DISPATCH_TENANT_ID: ${{ github.event.inputs.tenant_id }}
@@ -75,4 +75,15 @@ jobs:
             exit 1
           fi
 
-          ./scripts/rollout-etenders-ie-incremental.sh "${TENANT_ID}" "${START_DATE}" "${DRY_RUN}"
+          for attempt in 1 2 3; do
+            if ./scripts/rollout-etenders-ie-incremental.sh "${TENANT_ID}" "${START_DATE}" "${DRY_RUN}"; then
+              exit 0
+            fi
+            echo "WARN: eTenders incremental attempt ${attempt}/3 failed."
+            if [[ "${attempt}" -lt 3 ]]; then
+              sleep $((attempt * 10))
+            fi
+          done
+
+          echo "ERROR: eTenders incremental failed after 3 attempts."
+          exit 1

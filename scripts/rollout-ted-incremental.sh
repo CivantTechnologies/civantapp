@@ -40,6 +40,7 @@ COUNTRIES="${COUNTRIES:-IRL,FRA,ESP}"
 MAX_PAGES="${MAX_PAGES:-40}"
 PAGE_SIZE="${PAGE_SIZE:-100}"
 SLEEP_MS="${SLEEP_MS:-120}"
+STATEMENT_TIMEOUT="${STATEMENT_TIMEOUT:-0}"
 
 if [[ -z "${TENANT_ID}" ]]; then
   echo "ERROR: TENANT_ID is required."
@@ -173,8 +174,9 @@ fi
 
 if [[ ! -s "${TSV_FILE}" ]]; then
   echo "-- no rows fetched; recording successful noop connector run"
-  "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off <<SQL
+  "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off -v statement_timeout="${STATEMENT_TIMEOUT}" <<SQL
 begin;
+set local statement_timeout = :'statement_timeout';
 
 insert into public."ConnectorConfig" (tenant_id, connector_key, enabled, config, updated_at)
 values ('${TENANT_ID}', '${CONNECTOR_KEY}', true, '{}'::jsonb, now())
@@ -224,8 +226,9 @@ fi
 
 echo "== Upserting into Supabase =="
 
-"${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off <<SQL
+"${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off -v statement_timeout="${STATEMENT_TIMEOUT}" <<SQL
 begin;
+set local statement_timeout = :'statement_timeout';
 
 insert into public."ConnectorConfig" (tenant_id, connector_key, enabled, config, updated_at)
 values ('${TENANT_ID}', '${CONNECTOR_KEY}', true, '{}'::jsonb, now())
