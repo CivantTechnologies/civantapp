@@ -25,15 +25,20 @@ Deno.serve(async (req) => {
     if (!reason) {
       return Response.json({ error: 'reason is required' }, { status: 400 });
     }
+    const supportUserId = String(body.support_user_id || body.supportUserId || '').trim();
+    if (!supportUserId) {
+      return Response.json({ error: 'support_user_id is required' }, { status: 400 });
+    }
 
     const durationMinutes = sanitizeDuration(body.durationMinutes || body.duration_minutes);
     const expiresAt = new Date(Date.now() + durationMinutes * 60 * 1000).toISOString();
 
-    const active = await getActiveSupportGrant(civant, tenantId);
+    const active = await getActiveSupportGrant(civant, tenantId, supportUserId);
 
     if (active) {
       await civant.asServiceRole.entities.support_access_grants.update(String(active.id), {
         enabled: true,
+        support_user_id: supportUserId,
         expires_at: expiresAt,
         enabled_by_user_id: user.userId || null,
         reason,
@@ -45,6 +50,7 @@ Deno.serve(async (req) => {
       await civant.asServiceRole.entities.support_access_grants.create({
         id: makeId('sa_grant'),
         tenant_id: tenantId,
+        support_user_id: supportUserId,
         enabled: true,
         expires_at: expiresAt,
         enabled_by_user_id: user.userId || null,
@@ -62,7 +68,7 @@ Deno.serve(async (req) => {
       actor: { id: user.userId, email: user.email },
       action: 'ENABLED',
       reason,
-      metadata: { durationMinutes, expiresAt }
+      metadata: { durationMinutes, expiresAt, supportUserId }
     });
 
     const status = await computeSupportStatus({ civant, tenantId, actor: { id: user.userId, email: user.email } });

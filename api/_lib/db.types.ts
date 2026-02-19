@@ -124,6 +124,7 @@ export type ApiDatabase = {
         {
           id: string;
           tenant_id: string;
+          support_user_id: string | null;
           enabled: boolean;
           expires_at: string | null;
           enabled_by_user_id: string | null;
@@ -136,6 +137,7 @@ export type ApiDatabase = {
         {
           id: string;
           tenant_id: string;
+          support_user_id?: string | null;
           enabled?: boolean;
           expires_at?: string | null;
           enabled_by_user_id?: string | null;

@@ -1,6 +1,6 @@
 import { getHeader, type RequestLike } from './http.js';
 import { getServerSupabase } from './supabase.js';
-import { getCurrentUser, requireTenantAccess } from './auth.js';
+import { getCurrentUser, requireTenantAccessWithSupportGrant } from './auth.js';
 
 const TENANT_ID_PATTERN = /^[a-z0-9_]{3,40}$/;
 const TENDERS_CURRENT_FIELD_MAP: Record<string, string> = {
@@ -231,7 +231,13 @@ async function requireEntityAccess(req: DynamicRequest, tableName: string) {
   if (!tenantId) {
     throw badRequest('Missing x-tenant-id');
   }
-  requireTenantAccess(user, tenantId);
+  await requireTenantAccessWithSupportGrant({
+    req,
+    user,
+    tenantId,
+    action: 'ENTITY_ACCESS',
+    metadata: { tableName }
+  });
   return tenantId;
 }
 

@@ -15,8 +15,12 @@ Deno.serve(async (req) => {
     if (!reason) {
       return Response.json({ error: 'reason is required' }, { status: 400 });
     }
+    const supportUserId = String(body.support_user_id || body.supportUserId || '').trim();
+    if (!supportUserId) {
+      return Response.json({ error: 'support_user_id is required' }, { status: 400 });
+    }
 
-    const active = await getActiveSupportGrant(civant, tenantId);
+    const active = await getActiveSupportGrant(civant, tenantId, supportUserId);
     if (active) {
       await civant.asServiceRole.entities.support_access_grants.update(String(active.id), {
         enabled: false,
@@ -32,7 +36,7 @@ Deno.serve(async (req) => {
       actor: { id: user.userId, email: user.email },
       action: 'REVOKED',
       reason,
-      metadata: { hadActiveGrant: Boolean(active), grantId: active?.id || null }
+      metadata: { hadActiveGrant: Boolean(active), grantId: active?.id || null, supportUserId }
     });
 
     const status = await computeSupportStatus({ civant, tenantId, actor: { id: user.userId, email: user.email } });
