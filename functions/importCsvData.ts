@@ -1,9 +1,10 @@
 import { createClientFromRequest } from './civantSdk.ts';
+import { requireAdminForTenant } from './requireAdmin.ts';
+import { getTenantFromHeader } from './getTenantFromHeader.ts';
 import { offloadPayload } from './payloadOffload.ts';
 
 const getErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
-const TENANT_ID_PATTERN = /^[a-z0-9_]{3,40}$/;
 
 type ImportedTenderRecord = {
     tender_uid?: string;
@@ -24,20 +25,8 @@ type ImportedTenderRecord = {
 Deno.serve(async (req) => {
     try {
         const civant = createClientFromRequest(req);
-        const user = await civant.auth.me();
-        
-        if (!user || user.role !== 'admin') {
-            return Response.json({ error: 'Unauthorized - Admin access required' }, { status: 403 });
-        }
-
-        const tenantIdRaw = String(
-            user.tenant_id
-            || req.headers.get('x-tenant-id')
-            || req.headers.get('X-Tenant-Id')
-            || Deno.env.get('DEFAULT_TENANT_ID')
-            || 'civant_default'
-        ).trim().toLowerCase();
-        const tenantId = TENANT_ID_PATTERN.test(tenantIdRaw) ? tenantIdRaw : 'civant_default';
+        const tenantId = getTenantFromHeader(req);
+        await requireAdminForTenant({ civant, req, tenantId });
         
         const { file_url, data_type } = await req.json() as { file_url?: string; data_type?: string };
         
@@ -149,20 +138,29 @@ Deno.serve(async (req) => {
                 
                 // Check if exists
                 const existing = await civant.asServiceRole.entities.TendersCurrent.filter({
+                    tenant_id: tenantId,
                     tender_id: tenderData.tender_uid
                 }) as Array<Record<string, any>>;
                 
                 if (existing.length > 0) {
                     // Update if fingerprint changed
-                    if (existing[0]?.data?.fingerprint !== fingerprint) {
-                        await civant.asServiceRole.entities.TendersCurrent.update(existing[0].id, {
+                    const existingRow = existing[0];
+                    if (
+                        String(existingRow.tenant_id || '').trim().toLowerCase() !== tenantId
+                        || String(existingRow.tender_id || '') !== tenderData.tender_uid
+                    ) {
+                        throw new Error('Tenant-scoped tender lookup mismatch');
+                    }
+
+                    if (existingRow?.data?.fingerprint !== fingerprint) {
+                        await civant.asServiceRole.entities.TendersCurrent.update(existingRow.id, {
                             tenant_id: tenantId,
                             tender_id: tenderData.tender_uid,
                             source: tenderData.source,
                             published_at: publishedIso,
                             data: {
                                 ...payloadData,
-                                version_count: (existing[0].version_count || 1) + 1
+                                version_count: (existingRow.version_count || 1) + 1
                             },
                             ...payloadMeta
                         });
@@ -201,8 +199,9 @@ Deno.serve(async (req) => {
         });
         
     } catch (error: unknown) {
+        const status = (error as Error & { status?: number }).status || 500;
         return Response.json({ 
             error: getErrorMessage(error) || 'Import failed'
-        }, { status: 500 });
+        }, { status });
     }
 });
