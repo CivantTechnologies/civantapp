@@ -1,4 +1,5 @@
 import { createClientFromRequest } from './civantSdk.ts';
+import { isSupportGrantActive } from '../shared/supportAccessPolicy.js';
 
 type CivantClient = ReturnType<typeof createClientFromRequest>;
 
@@ -45,14 +46,23 @@ export async function getLatestSupportGrant(civant: CivantClient, tenantId: stri
   return rows[0] as SupportGrant;
 }
 
-export async function getActiveSupportGrant(civant: CivantClient, tenantId: string): Promise<SupportGrant | null> {
-  const rows = await civant.asServiceRole.entities.support_access_grants.filter({
+export async function getActiveSupportGrant(
+  civant: CivantClient,
+  tenantId: string,
+  supportUserId?: string
+): Promise<SupportGrant | null> {
+  const filters: Record<string, unknown> = {
     tenant_id: tenantId,
     enabled: true
-  }, '-created_at', 50);
+  };
+  const normalizedSupportUserId = String(supportUserId || '').trim();
+  if (normalizedSupportUserId) {
+    filters.support_user_id = normalizedSupportUserId;
+  }
+  const rows = await civant.asServiceRole.entities.support_access_grants.filter(filters, '-created_at', 50);
 
   if (!Array.isArray(rows) || rows.length === 0) return null;
-  const active = rows.find((row: SupportGrant) => !row.revoked_at && !isExpired(row.expires_at));
+  const active = rows.find((row: SupportGrant) => isSupportGrantActive(row));
   return (active || null) as SupportGrant | null;
 }
 

@@ -1,4 +1,9 @@
 import { createClientFromRequest } from './civantSdk.ts';
+import {
+  isSupportGrantActive,
+  normalizeSupportUserId,
+  requiresSupportGrant
+} from '../shared/supportAccessPolicy.js';
 
 type CivantClient = ReturnType<typeof createClientFromRequest>;
 
@@ -33,6 +38,16 @@ function forbidden(message = 'Forbidden') {
   const err = new Error(message);
   (err as Error & { status?: number }).status = 403;
   return err;
+}
+
+function internalServerError(message = 'Internal server error') {
+  const err = new Error(message);
+  (err as Error & { status?: number }).status = 500;
+  return err;
+}
+
+function makeId(prefix: string) {
+  return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 20)}`;
 }
 
 function parseBearerToken(req: Request) {
@@ -124,8 +139,92 @@ export function isPrivileged(user: CurrentUser) {
 
 export function canAccessTenant(user: CurrentUser, tenantId: string) {
   const normalizedTenant = resolveTenantId(tenantId);
-  if (hasRole(user, 'creator')) return true;
   return user.tenantId === normalizedTenant;
+}
+
+async function getActiveSupportGrantForUser(params: {
+  civant: CivantClient;
+  tenantId: string;
+  supportUserId: string;
+}) {
+  const { civant, tenantId } = params;
+  const supportUserId = normalizeSupportUserId(params.supportUserId);
+  if (!supportUserId) return null;
+
+  const rows = await civant.asServiceRole.entities.support_access_grants.filter({
+    tenant_id: tenantId,
+    support_user_id: supportUserId,
+    enabled: true
+  }, '-created_at', 50).catch(() => null);
+
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  return rows.find((row: Record<string, unknown>) => isSupportGrantActive(row)) || null;
+}
+
+async function writeSupportAccessAudit(params: {
+  civant: CivantClient;
+  user: CurrentUser;
+  tenantId: string;
+  action: string;
+  metadata?: Record<string, unknown> | null;
+}) {
+  const { civant, user, tenantId, action, metadata } = params;
+  await civant.asServiceRole.entities.support_access_audit.create({
+    id: makeId('sa_audit'),
+    tenant_id: tenantId,
+    actor_user_id: user.userId || 'unknown',
+    actor_email: user.email || null,
+    action,
+    reason: null,
+    metadata_json: metadata || null,
+    created_at: new Date().toISOString()
+  });
+}
+
+export async function requireSupportAccessForTenant(params: {
+  civant: CivantClient;
+  req: Request;
+  tenantId: string;
+  user?: CurrentUser;
+  action?: string;
+  metadata?: Record<string, unknown> | null;
+}) {
+  const user = params.user || await getCurrentUserFromRequest(params.civant, params.req);
+  const normalizedTenant = resolveTenantId(params.tenantId);
+
+  if (!requiresSupportGrant(user.tenantId, normalizedTenant)) {
+    return user;
+  }
+  if (!isPrivileged(user)) {
+    throw forbidden('Forbidden for tenant');
+  }
+
+  const grant = await getActiveSupportGrantForUser({
+    civant: params.civant,
+    tenantId: normalizedTenant,
+    supportUserId: user.userId
+  });
+  if (!grant) {
+    throw forbidden('Support access grant required for tenant');
+  }
+
+  try {
+    await writeSupportAccessAudit({
+      civant: params.civant,
+      user,
+      tenantId: normalizedTenant,
+      action: String(params.action || 'CROSS_TENANT_ACCESS'),
+      metadata: {
+        grantId: String((grant as Record<string, unknown>).id || ''),
+        method: String(params.req.method || ''),
+        ...((params.metadata && typeof params.metadata === 'object') ? params.metadata : {})
+      }
+    });
+  } catch {
+    throw internalServerError('Support access audit write failed');
+  }
+
+  return user;
 }
 
 export async function getCurrentUserFromRequest(civant: CivantClient, req: Request): Promise<CurrentUser> {
@@ -151,10 +250,15 @@ export async function requireTenantAccess(params: {
 }) {
   const user = await getCurrentUserFromRequest(params.civant, params.req);
   const normalizedTenant = resolveTenantId(params.tenantId);
-  if (!canAccessTenant(user, normalizedTenant)) {
-    throw forbidden('Forbidden for tenant');
+  if (canAccessTenant(user, normalizedTenant)) {
+    return user;
   }
-  return user;
+  return requireSupportAccessForTenant({
+    civant: params.civant,
+    req: params.req,
+    tenantId: normalizedTenant,
+    user
+  });
 }
 
 export async function checkIsAdminForTenant(params: {
