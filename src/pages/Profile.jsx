@@ -80,7 +80,8 @@ function buildCountryOptions() {
     }
 
     const displayNames = new Intl.DisplayNames(['en'], { type: 'region' });
-    const supportedRegions = Intl.supportedValuesOf('region');
+    const supportedValuesOf = /** @type {any} */ (Intl.supportedValuesOf);
+    const supportedRegions = supportedValuesOf('region');
     const uniqueNames = new Set();
 
     for (const regionCode of supportedRegions) {
@@ -157,7 +158,8 @@ function buildLanguageOptions() {
     }
 
     const displayNames = new Intl.DisplayNames(['en'], { type: 'language' });
-    const supportedLanguages = Intl.supportedValuesOf('language');
+    const supportedValuesOf = /** @type {any} */ (Intl.supportedValuesOf);
+    const supportedLanguages = supportedValuesOf('language');
     const options = [];
     const seen = new Set();
 
@@ -945,6 +947,7 @@ export default function Profile() {
                   onChange={(codes) => setField('cpv_interest_codes', codes.join(', '))}
                   placeholder="Search CPV by code or keyword (e.g. software, construction, medical)"
                   maxSelections={30}
+                  className=""
                 />
                 <p className="mt-1 text-xs text-muted-foreground">Selected CPV codes are used for watchlists and alert scoring.</p>
               </div>
@@ -958,6 +961,7 @@ export default function Profile() {
                   placeholder="Search tender categories"
                   helperText="Add categories to personalize your discovery and scoring."
                   maxSelections={20}
+                  className=""
                 />
               </div>
 
@@ -970,6 +974,7 @@ export default function Profile() {
                   placeholder="Search regions (e.g. Ireland, France, Spain, EU-wide)"
                   helperText="Set your priority procurement geographies."
                   maxSelections={12}
+                  className=""
                 />
               </div>
 
