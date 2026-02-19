@@ -14,6 +14,10 @@ type OffloadParams = {
   payload: unknown;
 };
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function envRequired(name: string, fallback?: string) {
   const value = String(Deno.env.get(name) || Deno.env.get(fallback || '') || '').trim();
   if (!value) {
@@ -49,15 +53,20 @@ function canonicalJson(value: unknown): string {
   return JSON.stringify(canonicalize(value));
 }
 
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const view = new Uint8Array(bytes);
+  return view.buffer;
+}
+
 async function sha256Hex(bytes: Uint8Array) {
-  const hash = await crypto.subtle.digest('SHA-256', bytes);
+  const hash = await crypto.subtle.digest('SHA-256', toArrayBuffer(bytes));
   return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 async function gzipBytes(bytes: Uint8Array): Promise<Uint8Array> {
   const stream = new CompressionStream('gzip');
   const writer = stream.writable.getWriter();
-  await writer.write(bytes);
+  await writer.write(new Uint8Array(bytes));
   await writer.close();
   const compressed = await new Response(stream.readable).arrayBuffer();
   return new Uint8Array(compressed);
@@ -85,8 +94,8 @@ async function recordFailure(params: {
       raw_object_key: params.objectKey || null,
       error: params.error
     });
-  } catch (err) {
-    console.error('Failed to record payload_offload_failures:', err?.message || err);
+  } catch (err: unknown) {
+    console.error('Failed to record payload_offload_failures:', getErrorMessage(err));
   }
 }
 
@@ -163,8 +172,8 @@ export async function offloadPayload(params: OffloadParams): Promise<OffloadResu
       payload_bytes: payloadBytes,
       payload_stored_at: new Date().toISOString()
     };
-  } catch (err) {
-    const message = err?.message || String(err);
+  } catch (err: unknown) {
+    const message = getErrorMessage(err);
     await recordFailure({
       civant: params.civant,
       tenantId: params.tenantId,

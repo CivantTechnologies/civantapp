@@ -3,6 +3,7 @@ import { offloadPayload } from './payloadOffload.ts';
 
 const getErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
+const TENANT_ID_PATTERN = /^[a-z0-9_]{3,40}$/;
 
 type ImportedTenderRecord = {
     tender_uid?: string;
@@ -28,6 +29,15 @@ Deno.serve(async (req) => {
         if (!user || user.role !== 'admin') {
             return Response.json({ error: 'Unauthorized - Admin access required' }, { status: 403 });
         }
+
+        const tenantIdRaw = String(
+            user.tenant_id
+            || req.headers.get('x-tenant-id')
+            || req.headers.get('X-Tenant-Id')
+            || Deno.env.get('DEFAULT_TENANT_ID')
+            || 'civant_default'
+        ).trim().toLowerCase();
+        const tenantId = TENANT_ID_PATTERN.test(tenantIdRaw) ? tenantIdRaw : 'civant_default';
         
         const { file_url, data_type } = await req.json() as { file_url?: string; data_type?: string };
         
@@ -92,8 +102,8 @@ Deno.serve(async (req) => {
                 ].filter(Boolean).join('|');
                 
                 const encoder = new TextEncoder();
-                const data = encoder.encode(fingerprintData);
-                const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+                const fingerprintBytes = encoder.encode(fingerprintData);
+                const hashBuffer = await crypto.subtle.digest('SHA-256', fingerprintBytes);
                 const hashArray = Array.from(new Uint8Array(hashBuffer));
                 const fingerprint = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
                 
@@ -118,7 +128,7 @@ Deno.serve(async (req) => {
                     version_count: 1
                 };
 
-                const data = { ...tenderData };
+                const payloadData = { ...tenderData };
                 const publishedIso = tenderData.publication_date
                     ? `${tenderData.publication_date}T00:00:00.000Z`
                     : new Date().toISOString();
@@ -128,7 +138,7 @@ Deno.serve(async (req) => {
                     tenantId,
                     tableName: 'TendersCurrent',
                     primaryKey: tenderData.tender_uid,
-                    payload: data
+                    payload: payloadData
                 });
                 const payloadMeta = offload.offloaded ? {
                     raw_object_key: offload.raw_object_key,
@@ -139,19 +149,19 @@ Deno.serve(async (req) => {
                 
                 // Check if exists
                 const existing = await civant.asServiceRole.entities.TendersCurrent.filter({
-                    tender_uid: tenderData.tender_uid
+                    tender_id: tenderData.tender_uid
                 }) as Array<Record<string, any>>;
                 
                 if (existing.length > 0) {
                     // Update if fingerprint changed
-                    if (existing[0].fingerprint !== fingerprint) {
+                    if (existing[0]?.data?.fingerprint !== fingerprint) {
                         await civant.asServiceRole.entities.TendersCurrent.update(existing[0].id, {
                             tenant_id: tenantId,
                             tender_id: tenderData.tender_uid,
                             source: tenderData.source,
                             published_at: publishedIso,
                             data: {
-                                ...data,
+                                ...payloadData,
                                 version_count: (existing[0].version_count || 1) + 1
                             },
                             ...payloadMeta
@@ -165,7 +175,7 @@ Deno.serve(async (req) => {
                         tender_id: tenderData.tender_uid,
                         source: tenderData.source,
                         published_at: publishedIso,
-                        data,
+                        data: payloadData,
                         ...payloadMeta
                     });
                     inserted++;
