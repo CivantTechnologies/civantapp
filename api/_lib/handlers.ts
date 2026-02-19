@@ -22,6 +22,9 @@ const CONNECTOR_MAP: Record<string, { key: string; displayName: string }> = {
   PLACSP_ES: { key: 'PLACSP_ES', displayName: 'PLACSP Spain' },
   PLACSP_ES_INCREMENTAL: { key: 'PLACSP_ES', displayName: 'PLACSP Spain' }
 };
+const ALLOWED_SOURCE_FILTERS = new Set(
+  Object.values(CONNECTOR_MAP).map((entry) => String(entry.key || '').trim().toUpperCase()).filter(Boolean)
+);
 
 const TENANT_ID_PATTERN = /^[a-z0-9_]{3,40}$/;
 
@@ -362,10 +365,20 @@ function isClosedTenderByStatus(tender: Record<string, unknown>) {
 }
 
 function normalizeSearchFilters(raw: Record<string, unknown>) {
+  const normalizeSourceFilterValue = (value: unknown) => {
+    const rawValue = String(value || '').trim();
+    if (!rawValue || rawValue.toLowerCase() === 'all') return 'all';
+    const normalized = rawValue.toUpperCase();
+    if (!ALLOWED_SOURCE_FILTERS.has(normalized)) {
+      throw badRequest('Invalid source filter');
+    }
+    return normalized;
+  };
+
   return {
     keyword: String(raw.keyword || '').trim(),
     country: String(raw.country || 'all').trim() || 'all',
-    source: String(raw.source || 'all').trim() || 'all',
+    source: normalizeSourceFilterValue(raw.source || 'all'),
     buyerSearch: String(raw.buyerSearch || '').trim(),
     cpvSearchCodes: Array.isArray(raw.cpvSearchCodes)
       ? raw.cpvSearchCodes.map((v) => String(v || '').trim()).filter(Boolean).slice(0, 8)
@@ -808,8 +821,7 @@ export async function searchTenders(req: RequestLike) {
       .range(skip, skip + pageSize - 1);
 
     if (filters.source !== 'all') {
-      const sourceValue = String(filters.source || '').trim().toUpperCase();
-      qb = qb.or(`source.eq.${sourceValue},verification_sources.cs.{${sourceValue}}`);
+      qb = qb.or(`source.eq.${filters.source},verification_sources.cs.{${filters.source}}`);
     }
 
     if (publishedCutoff) {
