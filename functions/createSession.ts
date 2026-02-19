@@ -1,5 +1,5 @@
 import { createClientFromRequest } from './civantSdk.ts';
-import { resolveTenantId } from './requireAdmin.ts';
+import { getCurrentUserFromRequest, resolveTenantId } from './requireAdmin.ts';
 
 function makeId(prefix: string) {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 20)}`;
@@ -19,36 +19,43 @@ function getExpiryIso() {
   return new Date(Date.now() + safeTtlHours * 60 * 60 * 1000).toISOString();
 }
 
+const MIN_SESSION_MINT_INTERVAL_MS = 15_000;
+const lastMintByUserId = new Map<string, number>();
+
+function isCreateSessionEnabled() {
+  const raw = String(Deno.env.get('ENABLE_CREATE_SESSION_DEV_ONLY') || '').trim().toLowerCase();
+  return raw === 'true';
+}
+
 Deno.serve(async (req) => {
   try {
-    const civant = createClientFromRequest(req);
-    const body = await req.json().catch(() => ({}));
-
-    const email = sanitizeEmail(body.email);
-    if (!email) {
-      return Response.json({ error: 'email is required' }, { status: 400 });
+    if (!isCreateSessionEnabled()) {
+      return Response.json({ error: 'Not found' }, { status: 404 });
     }
 
-    const tenantId = resolveTenantId(body.tenantId || body.tenant_id || req.headers.get('X-Tenant-Id'));
+    const civant = createClientFromRequest(req);
+    const user = await getCurrentUserFromRequest(civant, req);
+    const body = await req.json().catch(() => ({}));
 
-    const existing = await civant.asServiceRole.entities.users.filter({ email }, '-created_at', 1);
+    const requestedEmail = sanitizeEmail(body.email);
+    if (requestedEmail && requestedEmail !== user.email) {
+      return Response.json({ error: 'Cannot create session for another user' }, { status: 403 });
+    }
 
-    const user = Array.isArray(existing) && existing.length > 0
-      ? existing[0] as Record<string, unknown>
-      : await civant.asServiceRole.entities.users.create({
-          id: makeId('usr'),
-          email,
-          tenant_id: tenantId,
-          role: 'user',
-          created_at: new Date().toISOString()
-        }) as Record<string, unknown>;
+    const lastMintAt = lastMintByUserId.get(user.userId) || 0;
+    if (Date.now() - lastMintAt < MIN_SESSION_MINT_INTERVAL_MS) {
+      return Response.json({ error: 'Too many session requests' }, { status: 429 });
+    }
+    lastMintByUserId.set(user.userId, Date.now());
+
+    const tenantId = resolveTenantId(user.tenantId);
 
     const token = makeToken();
     const expiresAt = getExpiryIso();
 
     await civant.asServiceRole.entities.sessions.create({
       id: makeId('sess'),
-      user_id: user.id,
+      user_id: user.userId,
       token,
       expires_at: expiresAt,
       created_at: new Date().toISOString()
@@ -57,11 +64,11 @@ Deno.serve(async (req) => {
     return Response.json({
       token,
       user: {
-        userId: String(user.id || ''),
-        email: String(user.email || ''),
-        role: String(user.role || 'user'),
-        tenantId: resolveTenantId(user.tenant_id),
-        createdAt: user.created_at || null
+        userId: user.userId,
+        email: user.email,
+        role: user.role,
+        tenantId,
+        createdAt: null
       }
     });
   } catch (error) {

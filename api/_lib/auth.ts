@@ -74,14 +74,8 @@ export async function getCurrentUser(req: RequestLike): Promise<CurrentUser> {
   const authUserId = String(authData.user.id || '').trim();
   if (!authUserId) throw unauthorized('User id missing in token');
 
-  const metadata = (authData.user.user_metadata && typeof authData.user.user_metadata === 'object')
-    ? (authData.user.user_metadata as Record<string, unknown>)
-    : {};
-  const requestedTenantId = normalizeTenantId(metadata.tenant_id);
-  const tenantIdFromMetadata = TENANT_ID_PATTERN.test(requestedTenantId)
-    ? requestedTenantId
-    : 'civant_default';
-  const requestedRole = normalizeRole(metadata.role);
+  const bootstrapTenantId = 'civant_default';
+  const bootstrapRole = 'user';
 
   let userRows: Array<Record<string, unknown>> = [];
   let inlineRole = '';
@@ -139,8 +133,8 @@ export async function getCurrentUser(req: RequestLike): Promise<CurrentUser> {
         {
           id: authUserId,
           email,
-          tenant_id: tenantIdFromMetadata,
-          role: requestedRole
+          tenant_id: bootstrapTenantId,
+          role: bootstrapRole
         },
         { onConflict: 'email' }
       )
@@ -158,7 +152,7 @@ export async function getCurrentUser(req: RequestLike): Promise<CurrentUser> {
           {
             id: authUserId,
             email,
-            tenant_id: tenantIdFromMetadata
+            tenant_id: bootstrapTenantId
           },
           { onConflict: 'email' }
         )
@@ -169,10 +163,10 @@ export async function getCurrentUser(req: RequestLike): Promise<CurrentUser> {
         throw Object.assign(new Error(fallbackInsertResult.error.message), { status: 500 });
       }
       userRow = Array.isArray(fallbackInsertResult.data) ? fallbackInsertResult.data[0] : null;
-      inlineRole = requestedRole;
+      inlineRole = bootstrapRole;
     } else {
       userRow = Array.isArray(insertWithRoleResult.data) ? insertWithRoleResult.data[0] : null;
-      inlineRole = String(userRow?.role || requestedRole || '').trim().toLowerCase();
+      inlineRole = normalizeRole(userRow?.role);
     }
 
     if (!userRow) {
@@ -181,14 +175,14 @@ export async function getCurrentUser(req: RequestLike): Promise<CurrentUser> {
   }
 
   const userId = String(userRow.id || '');
-  const tenantId = normalizeTenantId(userRow.tenant_id);
+  const tenantId = normalizeTenantId(userRow.tenant_id) || bootstrapTenantId;
 
   const roleWriteResult = await supabase
     .from('user_roles')
     .upsert(
       {
         user_id: userId,
-        role: inlineRole || requestedRole || 'user'
+        role: normalizeRole(inlineRole || bootstrapRole)
       },
       { onConflict: 'user_id,role' }
     );
@@ -212,7 +206,7 @@ export async function getCurrentUser(req: RequestLike): Promise<CurrentUser> {
   if (inlineRole) roleSet.add(inlineRole);
 
   for (const roleRow of resolvedRoleRows) {
-    const role = String(roleRow.role || '').trim().toLowerCase();
+    const role = normalizeRole(roleRow.role);
     if (role) roleSet.add(role);
   }
 
