@@ -5,7 +5,7 @@ import {
   isPrivileged,
   requireCreator,
   requirePrivileged,
-  requireTenantAccess,
+  requireTenantAccessWithSupportGrant,
   type CurrentUser
 } from './auth.js';
 import { createHash } from 'node:crypto';
@@ -123,26 +123,33 @@ async function writeSupportAudit(params: {
 
 async function getLatestSupportGrant(tenantId: string) {
   const supabase = getServerSupabase();
-  const { data, error } = await supabase
+  const query = supabase
     .from('support_access_grants')
     .select('*')
     .eq('tenant_id', tenantId)
     .order('created_at', { ascending: false })
     .limit(1);
 
+  const { data, error } = await query;
+
   if (error) throw Object.assign(new Error(error.message), { status: 500 });
   return Array.isArray(data) && data.length ? (data[0] as SupportAccessGrantRow) : null;
 }
 
-async function getActiveSupportGrant(tenantId: string) {
+async function getActiveSupportGrant(tenantId: string, supportUserId?: string) {
   const supabase = getServerSupabase();
-  const { data, error } = await supabase
+  let query = supabase
     .from('support_access_grants')
     .select('*')
     .eq('tenant_id', tenantId)
     .eq('enabled', true)
-    .order('created_at', { ascending: false })
-    .limit(50);
+    .order('created_at', { ascending: false });
+
+  if (String(supportUserId || '').trim()) {
+    query = query.eq('support_user_id', String(supportUserId).trim());
+  }
+
+  const { data, error } = await query.limit(50);
 
   if (error) throw Object.assign(new Error(error.message), { status: 500 });
   const grantRows = (Array.isArray(data) ? data : []) as SupportAccessGrantRow[];
@@ -205,7 +212,12 @@ async function computeSupportStatus(tenantId: string, actor?: Pick<CurrentUser, 
 async function requireTenantScopedPrivilegedUser(req: RequestLike) {
   const user = await getCurrentUser(req);
   const tenantId = getTenantFromHeader(req);
-  requireTenantAccess(user, tenantId);
+  await requireTenantAccessWithSupportGrant({
+    req,
+    user,
+    tenantId,
+    action: 'TENANT_SCOPED_PRIVILEGED_ACCESS'
+  });
   requirePrivileged(user);
   return { user, tenantId };
 }
@@ -213,7 +225,12 @@ async function requireTenantScopedPrivilegedUser(req: RequestLike) {
 async function requireTenantScopedUser(req: RequestLike) {
   const user = await getCurrentUser(req);
   const tenantId = getTenantFromHeader(req);
-  requireTenantAccess(user, tenantId);
+  await requireTenantAccessWithSupportGrant({
+    req,
+    user,
+    tenantId,
+    action: 'TENANT_SCOPED_ACCESS'
+  });
   return { user, tenantId };
 }
 
@@ -983,7 +1000,12 @@ export async function createTenant(req: RequestLike) {
 export async function getTenant(req: RequestLike) {
   const user = await getCurrentUser(req);
   const tenantId = getTenantFromHeader(req);
-  requireTenantAccess(user, tenantId);
+  await requireTenantAccessWithSupportGrant({
+    req,
+    user,
+    tenantId,
+    action: 'GET_TENANT'
+  });
 
   const supabase = getServerSupabase();
   const { data, error } = await supabase
@@ -1128,7 +1150,12 @@ export async function getConnectorStatus(req: RequestLike) {
 export async function getCapabilities(req: RequestLike) {
   const user = await getCurrentUser(req);
   const tenantId = getTenantFromHeader(req);
-  requireTenantAccess(user, tenantId);
+  await requireTenantAccessWithSupportGrant({
+    req,
+    user,
+    tenantId,
+    action: 'GET_CAPABILITIES'
+  });
 
   return {
     isAdmin: isPrivileged(user),
@@ -1139,21 +1166,30 @@ export async function getCapabilities(req: RequestLike) {
 export async function enableSupportAccess(req: RequestLike) {
   const { user, tenantId } = await requireTenantScopedPrivilegedUser(req);
   const supabase = getServerSupabase();
-  const body = readJsonBody<{ durationMinutes?: number; duration_minutes?: number; reason?: string }>(req);
+  const body = readJsonBody<{
+    durationMinutes?: number;
+    duration_minutes?: number;
+    reason?: string;
+    support_user_id?: string;
+    supportUserId?: string;
+  }>(req);
 
   const reason = String(body.reason || '').trim();
   if (!reason) throw badRequest('reason is required');
+  const supportUserId = String(body.support_user_id || body.supportUserId || '').trim();
+  if (!supportUserId) throw badRequest('support_user_id is required');
 
   const durationMinutes = sanitizeDuration(body.durationMinutes || body.duration_minutes);
   const expiresAt = new Date(Date.now() + durationMinutes * 60 * 1000).toISOString();
 
-  const active = await getActiveSupportGrant(tenantId);
+  const active = await getActiveSupportGrant(tenantId, supportUserId);
 
   if (active) {
     const { error: updateError } = await supabase
       .from('support_access_grants')
       .update({
         enabled: true,
+        support_user_id: supportUserId,
         expires_at: expiresAt,
         enabled_by_user_id: user.userId || null,
         reason,
@@ -1171,6 +1207,7 @@ export async function enableSupportAccess(req: RequestLike) {
       .insert({
         id: makeId('sa_grant'),
         tenant_id: tenantId,
+        support_user_id: supportUserId,
         enabled: true,
         expires_at: expiresAt,
         enabled_by_user_id: user.userId || null,
@@ -1189,7 +1226,7 @@ export async function enableSupportAccess(req: RequestLike) {
     actor: { userId: user.userId, email: user.email },
     action: 'ENABLED',
     reason,
-    metadata: { durationMinutes, expiresAt }
+    metadata: { durationMinutes, expiresAt, supportUserId }
   });
 
   return computeSupportStatus(tenantId, { userId: user.userId, email: user.email });
@@ -1198,12 +1235,14 @@ export async function enableSupportAccess(req: RequestLike) {
 export async function revokeSupportAccess(req: RequestLike) {
   const { user, tenantId } = await requireTenantScopedPrivilegedUser(req);
   const supabase = getServerSupabase();
-  const body = readJsonBody<{ reason?: string }>(req);
+  const body = readJsonBody<{ reason?: string; support_user_id?: string; supportUserId?: string }>(req);
 
   const reason = String(body.reason || '').trim();
   if (!reason) throw badRequest('reason is required');
+  const supportUserId = String(body.support_user_id || body.supportUserId || '').trim();
+  if (!supportUserId) throw badRequest('support_user_id is required');
 
-  const active = await getActiveSupportGrant(tenantId);
+  const active = await getActiveSupportGrant(tenantId, supportUserId);
   if (active) {
     const { error: updateError } = await supabase
       .from('support_access_grants')
@@ -1224,7 +1263,7 @@ export async function revokeSupportAccess(req: RequestLike) {
     actor: { userId: user.userId, email: user.email },
     action: 'REVOKED',
     reason,
-    metadata: { hadActiveGrant: Boolean(active), grantId: active?.id || null }
+    metadata: { hadActiveGrant: Boolean(active), grantId: active?.id || null, supportUserId }
   });
 
   return computeSupportStatus(tenantId, { userId: user.userId, email: user.email });

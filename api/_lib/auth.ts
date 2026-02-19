@@ -1,5 +1,11 @@
 import { getHeader, type RequestLike } from './http.js';
 import { getServerSupabase } from './supabase.js';
+import type { Json } from './db.types.js';
+import {
+  isSupportGrantActive,
+  normalizeSupportUserId,
+  requiresSupportGrant
+} from '../../shared/supportAccessPolicy.js';
 
 export type CurrentUser = {
   userId: string;
@@ -45,6 +51,10 @@ function isMissingColumnOrTable(error: unknown) {
     message.includes('could not find the') ||
     message.includes('schema cache')
   );
+}
+
+function makeId(prefix: string) {
+  return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 20)}`;
 }
 
 export function getBearerToken(req: RequestLike) {
@@ -227,7 +237,6 @@ export function isPrivileged(user: CurrentUser) {
 }
 
 export function userCanAccessTenant(user: CurrentUser, tenantId: string) {
-  if (hasRole(user, 'creator')) return true;
   return normalizeTenantId(user.tenantId) === normalizeTenantId(tenantId);
 }
 
@@ -235,6 +244,94 @@ export function requireTenantAccess(user: CurrentUser, tenantId: string) {
   if (!userCanAccessTenant(user, tenantId)) {
     throw forbidden('Forbidden for tenant');
   }
+}
+
+async function getActiveSupportGrantForUser(userId: string, tenantId: string) {
+  const supportUserId = normalizeSupportUserId(userId);
+  const normalizedTenantId = normalizeTenantId(tenantId);
+  if (!supportUserId || !normalizedTenantId) return null;
+
+  const supabase = getServerSupabase();
+  const { data, error } = await supabase
+    .from('support_access_grants')
+    .select('id,tenant_id,support_user_id,enabled,expires_at,revoked_at,reason')
+    .eq('tenant_id', normalizedTenantId)
+    .eq('support_user_id', supportUserId)
+    .eq('enabled', true)
+    .order('created_at', { ascending: false })
+    .limit(20);
+
+  if (error) {
+    if (isMissingColumnOrTable(error)) return null;
+    throw Object.assign(new Error(error.message), { status: 500 });
+  }
+
+  const rows = Array.isArray(data) ? data : [];
+  return rows.find((row) => isSupportGrantActive(row)) || null;
+}
+
+async function writeSupportAccessAudit(params: {
+  user: CurrentUser;
+  tenantId: string;
+  action: string;
+  metadata?: Json | null;
+}) {
+  const { user, tenantId, action, metadata } = params;
+  const supabase = getServerSupabase();
+  const { error } = await supabase
+    .from('support_access_audit')
+    .insert({
+      id: makeId('sa_audit'),
+      tenant_id: tenantId,
+      actor_user_id: user.userId || 'unknown',
+      actor_email: user.email || null,
+      action,
+      reason: null,
+      metadata_json: metadata || null,
+      created_at: new Date().toISOString()
+    });
+
+  if (error) {
+    throw Object.assign(new Error(error.message), { status: 500 });
+  }
+}
+
+export async function requireTenantAccessWithSupportGrant(params: {
+  req: RequestLike;
+  user: CurrentUser;
+  tenantId: string;
+  action?: string;
+  metadata?: Json | null;
+}) {
+  const { req, user } = params;
+  const tenantId = normalizeTenantId(params.tenantId);
+  if (!tenantId || !TENANT_ID_PATTERN.test(tenantId)) {
+    throw badRequest('Invalid tenant id');
+  }
+
+  if (!requiresSupportGrant(user.tenantId, tenantId)) {
+    return;
+  }
+
+  if (!isPrivileged(user)) {
+    throw forbidden('Forbidden for tenant');
+  }
+
+  const activeGrant = await getActiveSupportGrantForUser(user.userId, tenantId);
+  if (!activeGrant) {
+    throw forbidden('Support access grant required for tenant');
+  }
+
+  await writeSupportAccessAudit({
+    user,
+    tenantId,
+    action: String(params.action || 'CROSS_TENANT_ACCESS'),
+    metadata: {
+      grantId: String(activeGrant.id || ''),
+      method: String(req.method || ''),
+      ...((params.metadata && typeof params.metadata === 'object') ? params.metadata : {})
+    } as Json
+  });
 }
 
 export function requirePrivileged(user: CurrentUser) {
