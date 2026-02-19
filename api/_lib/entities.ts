@@ -1,5 +1,6 @@
 import { getHeader, type RequestLike } from './http.js';
 import { getServerSupabase } from './supabase.js';
+import { getCurrentUser, requireTenantAccess } from './auth.js';
 
 const TENANT_ID_PATTERN = /^[a-z0-9_]{3,40}$/;
 const TENDERS_CURRENT_FIELD_MAP: Record<string, string> = {
@@ -166,6 +167,10 @@ function resolveTenantFromHeader(req: RequestLike) {
   return raw;
 }
 
+function forbidden(message: string) {
+  return Object.assign(new Error(message), { status: 403 });
+}
+
 function resolveEntityName(req: DynamicRequest) {
   const entityName = parseStringParam(req.query?.entityName);
   if (!entityName) throw badRequest('Missing entity name');
@@ -174,6 +179,60 @@ function resolveEntityName(req: DynamicRequest) {
 
 export function resolveTableName(entityName: string) {
   return ENTITY_TABLE_MAP[entityName] || entityName;
+}
+
+function normalizeTenantValue(value: unknown) {
+  const tenantId = String(value || '').trim().toLowerCase();
+  if (!tenantId || !TENANT_ID_PATTERN.test(tenantId)) return '';
+  return tenantId;
+}
+
+function assertTenantQueryMatches(tenantId: string, queryObj: Record<string, unknown>) {
+  if (!('tenant_id' in queryObj)) return;
+  const requestedTenantId = normalizeTenantValue(queryObj.tenant_id);
+  if (!requestedTenantId) {
+    throw badRequest('Invalid tenant_id filter');
+  }
+  if (requestedTenantId !== tenantId) {
+    throw forbidden('Cross-tenant query is not allowed');
+  }
+}
+
+function assertTenantPayloadMatches(tenantId: string, payload: unknown) {
+  if (!payload || typeof payload !== 'object') return;
+
+  const validateRow = (row: unknown) => {
+    if (!row || typeof row !== 'object') return;
+    if (!('tenant_id' in (row as Record<string, unknown>))) return;
+
+    const rowTenantId = normalizeTenantValue((row as Record<string, unknown>).tenant_id);
+    if (!rowTenantId) {
+      throw badRequest('Invalid tenant_id in payload');
+    }
+    if (rowTenantId !== tenantId) {
+      throw forbidden('Cross-tenant write is not allowed');
+    }
+  };
+
+  if (Array.isArray(payload)) {
+    payload.forEach(validateRow);
+    return;
+  }
+  validateRow(payload);
+}
+
+async function requireEntityAccess(req: DynamicRequest, tableName: string) {
+  const user = await getCurrentUser(req);
+  if (!TENANT_SCOPED_TABLES.has(tableName)) {
+    throw forbidden(`Entity access is not allowed for table: ${tableName}`);
+  }
+
+  const tenantId = resolveTenantFromHeader(req);
+  if (!tenantId) {
+    throw badRequest('Missing x-tenant-id');
+  }
+  requireTenantAccess(user, tenantId);
+  return tenantId;
 }
 
 function mapFieldForTable(tableName: string, field: string) {
@@ -423,14 +482,13 @@ export async function listOrFilterEntity(req: DynamicRequest) {
   const fields = parseStringParam(req.query?.fields) || '*';
   const limit = parseNumberParam(req.query?.limit, 100);
   const skip = parseNumberParam(req.query?.skip, 0);
-  const tenantId = resolveTenantFromHeader(req);
+  const tenantId = await requireEntityAccess(req, tableName);
   const supabase = getServerSupabase() as any;
 
   let qb = supabase.from(tableName as any).select(fields);
 
-  if (tenantId && TENANT_SCOPED_TABLES.has(tableName) && !('tenant_id' in queryObj)) {
-    qb = qb.eq('tenant_id', tenantId);
-  }
+  assertTenantQueryMatches(tenantId, queryObj);
+  qb = qb.eq('tenant_id', tenantId);
 
   for (const [field, value] of Object.entries(queryObj)) {
     qb = applyFilter(qb, mapFieldForTable(tableName, field), value);
@@ -454,25 +512,22 @@ export async function createEntity(req: DynamicRequest) {
   const entityName = resolveEntityName(req);
   const tableName = resolveTableName(entityName);
   const payload = (req.body && typeof req.body === 'object') ? req.body : {};
-  const tenantId = resolveTenantFromHeader(req);
+  const tenantId = await requireEntityAccess(req, tableName);
   const preferHeader = String(getHeader(req, 'prefer') || '').toLowerCase();
   const returnMinimal = preferHeader.includes('return=minimal');
   const supabase = getServerSupabase() as any;
 
-  const bodyWithTenant = (() => {
-    if (!tenantId || !TENANT_SCOPED_TABLES.has(tableName)) {
-      return payload;
-    }
+  assertTenantPayloadMatches(tenantId, payload);
 
+  const bodyWithTenant = (() => {
     if (Array.isArray(payload)) {
       return payload.map((row) => {
         if (!row || typeof row !== 'object') return row;
-        if ('tenant_id' in (row as Record<string, unknown>)) return row;
         return { ...(row as Record<string, unknown>), tenant_id: tenantId };
       });
     }
 
-    if (payload && typeof payload === 'object' && !('tenant_id' in (payload as Record<string, unknown>))) {
+    if (payload && typeof payload === 'object') {
       return { ...(payload as Record<string, unknown>), tenant_id: tenantId };
     }
 
@@ -532,7 +587,7 @@ export async function deleteManyEntity(req: DynamicRequest) {
   const supabase = getServerSupabase() as any;
   const body = (req.body && typeof req.body === 'object') ? (req.body as Record<string, unknown>) : {};
   const ids = Array.isArray(body.ids) ? body.ids : [];
-  const tenantId = resolveTenantFromHeader(req);
+  const tenantId = await requireEntityAccess(req, tableName);
 
   if (!ids.length) throw badRequest('ids array is required for deleteMany');
 
@@ -543,9 +598,7 @@ export async function deleteManyEntity(req: DynamicRequest) {
     : tableName === 'canonical_tenders'
       ? supabase.from(tableName as any).delete().in('canonical_id', ids as string[])
     : supabase.from(tableName as any).delete().in('id', ids as string[]);
-  if (tenantId && TENANT_SCOPED_TABLES.has(tableName)) {
-    qb = qb.eq('tenant_id', tenantId);
-  }
+  qb = qb.eq('tenant_id', tenantId);
   const { error } = await qb;
   if (error) throw Object.assign(new Error(error.message), { status: 500 });
 
@@ -558,14 +611,12 @@ export async function getEntityById(req: DynamicRequest) {
   const id = parseStringParam(req.query?.id);
   if (!id) throw badRequest('Missing entity id');
 
-  const tenantId = resolveTenantFromHeader(req);
+  const tenantId = await requireEntityAccess(req, tableName);
   const supabase = getServerSupabase() as any;
 
   let qb = supabase.from(tableName as any).select('*');
   qb = applyIdFilter(qb, tableName, id);
-  if (tenantId && TENANT_SCOPED_TABLES.has(tableName)) {
-    qb = qb.eq('tenant_id', tenantId);
-  }
+  qb = qb.eq('tenant_id', tenantId);
 
   const { data, error } = await qb.limit(1);
   if (error) throw Object.assign(new Error(error.message), { status: 500 });
@@ -583,16 +634,20 @@ export async function updateEntityById(req: DynamicRequest) {
   if (!id) throw badRequest('Missing entity id');
 
   const payload = (req.body && typeof req.body === 'object') ? req.body : {};
-  const tenantId = resolveTenantFromHeader(req);
+  const tenantId = await requireEntityAccess(req, tableName);
   const preferHeader = String(getHeader(req, 'prefer') || '').toLowerCase();
   const returnMinimal = preferHeader.includes('return=minimal');
   const supabase = getServerSupabase() as any;
+  assertTenantPayloadMatches(tenantId, payload);
 
-  let qb = supabase.from(tableName as any).update(payload);
+  const bodyWithTenant =
+    payload && typeof payload === 'object'
+      ? { ...(payload as Record<string, unknown>), tenant_id: tenantId }
+      : payload;
+
+  let qb = supabase.from(tableName as any).update(bodyWithTenant);
   qb = applyIdFilter(qb, tableName, id);
-  if (tenantId && TENANT_SCOPED_TABLES.has(tableName)) {
-    qb = qb.eq('tenant_id', tenantId);
-  }
+  qb = qb.eq('tenant_id', tenantId);
 
   if (returnMinimal) {
     const { error } = await qb;
@@ -613,14 +668,12 @@ export async function deleteEntityById(req: DynamicRequest) {
   const id = parseStringParam(req.query?.id);
   if (!id) throw badRequest('Missing entity id');
 
-  const tenantId = resolveTenantFromHeader(req);
+  const tenantId = await requireEntityAccess(req, tableName);
   const supabase = getServerSupabase() as any;
 
   let qb = supabase.from(tableName as any).delete();
   qb = applyIdFilter(qb, tableName, id);
-  if (tenantId && TENANT_SCOPED_TABLES.has(tableName)) {
-    qb = qb.eq('tenant_id', tenantId);
-  }
+  qb = qb.eq('tenant_id', tenantId);
 
   const { error } = await qb;
   if (error) throw Object.assign(new Error(error.message), { status: 500 });
