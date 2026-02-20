@@ -16,7 +16,8 @@ on:
         default: ""
 
 concurrency:
-  group: "predictive-signals-v1"
+  # Shared group across predictive workflows to avoid deadlocks from concurrent engine runs.
+  group: "predictive-engine-v1-serialized"
   cancel-in-progress: false
 
 permissions:
@@ -28,7 +29,7 @@ jobs:
     timeout-minutes: 20
 
     env:
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_POOLER_URL || secrets.SUPABASE_DB_URL }}
       CIVANT_TENANT_ID: ${{ secrets.CIVANT_TENANT_ID }}
       DISPATCH_TENANT_ID: ${{ github.event.inputs.tenant_id }}
       DISPATCH_SINCE_ISO: ${{ github.event.inputs.since_iso }}
@@ -56,4 +57,15 @@ jobs:
             exit 1
           fi
 
-          ./scripts/rollout-predictive-engine-v1.sh "${TENANT_ID}" "signals_only" "${SINCE_ISO}" "4000" "true" "v1.0.0"
+          for attempt in 1 2; do
+            if ./scripts/rollout-predictive-engine-v1.sh "${TENANT_ID}" "signals_only" "${SINCE_ISO}" "4000" "true" "v1.0.0"; then
+              exit 0
+            fi
+            echo "WARN: predictive signals attempt ${attempt}/2 failed."
+            if [[ "${attempt}" -lt 2 ]]; then
+              sleep 20
+            fi
+          done
+
+          echo "ERROR: predictive signals failed after 2 attempts."
+          exit 1

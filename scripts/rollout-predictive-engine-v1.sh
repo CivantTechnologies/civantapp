@@ -46,6 +46,7 @@ SINCE_ISO="${3:-${SINCE_ISO:-}}"
 MAX_PAIRS_RAW="${4:-${MAX_PAIRS:-5000}}"
 NORMALIZE_RAW="${5:-${NORMALIZE_SIGNALS:-true}}"
 FORMULA_VERSION="${6:-${FORMULA_VERSION:-v1.0.0}}"
+STATEMENT_TIMEOUT="${STATEMENT_TIMEOUT:-0}"
 
 if [[ -z "${TENANT_ID}" ]]; then
   echo "ERROR: TENANT_ID is required."
@@ -89,12 +90,15 @@ echo "== Predictive Engine V1 =="
 echo "tenant_id=${TENANT_ID} run_type=${RUN_TYPE} since=${SINCE_ISO:-<auto>} max_pairs=${MAX_PAIRS} normalize_signals=${NORMALIZE_SIGNALS} formula=${FORMULA_VERSION}"
 
 "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off \
+  -v statement_timeout="${STATEMENT_TIMEOUT}" \
   -v tenant_id="${TENANT_ID}" \
   -v run_type="${RUN_TYPE}" \
   -v since_iso="${SINCE_ISO}" \
   -v max_pairs="${MAX_PAIRS}" \
   -v normalize_signals="${NORMALIZE_SIGNALS}" \
   -v formula_version="${FORMULA_VERSION}" <<'SQL'
+set statement_timeout = :'statement_timeout';
+
 with run as (
   select *
   from public.run_predictive_engine_v1(

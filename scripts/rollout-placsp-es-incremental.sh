@@ -36,6 +36,7 @@ APP_ID="${APP_ID:-civantapp}"
 MAX_PAGES="${MAX_PAGES:-40}"
 LOOKBACK_MINUTES="${LOOKBACK_MINUTES:-180}"
 BATCH_SIZE="${BATCH_SIZE:-120}"
+STATEMENT_TIMEOUT="${STATEMENT_TIMEOUT:-0}"
 
 if [[ -z "${TENANT_ID}" ]]; then
   echo "ERROR: TENANT_ID is required."
@@ -96,6 +97,17 @@ RECON_SCRIPT="${REPO_ROOT}/scripts/reconcile-ted-national.sh"
 RECONCILE_AFTER_INGEST="${RECONCILE_AFTER_INGEST:-true}"
 RECONCILE_STRICT="${RECONCILE_STRICT:-false}"
 RECONCILE_LIMIT="${RECONCILE_LIMIT:-20}"
+RECONCILE_TIMEOUT_SECONDS="${RECONCILE_TIMEOUT_SECONDS:-300}"
+
+run_reconcile_cmd() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "${RECONCILE_TIMEOUT_SECONDS}" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "${RECONCILE_TIMEOUT_SECONDS}" "$@"
+  else
+    "$@"
+  fi
+}
 
 TMP_DIR="${TMPDIR:-/tmp}"
 RUN_TMP_DIR="$(mktemp -d "${TMP_DIR%/}/civant_placsp_es_XXXXXX" 2>/dev/null || mktemp -d -t civant_placsp_es)"
@@ -145,7 +157,7 @@ if [[ "${DRY_RUN}" != "true" ]]; then
     exit 1
   fi
 
-  "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off <<SQL >/dev/null
+  "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off -v statement_timeout="${STATEMENT_TIMEOUT}" <<SQL >/dev/null
 insert into public."ConnectorConfig" (tenant_id, connector_key, enabled, config, updated_at)
 values ('${TENANT_ID}', '${CONNECTOR_KEY}', true, '{}'::jsonb, now())
 on conflict (connector_key) do update
@@ -327,8 +339,9 @@ fi
 
 echo "== Upserting extracted PLACSP rows into Supabase =="
 
-if ! "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off -v tenant_id="${TENANT_ID}" -v connector_key="${CONNECTOR_KEY}" -v run_id="${RUN_ID}" -v max_entry_updated="${MAX_ENTRY_UPDATED}" -v parsed_records="${PARSED_RECORDS}" -v processed="${PROCESSED}" -v deduped_in_run="${DEDUPED_IN_RUN}" -v pages="${PAGES}" -v feeds="${FEEDS}" <<SQL
+if ! "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off -v statement_timeout="${STATEMENT_TIMEOUT}" -v tenant_id="${TENANT_ID}" -v connector_key="${CONNECTOR_KEY}" -v run_id="${RUN_ID}" -v max_entry_updated="${MAX_ENTRY_UPDATED}" -v parsed_records="${PARSED_RECORDS}" -v processed="${PROCESSED}" -v deduped_in_run="${DEDUPED_IN_RUN}" -v pages="${PAGES}" -v feeds="${FEEDS}" <<SQL
 begin;
+set local statement_timeout = :'statement_timeout';
 
 create temp table tmp_placsp_es_line_raw (
   line text
@@ -480,7 +493,7 @@ fi
 if [[ "${RECONCILE_AFTER_INGEST}" == "true" ]]; then
   echo "== Reconcile TED <-> PLACSP_ES =="
   if [[ -x "${RECON_SCRIPT}" ]]; then
-    if ! "${RECON_SCRIPT}" "${TENANT_ID}" "ES" "${RECONCILE_LIMIT}" "true" "PLACSP_ES"; then
+    if ! run_reconcile_cmd "${RECON_SCRIPT}" "${TENANT_ID}" "ES" "${RECONCILE_LIMIT}" "true" "PLACSP_ES"; then
       if [[ "${RECONCILE_STRICT}" == "true" ]]; then
         echo "ERROR: post-ingestion reconciliation failed (strict mode)."
         exit 1

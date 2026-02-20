@@ -40,6 +40,7 @@ COUNTRIES="${COUNTRIES:-IRL,FRA,ESP}"
 MAX_PAGES="${MAX_PAGES:-40}"
 PAGE_SIZE="${PAGE_SIZE:-100}"
 SLEEP_MS="${SLEEP_MS:-120}"
+STATEMENT_TIMEOUT="${STATEMENT_TIMEOUT:-0}"
 
 if [[ -z "${TENANT_ID}" ]]; then
   echo "ERROR: TENANT_ID is required."
@@ -91,6 +92,17 @@ RECON_SCRIPT="${REPO_ROOT}/scripts/reconcile-ted-national.sh"
 RECONCILE_AFTER_INGEST="${RECONCILE_AFTER_INGEST:-true}"
 RECONCILE_STRICT="${RECONCILE_STRICT:-false}"
 RECONCILE_LIMIT="${RECONCILE_LIMIT:-20}"
+RECONCILE_TIMEOUT_SECONDS="${RECONCILE_TIMEOUT_SECONDS:-300}"
+
+run_reconcile_cmd() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "${RECONCILE_TIMEOUT_SECONDS}" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "${RECONCILE_TIMEOUT_SECONDS}" "$@"
+  else
+    "$@"
+  fi
+}
 
 TMP_DIR="${TMPDIR:-/tmp}"
 TSV_FILE="$(mktemp "${TMP_DIR%/}/civant_ted_XXXXXX" 2>/dev/null || mktemp -t civant_ted)"
@@ -173,8 +185,9 @@ fi
 
 if [[ ! -s "${TSV_FILE}" ]]; then
   echo "-- no rows fetched; recording successful noop connector run"
-  "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off <<SQL
+  "${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off -v statement_timeout="${STATEMENT_TIMEOUT}" <<SQL
 begin;
+set local statement_timeout = :'statement_timeout';
 
 insert into public."ConnectorConfig" (tenant_id, connector_key, enabled, config, updated_at)
 values ('${TENANT_ID}', '${CONNECTOR_KEY}', true, '{}'::jsonb, now())
@@ -224,8 +237,9 @@ fi
 
 echo "== Upserting into Supabase =="
 
-"${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off <<SQL
+"${PSQL_BIN}" "${DATABASE_URL}" -v ON_ERROR_STOP=1 -P pager=off -v statement_timeout="${STATEMENT_TIMEOUT}" <<SQL
 begin;
+set local statement_timeout = :'statement_timeout';
 
 insert into public."ConnectorConfig" (tenant_id, connector_key, enabled, config, updated_at)
 values ('${TENANT_ID}', '${CONNECTOR_KEY}', true, '{}'::jsonb, now())
@@ -352,7 +366,7 @@ if [[ "${RECONCILE_AFTER_INGEST}" == "true" ]]; then
         ;;
     esac
     if [[ -x "${RECON_SCRIPT}" ]]; then
-      if ! "${RECON_SCRIPT}" "${TENANT_ID}" "${country_code}" "${RECONCILE_LIMIT}" "true"; then
+      if ! run_reconcile_cmd "${RECON_SCRIPT}" "${TENANT_ID}" "${country_code}" "${RECONCILE_LIMIT}" "true"; then
         if [[ "${RECONCILE_STRICT}" == "true" ]]; then
           echo "ERROR: post-ingestion reconciliation failed for ${country_code} (strict mode)."
           exit 1

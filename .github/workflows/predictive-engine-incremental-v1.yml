@@ -20,7 +20,8 @@ on:
         default: "5000"
 
 concurrency:
-  group: "predictive-engine-incremental-v1"
+  # Shared group across predictive workflows to avoid deadlocks from concurrent engine runs.
+  group: "predictive-engine-v1-serialized"
   cancel-in-progress: false
 
 permissions:
@@ -32,7 +33,7 @@ jobs:
     timeout-minutes: 35
 
     env:
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_POOLER_URL || secrets.SUPABASE_DB_URL }}
       CIVANT_TENANT_ID: ${{ secrets.CIVANT_TENANT_ID }}
       DISPATCH_TENANT_ID: ${{ github.event.inputs.tenant_id }}
       DISPATCH_SINCE_ISO: ${{ github.event.inputs.since_iso }}
@@ -62,4 +63,15 @@ jobs:
             exit 1
           fi
 
-          ./scripts/rollout-predictive-engine-v1.sh "${TENANT_ID}" "incremental" "${SINCE_ISO}" "${MAX_PAIRS}" "false" "v1.0.0"
+          for attempt in 1 2; do
+            if ./scripts/rollout-predictive-engine-v1.sh "${TENANT_ID}" "incremental" "${SINCE_ISO}" "${MAX_PAIRS}" "false" "v1.0.0"; then
+              exit 0
+            fi
+            echo "WARN: predictive incremental attempt ${attempt}/2 failed."
+            if [[ "${attempt}" -lt 2 ]]; then
+              sleep 20
+            fi
+          done
+
+          echo "ERROR: predictive incremental failed after 2 attempts."
+          exit 1
