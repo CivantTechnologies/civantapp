@@ -29,7 +29,8 @@ jobs:
     timeout-minutes: 90
 
     env:
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_POOLER_URL || secrets.SUPABASE_DB_URL }}
+      # Prefer direct DB for long-running full runs; fall back to pooler/default secret.
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_DIRECT_URL || secrets.SUPABASE_DB_POOLER_URL || secrets.SUPABASE_DB_URL }}
       CIVANT_TENANT_ID: ${{ secrets.CIVANT_TENANT_ID }}
       DISPATCH_TENANT_ID: ${{ github.event.inputs.tenant_id }}
       DISPATCH_MAX_PAIRS: ${{ github.event.inputs.max_pairs }}
