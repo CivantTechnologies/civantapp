@@ -29,8 +29,10 @@ jobs:
     timeout-minutes: 90
 
     env:
-      # Prefer direct DB for long-running full runs; fall back to pooler/default secret.
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_DIRECT_URL || secrets.SUPABASE_DB_POOLER_URL || secrets.SUPABASE_DB_URL }}
+      # Default to pooler/default secret for runner network compatibility.
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_POOLER_URL || secrets.SUPABASE_DB_URL }}
+      # Optional direct URL; used only when preflight succeeds.
+      SUPABASE_DB_DIRECT_URL: ${{ secrets.SUPABASE_DB_DIRECT_URL }}
       CIVANT_TENANT_ID: ${{ secrets.CIVANT_TENANT_ID }}
       DISPATCH_TENANT_ID: ${{ github.event.inputs.tenant_id }}
       DISPATCH_MAX_PAIRS: ${{ github.event.inputs.max_pairs }}
@@ -56,6 +58,15 @@ jobs:
           if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
             echo "ERROR: SUPABASE_DB_URL secret is required."
             exit 1
+          fi
+
+          if [[ -n "${SUPABASE_DB_DIRECT_URL:-}" ]]; then
+            if psql "${SUPABASE_DB_DIRECT_URL}" -v ON_ERROR_STOP=1 -P pager=off -qtA -c "select 1;" >/dev/null 2>&1; then
+              echo "INFO: using SUPABASE_DB_DIRECT_URL after successful preflight."
+              export SUPABASE_DB_URL="${SUPABASE_DB_DIRECT_URL}"
+            else
+              echo "WARN: SUPABASE_DB_DIRECT_URL preflight failed; using SUPABASE_DB_URL fallback."
+            fi
           fi
 
           for attempt in 1 2; do
