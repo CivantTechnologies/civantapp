@@ -1,0 +1,34 @@
+name: "Buyer Stats V2.1 Watch (48h)"
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "15 */2 * * *"
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: "buyer-stats-v2_1-watch"
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Run rollout watch checks
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_POOLER_URL != '' && secrets.SUPABASE_DB_POOLER_URL || secrets.SUPABASE_DB_URL }}
+          TENANT_ID: civant_default
+          ROLLOUT_START_UTC: "2026-02-20T17:25:32Z"
+          ROLLOUT_END_UTC: "2026-02-22T17:25:32Z"
+          WATCH_REGIONS: "FR,IE"
+          MAX_CADENCE_DROP_PCT: "10"
+          MAX_COVERAGE_DROP_PCT: "10"
+          MAX_LOW_CONF_INCREASE_PP: "10"
+          MIN_PREDICTIONS_FOR_LOW_RATIO: "200"
+        run: |
+          ./scripts/monitor/check-buyer-stats-v2_1-watch.sh
