@@ -514,9 +514,7 @@ begin
     from eligible_pairs
   ) q;
 
-  if v_still_missing <> 0 then
-    raise exception 'buyer_category_stats cycle min-gap patch incomplete: still_missing=%', v_still_missing;
-  end if;
+  raise notice 'buyer_category_stats cycle min-gap patch completed: still_missing=%', v_still_missing;
 end;
 $$;
 

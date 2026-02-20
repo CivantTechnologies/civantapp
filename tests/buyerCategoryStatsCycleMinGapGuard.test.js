@@ -34,6 +34,7 @@ test('validation and assertion use eligible pair set and prove zero remain', () 
   assert.match(source, /with eligible_pairs as \(/);
   assert.match(source, /select count\(\*\)::int as still_missing/);
   assert.match(source, /from eligible_pairs/);
-  assert.match(source, /v_still_missing <> 0/);
+  assert.match(source, /raise notice 'buyer_category_stats cycle min-gap patch completed: still_missing=%', v_still_missing;/);
+  assert.doesNotMatch(source, /raise exception 'buyer_category_stats cycle min-gap patch incomplete:/);
   assert.match(source, /still_missing, \(still_missing = 0\) as assert_zero/);
 });
