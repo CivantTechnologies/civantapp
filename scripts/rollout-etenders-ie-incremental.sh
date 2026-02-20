@@ -79,6 +79,17 @@ RECON_SCRIPT="${REPO_ROOT}/scripts/reconcile-ted-national.sh"
 RECONCILE_AFTER_INGEST="${RECONCILE_AFTER_INGEST:-true}"
 RECONCILE_STRICT="${RECONCILE_STRICT:-false}"
 RECONCILE_LIMIT="${RECONCILE_LIMIT:-25}"
+RECONCILE_TIMEOUT_SECONDS="${RECONCILE_TIMEOUT_SECONDS:-300}"
+
+run_reconcile_cmd() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "${RECONCILE_TIMEOUT_SECONDS}" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "${RECONCILE_TIMEOUT_SECONDS}" "$@"
+  else
+    "$@"
+  fi
+}
 
 TMP_DIR="${TMPDIR:-/tmp}"
 TSV_FILE="$(mktemp "${TMP_DIR%/}/civant_etenders_ie_XXXXXX" 2>/dev/null || mktemp -t civant_etenders_ie)"
@@ -327,7 +338,7 @@ fi
 if [[ "${RECONCILE_AFTER_INGEST}" == "true" ]]; then
   echo "== Reconcile TED <-> ETENDERS_IE =="
   if [[ -x "${RECON_SCRIPT}" ]]; then
-    if ! "${RECON_SCRIPT}" "${TENANT_ID}" "IE" "${RECONCILE_LIMIT}" "true" "ETENDERS_IE"; then
+    if ! run_reconcile_cmd "${RECON_SCRIPT}" "${TENANT_ID}" "IE" "${RECONCILE_LIMIT}" "true" "ETENDERS_IE"; then
       if [[ "${RECONCILE_STRICT}" == "true" ]]; then
         echo "ERROR: post-ingestion reconciliation failed (strict mode)."
         exit 1
