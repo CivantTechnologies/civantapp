@@ -137,12 +137,12 @@ limit (:'batch_size')::int;
 
 select count(*) as pairs_in_batch from pair_scope;
 
-select public.recompute_buyer_category_stats_v1(
+select public.refresh_buyer_category_stats_for_pair(
   tenant_id,
   buyer_entity_id,
   cpv_cluster_id,
   region,
-  interval '15 years'
+  now()
 )
 from pair_scope;
 
