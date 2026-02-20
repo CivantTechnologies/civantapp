@@ -49,7 +49,7 @@ jobs:
       DISPATCH_APPLY: ${{ github.event.inputs.apply }}
       PSQL_BIN: psql
       BACKFILL_BATCH_SIZE: "10000"
-      RECON_BATCH_SIZE: "1200"
+      RECON_BATCH_SIZE: "20"
 
     steps:
       - name: Checkout
