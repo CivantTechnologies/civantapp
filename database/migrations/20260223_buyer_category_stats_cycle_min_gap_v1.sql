@@ -438,38 +438,38 @@ declare
   v_still_missing integer := 0;
 begin
   for r in (
-    with notice_day_counts as (
+    with eligible_pairs as (
       select
-        s.tenant_id,
-        s.buyer_entity_id,
-        coalesce(s.cpv_cluster_id, 'cluster_unknown') as cpv_cluster_id,
+        bcs.tenant_id,
+        bcs.buyer_entity_id,
+        bcs.cpv_cluster_id,
+        bcs.region,
         count(distinct s.occurred_at::date)::int as notice_day_count
-      from public.signals s
-      where s.tenant_id = 'civant_default'
-        and coalesce(public.normalize_prediction_region(s.region, null), 'IE') = 'IE'
+      from public.buyer_category_stats bcs
+      join public.signals s
+        on s.tenant_id = bcs.tenant_id
+       and s.buyer_entity_id = bcs.buyer_entity_id
+       and s.cpv_cluster_id = bcs.cpv_cluster_id
+       and coalesce(public.normalize_prediction_region(s.region, null), 'IE') = bcs.region
+      where bcs.tenant_id = 'civant_default'
+        and bcs.region = 'IE'
+        and bcs.avg_cycle_days is null
+        and bcs.buyer_entity_id is not null
+        and bcs.buyer_entity_id not like 'unresolved:%'
+        and bcs.cpv_cluster_id is not null
+        and bcs.cpv_cluster_id <> 'cluster_unknown'
         and s.signal_type = 'notice_published'
         and s.occurred_at >= v_since
         and s.occurred_at <= v_as_of
-      group by 1, 2, 3
+      group by 1, 2, 3, 4
+      having count(distinct s.occurred_at::date) >= 3
     )
     select
-      bcs.tenant_id,
-      bcs.buyer_entity_id,
-      bcs.cpv_cluster_id,
-      bcs.region
-    from public.buyer_category_stats bcs
-    join notice_day_counts ndc
-      on ndc.tenant_id = bcs.tenant_id
-     and ndc.buyer_entity_id = bcs.buyer_entity_id
-     and ndc.cpv_cluster_id = bcs.cpv_cluster_id
-    where bcs.tenant_id = 'civant_default'
-      and bcs.region = 'IE'
-      and bcs.avg_cycle_days is null
-      and ndc.notice_day_count >= 3
-      and bcs.buyer_entity_id is not null
-      and bcs.buyer_entity_id not like 'unresolved:%'
-      and bcs.cpv_cluster_id is not null
-      and bcs.cpv_cluster_id <> 'cluster_unknown'
+      ep.tenant_id,
+      ep.buyer_entity_id,
+      ep.cpv_cluster_id,
+      ep.region
+    from eligible_pairs ep
   ) loop
     perform public.recompute_buyer_category_stats_v2(
       r.tenant_id,
@@ -483,32 +483,36 @@ begin
   -- Final validation assertion: migration must not leave qualifying IE rows missing avg_cycle_days.
   select count(*)
     into v_still_missing
-  from public.buyer_category_stats bcs
-  join (
-    select
-      s.tenant_id,
-      s.buyer_entity_id,
-      coalesce(s.cpv_cluster_id, 'cluster_unknown') as cpv_cluster_id,
-      count(distinct s.occurred_at::date)::int as notice_day_count
-    from public.signals s
-    where s.tenant_id = 'civant_default'
-      and coalesce(public.normalize_prediction_region(s.region, null), 'IE') = 'IE'
-      and s.signal_type = 'notice_published'
-      and s.occurred_at >= v_since
-      and s.occurred_at <= v_as_of
-    group by 1, 2, 3
-  ) ndc
-    on ndc.tenant_id = bcs.tenant_id
-   and ndc.buyer_entity_id = bcs.buyer_entity_id
-   and ndc.cpv_cluster_id = bcs.cpv_cluster_id
-  where bcs.tenant_id = 'civant_default'
-    and bcs.region = 'IE'
-    and bcs.avg_cycle_days is null
-    and ndc.notice_day_count >= 3
-    and bcs.buyer_entity_id is not null
-    and bcs.buyer_entity_id not like 'unresolved:%'
-    and bcs.cpv_cluster_id is not null
-    and bcs.cpv_cluster_id <> 'cluster_unknown';
+  from (
+    with eligible_pairs as (
+      select
+        bcs.tenant_id,
+        bcs.buyer_entity_id,
+        bcs.cpv_cluster_id,
+        bcs.region,
+        count(distinct s.occurred_at::date)::int as notice_day_count
+      from public.buyer_category_stats bcs
+      join public.signals s
+        on s.tenant_id = bcs.tenant_id
+       and s.buyer_entity_id = bcs.buyer_entity_id
+       and s.cpv_cluster_id = bcs.cpv_cluster_id
+       and coalesce(public.normalize_prediction_region(s.region, null), 'IE') = bcs.region
+      where bcs.tenant_id = 'civant_default'
+        and bcs.region = 'IE'
+        and bcs.avg_cycle_days is null
+        and bcs.buyer_entity_id is not null
+        and bcs.buyer_entity_id not like 'unresolved:%'
+        and bcs.cpv_cluster_id is not null
+        and bcs.cpv_cluster_id <> 'cluster_unknown'
+        and s.signal_type = 'notice_published'
+        and s.occurred_at >= v_since
+        and s.occurred_at <= v_as_of
+      group by 1, 2, 3, 4
+      having count(distinct s.occurred_at::date) >= 3
+    )
+    select count(*)::int as still_missing
+    from eligible_pairs
+  ) q;
 
   if v_still_missing <> 0 then
     raise exception 'buyer_category_stats cycle min-gap patch incomplete: still_missing=%', v_still_missing;
@@ -520,59 +524,65 @@ $$;
 -- Validation SQL (run before + after this migration)
 -- =============================================================================
 -- Should drop to 0 after recompute:
--- with ie_pairs_with_multiple_notice_days as (
+-- with eligible_pairs as (
 --   select
---     s.tenant_id,
---     s.buyer_entity_id,
---     coalesce(s.cpv_cluster_id, 'cluster_unknown') as cpv_cluster_id,
---     coalesce(public.normalize_prediction_region(s.region, null), 'IE') as region,
---     count(distinct s.occurred_at::date) filter (where s.signal_type = 'notice_published') as notice_days
---   from public.signals s
---   where s.tenant_id = 'civant_default'
---     and coalesce(public.normalize_prediction_region(s.region, null), 'IE') = 'IE'
---     and s.occurred_at >= now() - interval '15 years'
---     and s.occurred_at <= now()
---   group by 1,2,3,4
--- )
--- select count(*) as should_have_cycle_but_missing
--- from ie_pairs_with_multiple_notice_days p
--- join public.buyer_category_stats bcs
---   on bcs.tenant_id = p.tenant_id
---  and bcs.buyer_entity_id = p.buyer_entity_id
---  and bcs.cpv_cluster_id = p.cpv_cluster_id
---  and bcs.region = p.region
--- where p.notice_days >= 3
---   and bcs.avg_cycle_days is null;
---
--- Final assertion query:
--- with validation as (
---   select count(*)::int as still_missing
+--     bcs.tenant_id,
+--     bcs.buyer_entity_id,
+--     bcs.cpv_cluster_id,
+--     bcs.region,
+--     count(distinct s.occurred_at::date)::int as notice_day_count
 --   from public.buyer_category_stats bcs
---   join (
---     select
---       s.tenant_id,
---       s.buyer_entity_id,
---       coalesce(s.cpv_cluster_id, 'cluster_unknown') as cpv_cluster_id,
---       count(distinct s.occurred_at::date)::int as notice_day_count
---     from public.signals s
---     where s.tenant_id = 'civant_default'
---       and coalesce(public.normalize_prediction_region(s.region, null), 'IE') = 'IE'
---       and s.signal_type = 'notice_published'
---       and s.occurred_at >= now() - interval '15 years'
---       and s.occurred_at <= now()
---     group by 1, 2, 3
---   ) ndc
---     on ndc.tenant_id = bcs.tenant_id
---    and ndc.buyer_entity_id = bcs.buyer_entity_id
---    and ndc.cpv_cluster_id = bcs.cpv_cluster_id
+--   join public.signals s
+--     on s.tenant_id = bcs.tenant_id
+--    and s.buyer_entity_id = bcs.buyer_entity_id
+--    and s.cpv_cluster_id = bcs.cpv_cluster_id
+--    and coalesce(public.normalize_prediction_region(s.region, null), 'IE') = bcs.region
 --   where bcs.tenant_id = 'civant_default'
 --     and bcs.region = 'IE'
 --     and bcs.avg_cycle_days is null
---     and ndc.notice_day_count >= 3
 --     and bcs.buyer_entity_id is not null
 --     and bcs.buyer_entity_id not like 'unresolved:%'
 --     and bcs.cpv_cluster_id is not null
 --     and bcs.cpv_cluster_id <> 'cluster_unknown'
+--     and s.signal_type = 'notice_published'
+--     and s.occurred_at >= now() - interval '15 years'
+--     and s.occurred_at <= now()
+--   group by 1, 2, 3, 4
+--   having count(distinct s.occurred_at::date) >= 3
+-- )
+-- select count(*)::int as still_missing
+-- from eligible_pairs;
+--
+-- Final assertion query:
+-- with validation as (
+--   with eligible_pairs as (
+--     select
+--       bcs.tenant_id,
+--       bcs.buyer_entity_id,
+--       bcs.cpv_cluster_id,
+--       bcs.region,
+--       count(distinct s.occurred_at::date)::int as notice_day_count
+--     from public.buyer_category_stats bcs
+--     join public.signals s
+--       on s.tenant_id = bcs.tenant_id
+--      and s.buyer_entity_id = bcs.buyer_entity_id
+--      and s.cpv_cluster_id = bcs.cpv_cluster_id
+--      and coalesce(public.normalize_prediction_region(s.region, null), 'IE') = bcs.region
+--     where bcs.tenant_id = 'civant_default'
+--       and bcs.region = 'IE'
+--       and bcs.avg_cycle_days is null
+--       and bcs.buyer_entity_id is not null
+--       and bcs.buyer_entity_id not like 'unresolved:%'
+--       and bcs.cpv_cluster_id is not null
+--       and bcs.cpv_cluster_id <> 'cluster_unknown'
+--       and s.signal_type = 'notice_published'
+--       and s.occurred_at >= now() - interval '15 years'
+--       and s.occurred_at <= now()
+--     group by 1, 2, 3, 4
+--     having count(distinct s.occurred_at::date) >= 3
+--   )
+--   select count(*)::int as still_missing
+--   from eligible_pairs
 -- )
 -- select still_missing, (still_missing = 0) as assert_zero
 -- from validation;

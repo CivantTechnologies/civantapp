@@ -15,21 +15,25 @@ test('recompute_buyer_category_stats_v2 uses 1-day min gap with same-day dedupe'
 });
 
 test('migration recomputes scoped IE rows with missing avg cycle stats', () => {
-  assert.match(source, /for r in \(\s*with notice_day_counts as \(/s);
-  assert.match(source, /from public\.buyer_category_stats bcs/);
+  assert.match(source, /for r in \(\s*with eligible_pairs as \(/s);
+  assert.match(source, /join public\.signals s/);
+  assert.match(source, /s\.cpv_cluster_id = bcs\.cpv_cluster_id/);
+  assert.match(source, /coalesce\(public\.normalize_prediction_region\(s\.region, null\), 'IE'\) = bcs\.region/);
+  assert.match(source, /group by 1, 2, 3, 4/);
+  assert.match(source, /having count\(distinct s\.occurred_at::date\) >= 3/);
   assert.match(source, /count\(distinct s\.occurred_at::date\)::int as notice_day_count/);
   assert.match(source, /s\.occurred_at >= v_since/);
   assert.match(source, /s\.occurred_at <= v_as_of/);
   assert.match(source, /where bcs\.tenant_id = 'civant_default'/);
   assert.match(source, /and bcs\.region = 'IE'/);
   assert.match(source, /and bcs\.avg_cycle_days is null/);
-  assert.match(source, /and ndc\.notice_day_count >= 3/);
   assert.match(source, /perform public\.recompute_buyer_category_stats_v2\(/);
 });
 
-test('validation SQL includes should_have_cycle_but_missing metric for IE', () => {
-  assert.match(source, /should_have_cycle_but_missing/);
-  assert.match(source, /p\.notice_days >= 3/);
+test('validation and assertion use eligible pair set and prove zero remain', () => {
+  assert.match(source, /with eligible_pairs as \(/);
+  assert.match(source, /select count\(\*\)::int as still_missing/);
+  assert.match(source, /from eligible_pairs/);
   assert.match(source, /v_still_missing <> 0/);
   assert.match(source, /still_missing, \(still_missing = 0\) as assert_zero/);
 });
