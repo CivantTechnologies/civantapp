@@ -15,7 +15,11 @@ test('grant dominant cluster migration exists with strict tenant/signal scope', 
 });
 
 test('dominant cluster rule uses >= 40% threshold with region normalization', () => {
-  assert.match(source, /\(dc\.tender_count_24m::numeric \/ dc\.buyer_total_tenders::numeric\) >= 0\.40/);
+  assert.match(source, /from public\.signals s/);
+  assert.match(source, /and s\.signal_type = 'notice_published'/);
+  assert.match(source, /and s\.occurred_at >= now\(\) - interval '15 years'/);
+  assert.match(source, /and s\.cpv_cluster_id <> 'cluster_unknown'/);
+  assert.match(source, /\(dc\.notice_count::numeric \/ dc\.buyer_total_notice_count::numeric\) >= 0\.40/);
   assert.match(source, /coalesce\(public\.normalize_prediction_region\(s\.region, s\.source\), 'IE'\) as normalized_region/);
   assert.match(source, /dom\.region = t\.normalized_region/);
 });
@@ -24,5 +28,7 @@ test('migration includes rollback and validation comments', () => {
   assert.match(source, /Rollback \(best-effort\):/);
   assert.match(source, /method', 'dominant_cluster_v1'/);
   assert.match(source, /Validation Queries/);
+  assert.match(source, /create temp table _grant_map_before as/);
+  assert.match(source, /now_mapped_delta/);
   assert.match(source, /count\(\*\) filter \(where s\.external_signal_score > 0\) as with_external/);
 });

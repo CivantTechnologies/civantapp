@@ -14,8 +14,9 @@
 -- - Skip unresolved/null buyer ids
 --
 -- Dominant cluster rule:
--- - Highest tender_count_24m for (tenant_id, buyer_entity_id, region)
--- - Dominant share must be >= 40% of buyer total tenders in that region
+-- - Derived from public.signals notice_published counts over 15 years
+-- - Highest notice_published count for (tenant_id, buyer_entity_id, region)
+-- - Dominant share must be >= 40% of buyer total notice_published in that region
 -- - Deterministic tie-break: cpv_cluster_id ASC
 --
 -- Idempotency:
@@ -35,22 +36,28 @@
 
 with dominant_candidates as (
   select
-    bcs.tenant_id,
-    bcs.buyer_entity_id,
-    bcs.region,
-    bcs.cpv_cluster_id,
-    coalesce(bcs.tender_count_24m, 0)::int as tender_count_24m,
-    sum(coalesce(bcs.tender_count_24m, 0)::int) over (
-      partition by bcs.tenant_id, bcs.buyer_entity_id, bcs.region
-    )::int as buyer_total_tenders,
+    s.tenant_id,
+    s.buyer_entity_id,
+    coalesce(public.normalize_prediction_region(s.region, s.source), 'IE') as region,
+    s.cpv_cluster_id,
+    count(*)::int as notice_count,
+    sum(count(*)) over (
+      partition by s.tenant_id, s.buyer_entity_id, coalesce(public.normalize_prediction_region(s.region, s.source), 'IE')
+    )::int as buyer_total_notice_count,
     row_number() over (
-      partition by bcs.tenant_id, bcs.buyer_entity_id, bcs.region
-      order by coalesce(bcs.tender_count_24m, 0) desc, bcs.cpv_cluster_id asc
+      partition by s.tenant_id, s.buyer_entity_id, coalesce(public.normalize_prediction_region(s.region, s.source), 'IE')
+      order by count(*) desc, s.cpv_cluster_id asc
     ) as rn
-  from public.buyer_category_stats bcs
-  where bcs.tenant_id = 'civant_default'
-    and bcs.cpv_cluster_id is not null
-    and bcs.cpv_cluster_id <> 'cluster_unknown'
+  from public.signals s
+  where s.tenant_id = 'civant_default'
+    and s.signal_type = 'notice_published'
+    and s.occurred_at >= now() - interval '15 years'
+    and s.occurred_at <= now()
+    and s.buyer_entity_id is not null
+    and s.buyer_entity_id not like 'unresolved:%'
+    and s.cpv_cluster_id is not null
+    and s.cpv_cluster_id <> 'cluster_unknown'
+  group by 1, 2, 3, 4
 ),
 dominant_cluster as (
   select
@@ -58,13 +65,13 @@ dominant_cluster as (
     dc.buyer_entity_id,
     dc.region,
     dc.cpv_cluster_id,
-    dc.tender_count_24m,
-    dc.buyer_total_tenders,
-    (dc.tender_count_24m::numeric / nullif(dc.buyer_total_tenders, 0)::numeric) as dominant_cluster_pct
+    dc.notice_count,
+    dc.buyer_total_notice_count,
+    (dc.notice_count::numeric / nullif(dc.buyer_total_notice_count, 0)::numeric) as dominant_cluster_pct
   from dominant_candidates dc
   where dc.rn = 1
-    and dc.buyer_total_tenders > 0
-    and (dc.tender_count_24m::numeric / dc.buyer_total_tenders::numeric) >= 0.40
+    and dc.buyer_total_notice_count > 0
+    and (dc.notice_count::numeric / dc.buyer_total_notice_count::numeric) >= 0.40
 ),
 target_signals as (
   select
@@ -115,7 +122,42 @@ where s.signal_id = t.signal_id
 --   and signal_type='grant_awarded'
 --   and occurred_at >= now() - interval '24 months';
 --
--- 2) External influence coverage after rerun
+-- 2) Before/after now_mapped delta (material increase check)
+-- -- before migration:
+-- -- create temp table _grant_map_before as
+-- -- select
+-- --   count(*) as total_grants,
+-- --   count(*) filter (where cpv_cluster_id is not null and cpv_cluster_id<>'cluster_unknown') as now_mapped
+-- -- from signals
+-- -- where tenant_id='civant_default'
+-- --   and signal_type='grant_awarded'
+-- --   and occurred_at >= now() - interval '24 months';
+-- --
+-- -- after migration:
+-- with after_stats as (
+--   select
+--     count(*) as total_grants,
+--     count(*) filter (where cpv_cluster_id is not null and cpv_cluster_id<>'cluster_unknown') as now_mapped
+--   from signals
+--   where tenant_id='civant_default'
+--     and signal_type='grant_awarded'
+--     and occurred_at >= now() - interval '24 months'
+-- )
+-- select
+--   b.now_mapped as before_now_mapped,
+--   a.now_mapped as after_now_mapped,
+--   (a.now_mapped - b.now_mapped) as now_mapped_delta,
+--   round(100.0 * b.now_mapped / nullif(b.total_grants, 0), 2) as before_mapped_pct,
+--   round(100.0 * a.now_mapped / nullif(a.total_grants, 0), 2) as after_mapped_pct,
+--   round(
+--     (100.0 * a.now_mapped / nullif(a.total_grants, 0))
+--     - (100.0 * b.now_mapped / nullif(b.total_grants, 0)),
+--     2
+--   ) as mapped_delta_pp
+-- from _grant_map_before b
+-- cross join after_stats a;
+--
+-- 3) External influence coverage after rerun
 -- select
 --   count(*) filter (where s.external_signal_score > 0) as with_external,
 --   count(*) as total,
