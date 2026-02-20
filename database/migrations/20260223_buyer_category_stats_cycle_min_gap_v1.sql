@@ -428,27 +428,47 @@ begin
 end;
 $$;
 
--- Recompute scoped IE rows that should have cadence but are currently missing avg_cycle_days.
-with target_pairs as (
-  select
-    bcs.tenant_id,
-    bcs.buyer_entity_id,
-    bcs.cpv_cluster_id,
-    bcs.region
+-- Recompute scoped IE rows directly from buyer_category_stats where cadence is missing.
+do $$
+declare
+  r record;
+  v_still_missing integer := 0;
+begin
+  for r in (
+    select
+      bcs.tenant_id,
+      bcs.buyer_entity_id,
+      bcs.cpv_cluster_id,
+      bcs.region
+    from public.buyer_category_stats bcs
+    where bcs.tenant_id = 'civant_default'
+      and bcs.region = 'IE'
+      and bcs.tender_count_24m >= 3
+      and bcs.avg_cycle_days is null
+  ) loop
+    perform public.recompute_buyer_category_stats_v2(
+      r.tenant_id,
+      r.buyer_entity_id,
+      r.cpv_cluster_id,
+      r.region,
+      interval '15 years'
+    );
+  end loop;
+
+  -- Final validation assertion: migration must not leave qualifying IE rows missing avg_cycle_days.
+  select count(*)
+    into v_still_missing
   from public.buyer_category_stats bcs
   where bcs.tenant_id = 'civant_default'
     and bcs.region = 'IE'
     and bcs.tender_count_24m >= 3
-    and bcs.avg_cycle_days is null
-)
-select public.recompute_buyer_category_stats_v2(
-  tenant_id,
-  buyer_entity_id,
-  cpv_cluster_id,
-  region,
-  interval '15 years'
-)
-from target_pairs;
+    and bcs.avg_cycle_days is null;
+
+  if v_still_missing <> 0 then
+    raise exception 'buyer_category_stats cycle min-gap patch incomplete: still_missing=%', v_still_missing;
+  end if;
+end;
+$$;
 
 -- =============================================================================
 -- Validation SQL (run before + after this migration)
@@ -476,3 +496,15 @@ from target_pairs;
 -- where p.notice_days >= 2
 --   and bcs.tender_count_24m >= 3
 --   and bcs.avg_cycle_days is null;
+--
+-- Final assertion query:
+-- with validation as (
+--   select count(*)::int as still_missing
+--   from public.buyer_category_stats bcs
+--   where bcs.tenant_id = 'civant_default'
+--     and bcs.region = 'IE'
+--     and bcs.tender_count_24m >= 3
+--     and bcs.avg_cycle_days is null
+-- )
+-- select still_missing, (still_missing = 0) as assert_zero
+-- from validation;
