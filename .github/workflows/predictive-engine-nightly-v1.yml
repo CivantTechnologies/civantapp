@@ -16,7 +16,8 @@ on:
         default: "25000"
 
 concurrency:
-  group: "predictive-engine-nightly-v1"
+  # Shared group across predictive workflows to avoid deadlocks from concurrent engine runs.
+  group: "predictive-engine-v1-serialized"
   cancel-in-progress: false
 
 permissions:
