@@ -32,7 +32,9 @@ COUNTRY_RAW="${2:-${COUNTRY:-}}"
 RECON_LIMIT="${3:-${RECON_LIMIT:-2500}}"
 APPLY_RAW="${4:-${APPLY_RECONCILE:-true}}"
 NATIONAL_SOURCES_CSV="${5:-${NATIONAL_SOURCES_CSV:-}}"
-STATEMENT_TIMEOUT="${STATEMENT_TIMEOUT:-0}"
+# Keep reconciliation bounded by default to avoid hanging connector workflows.
+# Can be overridden with STATEMENT_TIMEOUT or RECON_STATEMENT_TIMEOUT.
+STATEMENT_TIMEOUT="${STATEMENT_TIMEOUT:-${RECON_STATEMENT_TIMEOUT:-300000}}"
 
 if [[ -z "${TENANT_ID}" || -z "${COUNTRY_RAW}" ]]; then
   echo "ERROR: TENANT_ID and COUNTRY are required."
