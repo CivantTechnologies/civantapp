@@ -304,6 +304,7 @@ export default function Competitors() {
                 category_breakdown: categories,
                 yearly_trend: trend_data,
                 recent_contracts: data.recent_contracts || [],
+                trading_names: data.trading_names || [],
                 trend: overallTrend,
                 analysis: { strengths, weaknesses, strategic_insights: insights }
             });
