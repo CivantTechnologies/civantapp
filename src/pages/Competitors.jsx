@@ -51,20 +51,7 @@ function CompetitorDashboard({ data, onClose }) {
                             <Badge className="bg-civant-teal/15 text-civant-teal border border-civant-teal/40 text-xs">{summary.expiring_12m} renewals · {fmtEur(renewal_opportunities.reduce((s,r) => s+(r.value_eur||0),0))}</Badge>
                         )}
                     </div>
-                    {realNames.length > 1 && (
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-[11px] text-slate-600">Matched:</span>
-                            {(showAllNames ? realNames : realNames.slice(0, 3)).map((tn, i) => (
-                                <span key={i} className="text-[11px] text-slate-500">{tn.name} ({tn.award_count}){i < (showAllNames ? realNames.length : Math.min(realNames.length, 3)) - 1 ? ',' : ''}</span>
-                            ))}
-                            {realNames.length > 3 && !showAllNames && (
-                                <button onClick={() => setShowAllNames(true)} className="text-[11px] text-civant-teal hover:underline">+{realNames.length - 3} more</button>
-                            )}
-                            {showAllNames && realNames.length > 3 && (
-                                <button onClick={() => setShowAllNames(false)} className="text-[11px] text-civant-teal hover:underline">show less</button>
-                            )}
-                        </div>
-                    )}
+
                 </div>
                 <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
             </div>
@@ -224,10 +211,17 @@ function CompetitorDashboard({ data, onClose }) {
                         <Card className="border border-civant-border bg-civant-navy/55 shadow-none"><CardHeader className="pb-3"><CardTitle className="text-sm font-semibold flex items-center gap-2"><Sparkles className="h-4 w-4 text-civant-teal"/>Strategic Insights</CardTitle></CardHeader><CardContent><ul className="space-y-2 text-sm">{analysis.strategic_insights.map((s,i) => <li key={i} className="flex items-start gap-2"><ArrowRight className="h-4 w-4 text-civant-teal mt-0.5 flex-shrink-0"/><span className="text-slate-300">{s}</span></li>)}</ul></CardContent></Card>
                     )}
 
-                    {/* Categories */}
-                    <Card className="border border-civant-border bg-civant-navy/55 shadow-none"><CardHeader className="pb-3"><CardTitle className="text-sm font-semibold flex items-center gap-2"><Target className="h-4 w-4 text-civant-teal"/>Preferred Categories</CardTitle></CardHeader><CardContent><div className="space-y-2">{category_breakdown.slice(0,5).map((c,i) => (
-                        <div key={i} className="flex items-center justify-between text-sm"><span className="font-medium text-slate-100">{fmtCluster(c.cluster)}</span><div className="flex items-center gap-2"><Badge variant="outline" className="text-xs">{c.award_count}x</Badge><span className="text-xs text-civant-teal">{fmtEur(c.total_value)}</span></div></div>
-                    ))}</div></CardContent></Card>
+                    {/* Categories + Trading Names side by side */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Card className="border border-civant-border bg-civant-navy/55 shadow-none"><CardHeader className="pb-3"><CardTitle className="text-sm font-semibold flex items-center gap-2"><Target className="h-4 w-4 text-civant-teal"/>Preferred Categories</CardTitle></CardHeader><CardContent><div className="space-y-2">{category_breakdown.slice(0,5).map((c,i) => (
+                            <div key={i} className="flex items-center justify-between text-sm"><span className="font-medium text-slate-100">{fmtCluster(c.cluster)}</span><div className="flex items-center gap-2"><Badge variant="outline" className="text-xs">{c.award_count}x</Badge><span className="text-xs text-civant-teal">{fmtEur(c.total_value)}</span></div></div>
+                        ))}</div></CardContent></Card>
+                        {trading_names.length > 0 && (
+                            <Card className="border border-civant-border bg-civant-navy/55 shadow-none"><CardHeader className="pb-3"><CardTitle className="text-sm font-semibold flex items-center gap-2"><Users className="h-4 w-4 text-civant-teal"/>Trading Names</CardTitle></CardHeader><CardContent><div className="space-y-2">{trading_names.map((tn,i) => (
+                                <div key={i} className="flex items-center justify-between text-sm"><span className="text-slate-300">{tn.name}</span><Badge variant="outline" className="text-xs">{tn.award_count} award{tn.award_count !== 1 ? 's' : ''}</Badge></div>
+                            ))}</div></CardContent></Card>
+                        )}
+                    </div>
                 </TabsContent>
             </Tabs>
         </div>
