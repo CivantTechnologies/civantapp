@@ -373,7 +373,7 @@ export default function Competitors() {
                                     </div>
                                     {competitor.notes && <p className="text-sm text-slate-300 mb-3">{competitor.notes}</p>}
                                     <Button variant="outline" size="sm" onClick={() => analyzeCompetitor(competitor.company_name)} disabled={analyzing === competitor.company_name}>
-                                        {analyzing === competitor.company_name ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Analyzing...</> : <><Sparkles className="h-4 w-4 mr-2" />Analyze Competitor</>}
+                                        {analyzing === competitor.company_name ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Analyzing...</> : <>Competitor Analysis</>}
                                     </Button>
                                 </div>
                                 <div className="flex items-center gap-2">
