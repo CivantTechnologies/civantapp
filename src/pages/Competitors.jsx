@@ -33,13 +33,6 @@ function CompetitorDashboard({ data, onClose }) {
 
     const realNames = trading_names.filter(tn => tn.award_count > 1 || trading_names.length <= 3);
 
-function CompetitorDashboard({ data, onClose }) {
-    const { summary, renewal_opportunities=[], buyer_relationships=[], category_breakdown=[], yearly_trend=[], recent_contracts=[], trading_names=[], analysis, trend } = data;
-    const [showAllNames, setShowAllNames] = React.useState(false);
-    if (!summary) return <Card className="border border-civant-border bg-civant-navy/55 shadow-none"><CardHeader><div className="flex justify-between"><CardTitle>{data.company_name}</CardTitle><Button variant="outline" size="sm" onClick={onClose}>Close</Button></div></CardHeader><CardContent><p className="text-slate-400">{data.found_tenders} tenders found. {data.message||''}</p></CardContent></Card>;
-
-    const realNames = trading_names.filter(tn => tn.award_count > 1 || trading_names.length <= 3);
-
     return (
         <div className="space-y-6">
             {/* Minimal Header */}
