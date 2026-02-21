@@ -10,7 +10,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { supabase } from '@/lib/supabaseClient';
 
 const fmtEur = (v) => { if (!v) return '€0'; if (v >= 1e9) return `€${(v/1e9).toFixed(1)}B`; if (v >= 1e6) return `€${(v/1e6).toFixed(1)}M`; if (v >= 1e3) return `€${(v/1e3).toFixed(0)}K`; return `€${v.toLocaleString()}`; };
 const fmtCluster = (c) => c ? c.replace('cluster_','').split('_').map(w=>w[0].toUpperCase()+w.slice(1)).join(' ') : 'Unknown';
@@ -239,31 +238,9 @@ export default function Competitors() {
     const analyzeCompetitor = async (companyName) => {
         setAnalyzing(companyName); setAnalysis(null);
         try {
-            const { data, error } = await supabase.rpc('get_competitor_intelligence', { p_tenant_id: 'civant_default', p_search_term: companyName });
-            if (error) throw new Error(error.message);
-            if (!data || !data.success) { alert(data?.message || 'No awards found'); return; }
-            const sm = data.summary, cats = data.category_breakdown||[], brs = data.buyer_relationships||[];
-            const rens = data.renewal_opportunities||[], trd = data.yearly_trend||[];
-            let trend = 'stable';
-            if (trd.length >= 3) { const r2 = trd.slice(-2), e2 = trd.slice(-4,-2); const ra = r2.reduce((s,t)=>s+t.awards,0)/r2.length; const ea = e2.length>0 ? e2.reduce((s,t)=>s+t.awards,0)/e2.length : ra; if (ra > ea*1.2) trend='growing'; else if (ra < ea*0.8) trend='declining'; }
-            const strengths = [], weaknesses = [], insights = [];
-            if (sm.total_awards > 20) strengths.push('Extensive track record: '+sm.total_awards+' contracts over '+sm.years_active+' years');
-            else if (sm.total_awards > 5) strengths.push('Established presence: '+sm.total_awards+' public contracts');
-            if (sm.has_frameworks > 0) strengths.push(sm.has_frameworks+' framework agreements (pre-qualified)');
-            const stB = brs.filter(b=>b.relationship_strength==='strong');
-            if (stB.length > 0) strengths.push('Strong relationships: '+stB.slice(0,3).map(b=>b.buyer_name).join(', '));
-            if (sm.active_contracts > 3) strengths.push(sm.active_contracts+' active contracts');
-            if (cats.length > 2) strengths.push('Diversified across '+cats.length+' categories');
-            if (cats[0] && cats.length > 1) { const p = cats[0].award_count/sm.total_awards*100; if (p>70) weaknesses.push('Concentrated in '+fmtCluster(cats[0].cluster)+' ('+Math.round(p)+'%)'); }
-            const imm = rens.filter(r=>r.window_class==='imminent').length;
-            if (imm > 0) weaknesses.push(imm+' contract(s) expiring imminently');
-            if (sm.distinct_buyers < 5 && sm.total_awards > 5) weaknesses.push('Narrow buyer base ('+sm.distinct_buyers+' buyers)');
-            if (rens.length > 0) { const tv = rens.reduce((s,r)=>s+(r.value_eur||0),0); insights.push(rens.length+' contracts ('+fmtEur(tv)+') expiring in 12 months'); }
-            const ll = rens.filter(r=>(r.repeat_wins||0)<=1);
-            if (ll.length > 0) insights.push(ll.length+' with low incumbent lock-in');
-            const ehv = brs.filter(b=>b.relationship_strength==='emerging'&&(b.total_value||0)>1e7);
-            if (ehv.length > 0) insights.push('Vulnerability at '+ehv.slice(0,2).map(b=>b.buyer_name).join(', '));
-            setAnalysis({ success:true, company_name:companyName, found_tenders:sm.total_awards, summary:sm, renewal_opportunities:rens.map(r=>({...r, incumbent_strength:(r.repeat_wins||0)>=3?'strong_incumbent':(r.repeat_wins||0)>=2?'moderate_incumbent':'low_lock_in'})), buyer_relationships:brs, category_breakdown:cats, yearly_trend:trd, recent_contracts:data.recent_contracts||[], trend, analysis:{strengths, weaknesses, strategic_insights:insights} });
+            const response = await civant.functions.invoke('analyzeCompetitor', { company_name: companyName });
+            const d = response.data || response;
+            if (d.success) setAnalysis(d);
         } catch (error) { console.error('Analysis failed:', error); alert('Analysis failed: ' + error.message); }
         finally { setAnalyzing(null); }
     };
