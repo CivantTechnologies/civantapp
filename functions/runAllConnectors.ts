@@ -1,6 +1,7 @@
 import { createClientFromRequest } from './civantSdk.ts';
 import { requireAdminForTenant } from './requireAdmin.ts';
 import { getTenantFromHeader } from './getTenantFromHeader.ts';
+import { getInternalAuthHeader } from './internalOnly.ts';
 
 const getErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -49,6 +50,7 @@ async function invokeFunctionWithTenant(
         || `${url.protocol}//${url.host}`;
 
     const authHeader = String(req.headers.get('Authorization') || '');
+    const internalHeaders = getInternalAuthHeader(req);
     const response = await fetch(`${baseUrl}/apps/${appId}/functions/${functionName}`, {
         method: 'POST',
         headers: {
@@ -56,6 +58,7 @@ async function invokeFunctionWithTenant(
             'Content-Type': 'application/json',
             'X-App-Id': appId,
             'x-tenant-id': tenantId,
+            ...internalHeaders,
             ...(authHeader ? { Authorization: authHeader } : {})
         },
         body: JSON.stringify(payload || {})
@@ -152,7 +155,7 @@ Deno.serve(async (req) => {
 
 // Process alerts after ingestion
         try {
-            const alertsResult = await civant.functions.invoke('processAlerts', {});
+            const alertsResult = await invokeFunctionWithTenant(req, tenantId, 'processAlerts', {});
             results.alerts = alertsResult.data || alertsResult;
         } catch (e: unknown) {
             results.alerts = { error: getErrorMessage(e) };

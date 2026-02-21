@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { civant } from '@/api/civantClient';
-import { Users, Plus, Edit2, Trash2, Loader2, Target, TrendingUp, TrendingDown, Minus, Sparkles, Trophy, AlertCircle, CheckCircle2, Building2, MapPin, DollarSign, ArrowRight, FileText, Lightbulb } from 'lucide-react';
+import { Users, Plus, Edit2, Trash2, Loader2, Target, TrendingUp, TrendingDown, Minus, Sparkles, Trophy, AlertCircle, CheckCircle2, MapPin, ArrowRight } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,7 +10,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { supabase } from '@/lib/supabaseClient';
 
 const fmtEur = (v) => { if (!v) return '€0'; if (v >= 1e9) return `€${(v/1e9).toFixed(1)}B`; if (v >= 1e6) return `€${(v/1e6).toFixed(1)}M`; if (v >= 1e3) return `€${(v/1e3).toFixed(0)}K`; return `€${v.toLocaleString()}`; };
 const fmtCluster = (c) => c ? c.replace('cluster_','').split('_').map(w=>w[0].toUpperCase()+w.slice(1)).join(' ') : 'Unknown';
@@ -28,10 +27,7 @@ const StrengthBadge = ({strength}) => {
 
 function CompetitorDashboard({ data, onClose }) {
     const { summary, renewal_opportunities=[], buyer_relationships=[], category_breakdown=[], yearly_trend=[], recent_contracts=[], trading_names=[], analysis, trend } = data;
-    const [showAllNames, setShowAllNames] = React.useState(false);
     if (!summary) return <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none"><CardHeader><div className="flex justify-between"><CardTitle>{data.company_name}</CardTitle><Button variant="outline" size="sm" onClick={onClose}>Close</Button></div></CardHeader><CardContent><p className="text-slate-400">{data.found_tenders} tenders found. {data.message||''}</p></CardContent></Card>;
-
-    const realNames = trading_names.filter(tn => tn.award_count > 1 || trading_names.length <= 3);
 
     return (
         <div className="space-y-6">
@@ -266,12 +262,10 @@ export default function Competitors() {
     const analyzeCompetitor = async (companyName) => {
         setAnalyzing(companyName); setAnalysis(null);
         try {
-            const { data, error } = await supabase.rpc('get_competitor_intelligence', {
-                p_tenant_id: 'civant_default',
-                p_search_term: companyName
-            });
+            const response = await civant.functions.invoke('analyzeCompetitor', { company_name: companyName });
+            const data = response?.data || response;
             window.scrollTo({ top: 0, behavior: "smooth" });
-            if (error) throw new Error(error.message);
+            if (data?.error) throw new Error(data.error);
             if (!data || !data.success) {
                 alert(data?.message || 'No awards found for this competitor');
                 return;
