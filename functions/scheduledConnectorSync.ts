@@ -1,4 +1,5 @@
 import { createClientFromRequest } from './civantSdk.ts';
+import { assertInternalRequest, getInternalAuthHeader } from './internalOnly.ts';
 
 const getErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -51,6 +52,7 @@ async function invokeFunctionWithTenant(
         || `${url.protocol}//${url.host}`;
 
     const authHeader = String(req.headers.get('Authorization') || '');
+    const internalHeaders = getInternalAuthHeader(req);
     const response = await fetch(`${baseUrl}/apps/${appId}/functions/${functionName}`, {
         method: 'POST',
         headers: {
@@ -58,6 +60,7 @@ async function invokeFunctionWithTenant(
             'Content-Type': 'application/json',
             'X-App-Id': appId,
             'x-tenant-id': tenantId,
+            ...internalHeaders,
             ...(authHeader ? { Authorization: authHeader } : {})
         },
         body: JSON.stringify(payload || {})
@@ -85,6 +88,7 @@ async function invokeFunctionWithTenant(
 
 Deno.serve(async (req) => {
     try {
+        assertInternalRequest(req, 'scheduledConnectorSync');
         const civant = createClientFromRequest(req);
         const user = await civant.auth.me();
         

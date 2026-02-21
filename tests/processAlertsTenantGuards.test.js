@@ -5,8 +5,10 @@ import { readFileSync } from 'node:fs';
 const source = readFileSync(new URL('../functions/processAlerts.ts', import.meta.url), 'utf8');
 
 test('processAlerts fetches tenant-scoped alerts and tenders', () => {
+  assert.match(source, /const tenantId = getTenantFromHeader\(req\);/);
   assert.match(source, /entities\.Alerts\.filter\(\{\s*tenant_id: tenantId,\s*active: true\s*\}\)/s);
   assert.match(source, /entities\.TendersCurrent\.filter\(\{\s*tenant_id: tenantId\s*\}, '-first_seen_at', 500\)/s);
+  assert.doesNotMatch(source, /entities\.tenants\.list\(/);
   assert.doesNotMatch(source, /entities\.Alerts\.filter\(\{\s*active: true\s*\}\)/s);
   assert.doesNotMatch(source, /entities\.TendersCurrent\.list\(/);
 });

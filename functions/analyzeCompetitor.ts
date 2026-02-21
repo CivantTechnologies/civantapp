@@ -1,4 +1,5 @@
 import { createClientFromRequest } from './civantSdk.ts';
+import { requireAuthenticatedUser } from './requireAdmin.ts';
 
 const getErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -6,10 +7,10 @@ const getErrorMessage = (error: unknown): string =>
 Deno.serve(async (req) => {
     try {
         const civant = createClientFromRequest(req);
-        const user = await civant.auth.me();
-        
-        if (!user) {
-            return Response.json({ error: 'Unauthorized' }, { status: 401 });
+        const user = await requireAuthenticatedUser({ civant, req });
+        const tenantId = String(user.tenantId || '').trim().toLowerCase();
+        if (!tenantId) {
+            return Response.json({ error: 'Missing tenant context' }, { status: 400 });
         }
         
         const { company_name } = await req.json() as { company_name?: string };
@@ -24,7 +25,7 @@ Deno.serve(async (req) => {
 
         if (!supabaseUrl || !serviceRoleKey) {
             // Fallback: use the civant SDK to query entities directly
-            return await fallbackAnalysis(civant, company_name);
+            return await fallbackAnalysis(civant, company_name, tenantId);
         }
 
         const rpcUrl = `${supabaseUrl}/rest/v1/rpc/get_competitor_intelligence`;
@@ -37,7 +38,7 @@ Deno.serve(async (req) => {
                 'Prefer': 'return=representation'
             },
             body: JSON.stringify({
-                p_tenant_id: 'civant_default',
+                p_tenant_id: tenantId,
                 p_search_term: company_name
             })
         });
@@ -45,7 +46,7 @@ Deno.serve(async (req) => {
         if (!rpcResponse.ok) {
             const errorText = await rpcResponse.text();
             console.error('RPC call failed:', rpcResponse.status, errorText);
-            return await fallbackAnalysis(civant, company_name);
+            return await fallbackAnalysis(civant, company_name, tenantId);
         }
 
         const result = await rpcResponse.json();
@@ -305,8 +306,16 @@ function generateInsights(
     return insights;
 }
 
-async function fallbackAnalysis(civant: ReturnType<typeof createClientFromRequest>, companyName: string) {
-    const allTenders = await civant.entities.TendersCurrent.list('-publication_date', 2000) as Array<Record<string, unknown>>;
+async function fallbackAnalysis(
+    civant: ReturnType<typeof createClientFromRequest>,
+    companyName: string,
+    tenantId: string
+) {
+    const allTenders = await civant.entities.TendersCurrent.filter(
+        { tenant_id: tenantId },
+        '-publication_date',
+        2000
+    ) as Array<Record<string, unknown>>;
     
     const relatedTenders = allTenders.filter((t: Record<string, unknown>) => 
         (t.title as string)?.toLowerCase().includes(companyName.toLowerCase()) ||
