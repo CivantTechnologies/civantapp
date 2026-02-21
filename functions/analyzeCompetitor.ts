@@ -17,169 +17,316 @@ Deno.serve(async (req) => {
         if (!company_name) {
             return Response.json({ error: 'company_name is required' }, { status: 400 });
         }
-        
-        // Search for awards and tenders mentioning this company
-        const allTenders = await civant.entities.TendersCurrent.list('-publication_date', 2000) as Array<Record<string, any>>;
-        
-        // Filter tenders that mention the competitor
-        const relatedTenders = allTenders.filter((t: Record<string, any>) => 
-            t.title?.toLowerCase().includes(company_name.toLowerCase()) ||
-            t.buyer_name?.toLowerCase().includes(company_name.toLowerCase())
-        );
-        
-        // Also check enrichment data for contractor details
-        const enrichments = await civant.entities.TenderEnrichment.list('-enrichment_date', 500) as Array<Record<string, any>>;
-        const enrichmentMatches = enrichments.filter((e: Record<string, any>) => {
-            try {
-                const contractor = JSON.parse(e.contractor_details || '{}');
-                return contractor.contractor_name?.toLowerCase().includes(company_name.toLowerCase());
-            } catch {
-                return false;
-            }
+
+        // Call the database function via Supabase REST API (PostgREST RPC)
+        const supabaseUrl = Deno.env.get('SUPABASE_URL') || Deno.env.get('VITE_SUPABASE_URL');
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+        if (!supabaseUrl || !serviceRoleKey) {
+            // Fallback: use the civant SDK to query entities directly
+            return await fallbackAnalysis(civant, company_name);
+        }
+
+        const rpcUrl = `${supabaseUrl}/rest/v1/rpc/get_competitor_intelligence`;
+        const rpcResponse = await fetch(rpcUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${serviceRoleKey}`,
+                'apikey': serviceRoleKey,
+                'Prefer': 'return=representation'
+            },
+            body: JSON.stringify({
+                p_tenant_id: 'civant_default',
+                p_search_term: company_name
+            })
         });
-        
-        // Get tender UIDs from enrichments
-        const enrichedTenderUids = enrichmentMatches.map((e: Record<string, any>) => e.tender_uid);
-        const enrichedTenders = allTenders.filter((t: Record<string, any>) => enrichedTenderUids.includes(t.tender_uid));
-        
-        // Combine and deduplicate
-        const allMatchingTenders = [...relatedTenders, ...enrichedTenders]
-            .filter((tender: Record<string, any>, index: number, self: Array<Record<string, any>>) => 
-                index === self.findIndex((t: Record<string, any>) => t.id === tender.id)
-            );
-        
-        if (allMatchingTenders.length === 0) {
+
+        if (!rpcResponse.ok) {
+            const errorText = await rpcResponse.text();
+            console.error('RPC call failed:', rpcResponse.status, errorText);
+            return await fallbackAnalysis(civant, company_name);
+        }
+
+        const result = await rpcResponse.json();
+
+        if (!result || !result.success) {
             return Response.json({
                 success: true,
                 company_name,
                 found_tenders: 0,
-                message: 'No tenders found for this competitor'
+                message: result?.message || 'No awards found for this competitor',
+                analysis: null
             });
         }
-        
-        // Prepare data for AI analysis
-        const tenderSummary = allMatchingTenders.map((t: Record<string, any>) => ({
-            title: t.title,
-            buyer: t.buyer_name,
-            country: t.country,
-            notice_type: t.notice_type,
-            cpv_codes: t.cpv_codes,
-            value: t.estimated_value,
-            publication_date: t.publication_date,
-            source: t.source
-        }));
-        
-        // AI Analysis
-        const prompt = `You are an expert in competitive intelligence and public procurement analysis. Analyze the following competitor's performance in public tenders.
 
-Competitor: ${company_name}
-Number of Related Tenders/Awards: ${allMatchingTenders.length}
+        // Transform database result to match the UI's expected format
+        const summary = result.summary;
+        const renewals = result.renewal_opportunities || [];
+        const buyers = result.buyer_relationships || [];
+        const categories = result.category_breakdown || [];
+        const trend = result.yearly_trend || [];
+        const contracts = result.recent_contracts || [];
 
-Tender History:
-${JSON.stringify(tenderSummary, null, 2)}
+        // Determine overall trend from yearly data
+        let overallTrend = 'stable';
+        if (trend.length >= 3) {
+            const recent = trend.slice(-2);
+            const earlier = trend.slice(-4, -2);
+            const recentAvg = recent.reduce((s: number, t: { awards: number }) => s + t.awards, 0) / recent.length;
+            const earlierAvg = earlier.length > 0 
+                ? earlier.reduce((s: number, t: { awards: number }) => s + t.awards, 0) / earlier.length 
+                : recentAvg;
+            if (recentAvg > earlierAvg * 1.2) overallTrend = 'growing';
+            else if (recentAvg < earlierAvg * 0.8) overallTrend = 'declining';
+        }
 
-Provide comprehensive analysis including:
-1. Win Rate & Success Pattern: How often do they win? What patterns emerge?
-2. Preferred CPV Codes: Which categories do they dominate?
-3. Geographic Presence: Where are they most active?
-4. Value Range Analysis: Typical contract values they pursue
-5. Buyer Relationships: Key buyers they work with repeatedly
-6. Strengths: What makes them competitive (technical capability, pricing, experience, relationships)
-7. Weaknesses: Where they struggle or are less competitive
-8. Strategic Insights: How to compete against them effectively
-9. Trend Analysis: Are they growing, stable, or declining?
-
-Be specific with data points and actionable insights.`;
-
-        const response = await civant.integrations.Core.InvokeLLM({
-            prompt: prompt,
-            response_json_schema: {
-                type: "object",
-                properties: {
-                    win_analysis: {
-                        type: "object",
-                        properties: {
-                            total_tenders: { type: "number" },
-                            estimated_wins: { type: "number" },
-                            win_rate_percentage: { type: "number" },
-                            pattern: { type: "string" }
-                        }
-                    },
-                    preferred_cpv_codes: {
-                        type: "array",
-                        items: {
-                            type: "object",
-                            properties: {
-                                cpv_code: { type: "string" },
-                                frequency: { type: "number" },
-                                success_rate: { type: "string" }
-                            }
-                        }
-                    },
-                    geographic_presence: {
-                        type: "object",
-                        properties: {
-                            primary_countries: { type: "array", items: { type: "string" } },
-                            strongest_region: { type: "string" }
-                        }
-                    },
-                    value_analysis: {
-                        type: "object",
-                        properties: {
-                            typical_range: { type: "string" },
-                            average_contract_value: { type: "number" },
-                            largest_win: { type: "number" }
-                        }
-                    },
-                    key_buyers: {
-                        type: "array",
-                        items: {
-                            type: "object",
-                            properties: {
-                                buyer_name: { type: "string" },
-                                frequency: { type: "number" },
-                                relationship_strength: { type: "string" }
-                            }
-                        }
-                    },
-                    strengths: {
-                        type: "array",
-                        items: { type: "string" }
-                    },
-                    weaknesses: {
-                        type: "array",
-                        items: { type: "string" }
-                    },
-                    strategic_insights: {
-                        type: "array",
-                        items: { type: "string" }
-                    },
-                    trend: {
-                        type: "string",
-                        enum: ["growing", "stable", "declining"]
-                    }
-                }
-            }
-        });
-        
         return Response.json({
             success: true,
             company_name,
-            found_tenders: allMatchingTenders.length,
-            analysis: response,
-            sample_tenders: allMatchingTenders.slice(0, 10).map((t: Record<string, any>) => ({
-                id: t.id,
-                title: t.title,
-                buyer: t.buyer_name,
-                value: t.estimated_value,
-                date: t.publication_date,
-                notice_type: t.notice_type
-            }))
+            found_tenders: summary.total_awards,
+            // Summary stats for the header
+            summary: {
+                total_awards: summary.total_awards,
+                total_value_eur: summary.total_value_eur,
+                distinct_buyers: summary.distinct_buyers,
+                active_contracts: summary.active_contracts,
+                years_active: summary.years_active,
+                has_frameworks: summary.has_frameworks,
+                avg_contract_value_eur: summary.avg_contract_value_eur,
+                max_contract_value_eur: summary.max_contract_value_eur,
+                expiring_3m: summary.expiring_3m,
+                expiring_6m: summary.expiring_6m,
+                expiring_12m: summary.expiring_12m
+            },
+            // Renewal opportunities with window classification
+            renewal_opportunities: renewals.map((r: Record<string, unknown>) => ({
+                buyer_name: r.buyer_name,
+                value_eur: r.value_eur,
+                end_date: r.end_date,
+                cpv_cluster: r.cpv_cluster,
+                days_until_expiry: r.days_until_expiry,
+                window_class: r.window_class,
+                repeat_wins: r.repeat_wins,
+                framework_flag: r.framework_flag,
+                procedure_type: r.procedure_type,
+                duration_months: r.duration_months,
+                incumbent_strength: (r.repeat_wins as number) >= 3 ? 'strong_incumbent' 
+                    : (r.repeat_wins as number) >= 2 ? 'moderate_incumbent' 
+                    : 'low_lock_in'
+            })),
+            // Buyer relationships
+            buyer_relationships: buyers.map((b: Record<string, unknown>) => ({
+                buyer_name: b.buyer_name,
+                award_count: b.award_count,
+                total_value: b.total_value,
+                relationship_strength: b.relationship_strength,
+                active_contracts: b.active_contracts,
+                first_award: b.first_award,
+                last_award: b.last_award
+            })),
+            // Category breakdown
+            category_breakdown: categories.map((c: Record<string, unknown>) => ({
+                cluster: c.cluster,
+                award_count: c.award_count,
+                total_value: c.total_value,
+                distinct_buyers: c.distinct_buyers,
+                active_contracts: c.active_contracts
+            })),
+            // Yearly trend for chart
+            yearly_trend: trend,
+            // Recent contracts
+            recent_contracts: contracts.map((c: Record<string, unknown>) => ({
+                buyer_name: c.buyer_name,
+                value_eur: c.value_eur,
+                award_date: c.award_date,
+                end_date: c.end_date,
+                cpv_cluster: c.cpv_cluster,
+                framework_flag: c.framework_flag,
+                procedure_type: c.procedure_type,
+                duration_months: c.duration_months
+            })),
+            // Overall trend
+            trend: overallTrend,
+            // Legacy compatibility: analysis object for existing UI
+            analysis: {
+                win_analysis: {
+                    total_tenders: summary.total_awards,
+                    estimated_wins: summary.total_awards,
+                    win_rate_percentage: 100,
+                    pattern: `Active in ${summary.distinct_buyers} public bodies across ${summary.years_active} years`
+                },
+                preferred_cpv_codes: categories.map((c: Record<string, unknown>) => ({
+                    cpv_code: formatClusterName(c.cluster as string),
+                    frequency: c.award_count,
+                    success_rate: `${c.active_contracts} active`
+                })),
+                geographic_presence: {
+                    primary_countries: ['Ireland'],
+                    strongest_region: 'Ireland'
+                },
+                value_analysis: {
+                    typical_range: `€${formatValue(summary.avg_contract_value_eur)} avg`,
+                    average_contract_value: summary.avg_contract_value_eur,
+                    largest_win: summary.max_contract_value_eur
+                },
+                key_buyers: buyers.slice(0, 5).map((b: Record<string, unknown>) => ({
+                    buyer_name: b.buyer_name,
+                    frequency: b.award_count,
+                    relationship_strength: b.relationship_strength
+                })),
+                strengths: generateStrengths(summary, categories, buyers),
+                weaknesses: generateWeaknesses(summary, categories, renewals),
+                strategic_insights: generateInsights(summary, renewals, buyers, categories),
+                trend: overallTrend
+            }
         });
         
     } catch (error: unknown) {
+        console.error('Competitor analysis error:', error);
         return Response.json({ 
             error: getErrorMessage(error) || 'Analysis failed'
         }, { status: 500 });
     }
 });
+
+function formatClusterName(cluster: string): string {
+    if (!cluster) return 'Unknown';
+    return cluster
+        .replace('cluster_', '')
+        .split('_')
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+}
+
+function formatValue(value: number): string {
+    if (!value) return '0';
+    if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
+    if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+    if (value >= 1_000) return `${(value / 1_000).toFixed(0)}K`;
+    return value.toString();
+}
+
+function generateStrengths(
+    summary: Record<string, number>, 
+    categories: Array<Record<string, unknown>>,
+    buyers: Array<Record<string, unknown>>
+): string[] {
+    const strengths: string[] = [];
+    
+    if (summary.total_awards > 20) {
+        strengths.push(`Extensive track record with ${summary.total_awards} public contracts over ${summary.years_active} years`);
+    } else if (summary.total_awards > 5) {
+        strengths.push(`Established presence with ${summary.total_awards} public contracts`);
+    }
+    
+    if (summary.has_frameworks > 0) {
+        strengths.push(`Holds ${summary.has_frameworks} framework agreements, indicating pre-qualified status`);
+    }
+    
+    const strongBuyers = buyers.filter((b: Record<string, unknown>) => b.relationship_strength === 'strong');
+    if (strongBuyers.length > 0) {
+        const names = strongBuyers.slice(0, 3).map((b: Record<string, unknown>) => b.buyer_name).join(', ');
+        strengths.push(`Strong repeat relationships with ${names}`);
+    }
+    
+    if (summary.active_contracts > 3) {
+        strengths.push(`Currently active on ${summary.active_contracts} contracts, showing ongoing delivery capability`);
+    }
+    
+    if (categories.length > 2) {
+        strengths.push(`Diversified across ${categories.length} procurement categories`);
+    }
+    
+    if (summary.max_contract_value_eur > 50_000_000) {
+        strengths.push(`Proven capability on large-scale contracts (up to €${formatValue(summary.max_contract_value_eur)})`);
+    }
+    
+    return strengths;
+}
+
+function generateWeaknesses(
+    summary: Record<string, number>,
+    categories: Array<Record<string, unknown>>,
+    renewals: Array<Record<string, unknown>>
+): string[] {
+    const weaknesses: string[] = [];
+    
+    const dominantCategory = categories[0];
+    if (dominantCategory && categories.length > 1) {
+        const dominantPct = ((dominantCategory.award_count as number) / summary.total_awards * 100);
+        if (dominantPct > 70) {
+            weaknesses.push(`Heavy concentration in ${formatClusterName(dominantCategory.cluster as string)} (${Math.round(dominantPct)}% of awards) — vulnerable to category-specific downturns`);
+        }
+    }
+    
+    if (renewals.length > 0) {
+        const imminentCount = renewals.filter((r: Record<string, unknown>) => r.window_class === 'imminent').length;
+        if (imminentCount > 0) {
+            weaknesses.push(`${imminentCount} contract(s) expiring imminently — capacity may be stretched during re-competition`);
+        }
+    }
+    
+    if (summary.distinct_buyers < 5 && summary.total_awards > 5) {
+        weaknesses.push(`Concentrated buyer base (${summary.distinct_buyers} buyers) — loss of a single relationship would be significant`);
+    }
+    
+    return weaknesses;
+}
+
+function generateInsights(
+    summary: Record<string, number>,
+    renewals: Array<Record<string, unknown>>,
+    buyers: Array<Record<string, unknown>>,
+    categories: Array<Record<string, unknown>>
+): string[] {
+    const insights: string[] = [];
+    
+    if (renewals.length > 0) {
+        const totalRenewalValue = renewals.reduce((s: number, r: Record<string, unknown>) => s + ((r.value_eur as number) || 0), 0);
+        insights.push(`${renewals.length} contracts worth €${formatValue(totalRenewalValue)} expiring in next 12 months — these are competitive entry points`);
+        
+        const lowLockIn = renewals.filter((r: Record<string, unknown>) => (r.repeat_wins as number) <= 1);
+        if (lowLockIn.length > 0) {
+            insights.push(`${lowLockIn.length} expiring contract(s) have low incumbent lock-in (single award) — strongest displacement opportunities`);
+        }
+    }
+    
+    const emergingBuyers = buyers.filter((b: Record<string, unknown>) => b.relationship_strength === 'emerging' && (b.total_value as number) > 10_000_000);
+    if (emergingBuyers.length > 0) {
+        insights.push(`Watch for vulnerability at ${emergingBuyers.slice(0, 2).map((b: Record<string, unknown>) => b.buyer_name).join(', ')} — high-value but shallow relationships`);
+    }
+    
+    const weakCategories = categories.filter((c: Record<string, unknown>) => (c.award_count as number) <= 2);
+    if (weakCategories.length > 0) {
+        insights.push(`Competitor is weakest in ${weakCategories.map((c: Record<string, unknown>) => formatClusterName(c.cluster as string)).join(', ')} — consider targeting these categories at shared buyers`);
+    }
+    
+    return insights;
+}
+
+async function fallbackAnalysis(civant: ReturnType<typeof createClientFromRequest>, companyName: string) {
+    const allTenders = await civant.entities.TendersCurrent.list('-publication_date', 2000) as Array<Record<string, unknown>>;
+    
+    const relatedTenders = allTenders.filter((t: Record<string, unknown>) => 
+        (t.title as string)?.toLowerCase().includes(companyName.toLowerCase()) ||
+        (t.buyer_name as string)?.toLowerCase().includes(companyName.toLowerCase())
+    );
+    
+    if (relatedTenders.length === 0) {
+        return Response.json({
+            success: true,
+            company_name: companyName,
+            found_tenders: 0,
+            message: 'No tenders found for this competitor (using fallback analysis)'
+        });
+    }
+    
+    return Response.json({
+        success: true,
+        company_name: companyName,
+        found_tenders: relatedTenders.length,
+        message: 'Using legacy analysis — database function not available',
+        analysis: null
+    });
+}
