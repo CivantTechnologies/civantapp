@@ -20,7 +20,10 @@ const PageHeader = React.forwardRef(function PageHeader({ className, ...props },
   return (
     <header
       ref={ref}
-      className={cn('flex flex-col gap-3 rounded-2xl border border-border/80 bg-card/60 p-5 md:p-6', className)}
+      className={cn(
+        'flex flex-col gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5 md:p-6',
+        className
+      )}
       {...props}
     />
   );

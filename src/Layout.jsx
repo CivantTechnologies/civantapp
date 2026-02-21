@@ -98,7 +98,9 @@ export default function Layout({ children, currentPageName }) {
           {authWarning}
         </div>
       ) : null}
-      <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-card/95 border-b border-border z-50 px-4 flex items-center justify-between backdrop-blur-sm">
+
+      {/* Mobile header */}
+      <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-background/95 border-b border-white/[0.06] z-50 px-4 flex items-center justify-between backdrop-blur-md">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(!sidebarOpen)}>
             {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -115,27 +117,29 @@ export default function Layout({ children, currentPageName }) {
         </Button>
       </header>
 
+      {/* Sidebar */}
       <aside className={`
-        fixed top-0 left-0 h-full w-72 bg-card border-r border-border z-40 flex flex-col overflow-hidden
+        fixed top-0 left-0 h-full w-72 bg-background/95 backdrop-blur-md border-r border-white/[0.06] z-40 flex flex-col overflow-hidden
         transform transition-transform duration-200 ease-in-out
         lg:translate-x-0
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        <div className="px-6 py-4 border-b border-border space-y-3">
+        {/* Brand + Tenant */}
+        <div className="px-6 py-5 border-b border-white/[0.06] space-y-3">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 overflow-hidden rounded-xl ring-1 ring-primary/30">
+            <div className="w-9 h-9 overflow-hidden rounded-xl ring-1 ring-primary/20">
               <img src="/apple-touch-icon.png" alt="Civant mark" className="h-full w-full object-cover" />
             </div>
             <div>
               <h1 className="font-bold text-card-foreground tracking-tight">Civant</h1>
-              <p className="text-xs text-muted-foreground">Tenant-aware workspace</p>
+              <p className="text-[11px] text-muted-foreground">Procurement Intelligence</p>
             </div>
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs uppercase tracking-wide text-muted-foreground">Tenant</label>
+            <label className="text-[10px] uppercase tracking-widest text-slate-500 font-medium">Workspace</label>
             <select
-              className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm"
+              className="h-9 w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 text-sm text-slate-200 focus:border-primary/40 focus:outline-none transition-colors"
               value={activeTenantId}
               onChange={(event) => setActiveTenantId(event.target.value)}
               disabled={isLoadingTenants}
@@ -144,27 +148,26 @@ export default function Layout({ children, currentPageName }) {
                 <option key={tenant.id} value={tenant.id}>{tenant.name}</option>
               ))}
             </select>
-            <p className="text-xs text-muted-foreground">{selectedTenant?.id || 'No tenant selected'}</p>
             {tenantError ? <p className="text-xs text-destructive">{tenantError}</p> : null}
           </div>
 
           {canCreateTenant && (
-            <Button type="button" variant="ghost" className="w-full justify-start" onClick={() => setShowCreateTenant((v) => !v)}>
+            <Button type="button" variant="ghost" className="w-full justify-start text-slate-400 hover:text-slate-200" onClick={() => setShowCreateTenant((v) => !v)}>
               <Plus className="h-4 w-4 mr-2" />
-              New tenant
+              New workspace
             </Button>
           )}
 
           {showCreateTenant && (
-            <form className="space-y-2 rounded-xl border border-border p-3" onSubmit={onCreateTenant}>
+            <form className="space-y-2 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3" onSubmit={onCreateTenant}>
               <Input
-                placeholder="Tenant name"
+                placeholder="Workspace name"
                 value={tenantNameInput}
                 onChange={(event) => setTenantNameInput(event.target.value)}
                 disabled={tenantActionLoading}
               />
               <Input
-                placeholder="Optional tenant id"
+                placeholder="Optional workspace id"
                 value={tenantIdInput}
                 onChange={(event) => setTenantIdInput(event.target.value)}
                 disabled={tenantActionLoading}
@@ -178,8 +181,9 @@ export default function Layout({ children, currentPageName }) {
           )}
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto p-4">
-          <nav className="space-y-1.5">
+        {/* Navigation */}
+        <div className="flex-1 min-h-0 overflow-y-auto px-3 py-4">
+          <nav className="space-y-0.5">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = currentPageName === item.page;
@@ -190,18 +194,18 @@ export default function Layout({ children, currentPageName }) {
                   to={createPageUrl(item.page)}
                   onClick={() => setSidebarOpen(false)}
                   className={`
-                    flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium border
+                    flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium
                     transition-all duration-150
                     ${isActive
-                      ? 'border-primary/30 bg-primary/20 text-card-foreground'
-                      : 'border-transparent text-muted-foreground hover:border-border hover:bg-muted/60 hover:text-card-foreground'
+                      ? 'bg-primary/10 text-primary border border-primary/20'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.03] border border-transparent'
                     }
                   `}
                 >
                   <Icon className={`h-4 w-4 ${isActive ? 'text-primary' : ''}`} />
                   {item.name}
                   {isActive && (
-                    <ChevronRight className="h-4 w-4 ml-auto text-primary" />
+                    <ChevronRight className="h-3.5 w-3.5 ml-auto text-primary/60" />
                   )}
                 </Link>
               );
@@ -209,18 +213,19 @@ export default function Layout({ children, currentPageName }) {
           </nav>
         </div>
 
+        {/* User */}
         {currentUser && (
-          <div className="p-4 border-t border-border space-y-3 shrink-0">
-            <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-border bg-muted/40">
-              <div className="w-8 h-8 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-primary text-sm font-medium">
-                {currentUser.email?.charAt(0) || 'U'}
+          <div className="p-4 border-t border-white/[0.06] space-y-2 shrink-0">
+            <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-white/[0.06] bg-white/[0.02]">
+              <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary text-sm font-medium">
+                {currentUser.email?.charAt(0)?.toUpperCase() || 'U'}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-card-foreground truncate">{currentUser.email || 'User'}</p>
-                <p className="text-xs text-muted-foreground truncate">{roleLabel}</p>
+                <p className="text-sm font-medium text-slate-200 truncate">{currentUser.email || 'User'}</p>
+                <p className="text-[11px] text-slate-500 truncate">{roleLabel}</p>
               </div>
             </div>
-            <Button type="button" variant="ghost" className="w-full justify-start" onClick={logout}>
+            <Button type="button" variant="ghost" className="w-full justify-start text-slate-400 hover:text-slate-200" onClick={logout}>
               <LogOut className="h-4 w-4 mr-2" />
               Sign out
             </Button>
@@ -230,7 +235,7 @@ export default function Layout({ children, currentPageName }) {
 
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/40 z-30 lg:hidden"
+          className="fixed inset-0 bg-black/40 z-30 lg:hidden backdrop-blur-sm"
           onClick={() => setSidebarOpen(false)}
         />
       )}
