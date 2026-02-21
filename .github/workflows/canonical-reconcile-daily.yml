@@ -64,23 +64,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
+          export PGOPTIONS='-c statement_timeout=30min'
           TENANT_ID="${CIVANT_TENANT_ID:-${DISPATCH_TENANT_ID:-civant_default}}"
           COUNTRIES="${DISPATCH_COUNTRIES:-IE,FR,ES}"
           BACKFILL_LIMIT="${DISPATCH_BACKFILL_LIMIT:-0}"
           RECON_LIMIT="${DISPATCH_RECON_LIMIT:-0}"
           APPLY="${DISPATCH_APPLY:-true}"
-
           if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
             echo "ERROR: SUPABASE_DB_URL secret is required."
             exit 1
           fi
-
           if [[ "${SUPABASE_DB_URL}" != *"sslmode=require"* ]]; then
             echo "ERROR: SUPABASE_DB_URL must include sslmode=require."
             exit 1
           fi
-
           ./scripts/rollout-canonical-primary-source-reconcile.sh \
             "${TENANT_ID}" \
             "${BACKFILL_LIMIT}" \
