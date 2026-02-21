@@ -28,38 +28,49 @@ const StrengthBadge = ({strength}) => {
 
 function CompetitorDashboard({ data, onClose }) {
     const { summary, renewal_opportunities=[], buyer_relationships=[], category_breakdown=[], yearly_trend=[], recent_contracts=[], trading_names=[], analysis, trend } = data;
+    const [showAllNames, setShowAllNames] = React.useState(false);
     if (!summary) return <Card className="border border-civant-border bg-civant-navy/55 shadow-none"><CardHeader><div className="flex justify-between"><CardTitle>{data.company_name}</CardTitle><Button variant="outline" size="sm" onClick={onClose}>Close</Button></div></CardHeader><CardContent><p className="text-slate-400">{data.found_tenders} tenders found. {data.message||''}</p></CardContent></Card>;
 
+    const realNames = trading_names.filter(tn => tn.award_count > 1 || trading_names.length <= 3);
+
     return (
-        <div className="space-y-6">
+        <div className="space-y-4">
             {/* Header */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h2 className="text-2xl font-bold text-slate-100 uppercase tracking-wide">{data.company_name}</h2>
-                    <div className="flex items-center gap-4 mt-2 text-sm text-slate-400 flex-wrap">
-                        <span><strong className="text-slate-100">{summary.total_awards}</strong> contracts awarded ({summary.years_active} years)</span>
-                        <span><strong className="text-slate-100">{fmtEur(summary.total_value_eur)}</strong> Total value</span>
-                        <span><strong className="text-slate-100">{summary.distinct_buyers}</strong> public bodies</span>
-                        <span><strong className="text-slate-100">{summary.active_contracts}</strong> likely active</span>
+            <div className="flex items-start justify-between">
+                <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                        <h2 className="text-2xl font-bold text-slate-100 uppercase tracking-wide">{data.company_name}</h2>
+                        {summary.expiring_12m > 0 && (
+                            <Badge className="bg-civant-teal/15 text-civant-teal border border-civant-teal/40 text-xs">{summary.expiring_12m} renewals · {fmtEur(renewal_opportunities.reduce((s,r) => s+(r.value_eur||0),0))}</Badge>
+                        )}
                     </div>
-                    {summary.expiring_12m > 0 && (
-                        <div className="flex items-center gap-3 mt-2 flex-wrap">
-                            <Badge className="bg-civant-teal/15 text-civant-teal border border-civant-teal/40 text-xs">Opportunity Landscape: {summary.expiring_12m} renewals (12 months)</Badge>
-                            <Badge className="bg-slate-700/50 text-slate-300 border border-slate-500/40 text-xs">🇮🇪 {fmtEur(renewal_opportunities.reduce((s,r) => s+(r.value_eur||0),0))} estimated value</Badge>
-                        </div>
-                    )}
-                    {trading_names.length > 1 && (
-                        <div className="flex items-center gap-2 mt-2 flex-wrap">
-                            <span className="text-xs text-slate-500">Also trading as:</span>
-                            {trading_names.map((tn, i) => (
-                                <Badge key={i} variant="outline" className="text-[10px] text-slate-400 border-slate-600">
-                                    {tn.name} <span className="text-slate-500 ml-1">({tn.award_count})</span>
-                                </Badge>
+                    <div className="flex items-center gap-3 text-sm text-slate-500">
+                        <span>{summary.total_awards} contracts</span>
+                        <span className="text-slate-600">·</span>
+                        <span className="text-slate-300">{fmtEur(summary.total_value_eur)}</span>
+                        <span className="text-slate-600">·</span>
+                        <span>{summary.distinct_buyers} buyers</span>
+                        <span className="text-slate-600">·</span>
+                        <span>{summary.active_contracts} active</span>
+                        <span className="text-slate-600">·</span>
+                        <span>{summary.years_active}yr history</span>
+                    </div>
+                    {realNames.length > 1 && (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[11px] text-slate-600">Entities:</span>
+                            {(showAllNames ? realNames : realNames.slice(0, 3)).map((tn, i) => (
+                                <span key={i} className="text-[11px] text-slate-500">{tn.name} ({tn.award_count}){i < (showAllNames ? realNames.length : Math.min(realNames.length, 3)) - 1 ? ',' : ''}</span>
                             ))}
+                            {realNames.length > 3 && !showAllNames && (
+                                <button onClick={() => setShowAllNames(true)} className="text-[11px] text-civant-teal hover:underline">+{realNames.length - 3} more</button>
+                            )}
+                            {showAllNames && realNames.length > 3 && (
+                                <button onClick={() => setShowAllNames(false)} className="text-[11px] text-civant-teal hover:underline">show less</button>
+                            )}
                         </div>
                     )}
                 </div>
-                <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
+                <Button variant="ghost" size="sm" onClick={onClose} className="text-slate-400 hover:text-slate-100">✕</Button>
             </div>
 
             <Tabs defaultValue="landscape" className="w-full">
