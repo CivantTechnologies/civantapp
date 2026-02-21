@@ -33,31 +33,27 @@ function CompetitorDashboard({ data, onClose }) {
 
     const realNames = trading_names.filter(tn => tn.award_count > 1 || trading_names.length <= 3);
 
+function CompetitorDashboard({ data, onClose }) {
+    const { summary, renewal_opportunities=[], buyer_relationships=[], category_breakdown=[], yearly_trend=[], recent_contracts=[], trading_names=[], analysis, trend } = data;
+    const [showAllNames, setShowAllNames] = React.useState(false);
+    if (!summary) return <Card className="border border-civant-border bg-civant-navy/55 shadow-none"><CardHeader><div className="flex justify-between"><CardTitle>{data.company_name}</CardTitle><Button variant="outline" size="sm" onClick={onClose}>Close</Button></div></CardHeader><CardContent><p className="text-slate-400">{data.found_tenders} tenders found. {data.message||''}</p></CardContent></Card>;
+
+    const realNames = trading_names.filter(tn => tn.award_count > 1 || trading_names.length <= 3);
+
     return (
-        <div className="space-y-4">
-            {/* Header */}
+        <div className="space-y-6">
+            {/* Minimal Header */}
             <div className="flex items-start justify-between">
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                     <div className="flex items-center gap-3">
                         <h2 className="text-2xl font-bold text-slate-100 uppercase tracking-wide">{data.company_name}</h2>
                         {summary.expiring_12m > 0 && (
                             <Badge className="bg-civant-teal/15 text-civant-teal border border-civant-teal/40 text-xs">{summary.expiring_12m} renewals · {fmtEur(renewal_opportunities.reduce((s,r) => s+(r.value_eur||0),0))}</Badge>
                         )}
                     </div>
-                    <div className="flex items-center gap-3 text-sm text-slate-500">
-                        <span>{summary.total_awards} contracts</span>
-                        <span className="text-slate-600">·</span>
-                        <span className="text-slate-300">{fmtEur(summary.total_value_eur)}</span>
-                        <span className="text-slate-600">·</span>
-                        <span>{summary.distinct_buyers} buyers</span>
-                        <span className="text-slate-600">·</span>
-                        <span>{summary.active_contracts} active</span>
-                        <span className="text-slate-600">·</span>
-                        <span>{summary.years_active}yr history</span>
-                    </div>
                     {realNames.length > 1 && (
                         <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-[11px] text-slate-600">Entities:</span>
+                            <span className="text-[11px] text-slate-600">Matched:</span>
                             {(showAllNames ? realNames : realNames.slice(0, 3)).map((tn, i) => (
                                 <span key={i} className="text-[11px] text-slate-500">{tn.name} ({tn.award_count}){i < (showAllNames ? realNames.length : Math.min(realNames.length, 3)) - 1 ? ',' : ''}</span>
                             ))}
@@ -70,166 +66,168 @@ function CompetitorDashboard({ data, onClose }) {
                         </div>
                     )}
                 </div>
-                <Button variant="ghost" size="sm" onClick={onClose} className="text-slate-400 hover:text-slate-100">✕</Button>
+                <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
             </div>
 
-            <Tabs defaultValue="landscape" className="w-full">
-                <TabsList className="bg-transparent border-b border-civant-border/50 rounded-none h-auto p-0 gap-6">
-                    <TabsTrigger value="contracts" className="rounded-none border-b-2 border-transparent data-[state=active]:border-civant-teal data-[state=active]:bg-transparent bg-transparent data-[state=active]:text-civant-teal text-slate-500 pb-3 px-0"><FileText className="h-4 w-4 mr-2" />Contracts</TabsTrigger>
-                    <TabsTrigger value="landscape" className="rounded-none border-b-2 border-transparent data-[state=active]:border-civant-teal data-[state=active]:bg-transparent bg-transparent data-[state=active]:text-civant-teal text-slate-500 pb-3 px-0"><Target className="h-4 w-4 mr-2" />Opportunities</TabsTrigger>
-                    <TabsTrigger value="buyers" className="rounded-none border-b-2 border-transparent data-[state=active]:border-civant-teal data-[state=active]:bg-transparent bg-transparent data-[state=active]:text-civant-teal text-slate-500 pb-3 px-0"><Building2 className="h-4 w-4 mr-2" />Buyers</TabsTrigger>
-                    <TabsTrigger value="insights" className="rounded-none border-b-2 border-transparent data-[state=active]:border-civant-teal data-[state=active]:bg-transparent bg-transparent data-[state=active]:text-civant-teal text-slate-500 pb-3 px-0"><Lightbulb className="h-4 w-4 mr-2" />Insights</TabsTrigger>
+            <Tabs defaultValue="contracts" className="w-full">
+                <TabsList className="bg-slate-900/70 border border-civant-border">
+                    <TabsTrigger value="contracts" className="data-[state=active]:bg-civant-teal/15 data-[state=active]:text-civant-teal"><FileText className="h-3.5 w-3.5 mr-1.5" />Contracts</TabsTrigger>
+                    <TabsTrigger value="landscape" className="data-[state=active]:bg-civant-teal/15 data-[state=active]:text-civant-teal"><Target className="h-3.5 w-3.5 mr-1.5" />Opportunities</TabsTrigger>
+                    <TabsTrigger value="buyers" className="data-[state=active]:bg-civant-teal/15 data-[state=active]:text-civant-teal"><Building2 className="h-3.5 w-3.5 mr-1.5" />Buyers</TabsTrigger>
+                    <TabsTrigger value="insights" className="data-[state=active]:bg-civant-teal/15 data-[state=active]:text-civant-teal"><Lightbulb className="h-3.5 w-3.5 mr-1.5" />Insights</TabsTrigger>
                 </TabsList>
 
-                {/* ===== OPPORTUNITY LANDSCAPE ===== */}
-                <TabsContent value="landscape" className="mt-8 space-y-8">
-                    <div className="grid grid-cols-3 gap-6">
-                        <div>
-                            <div className="text-4xl font-light text-slate-100">{renewal_opportunities.length}</div>
-                            <p className="text-sm text-slate-500 mt-1">renewals within 12 months</p>
-                        </div>
-                        <div>
-                            <div className="text-4xl font-light text-civant-teal">{fmtEur(renewal_opportunities.reduce((s,r)=>s+(r.value_eur||0),0))}</div>
-                            <p className="text-sm text-slate-500 mt-1">opportunity horizon</p>
-                        </div>
-                        <div className="flex items-end gap-6">
-                            <div><div className="text-2xl font-light text-red-400">{renewal_opportunities.filter(r=>r.window_class==='imminent').length}</div><p className="text-xs text-slate-500 mt-1">Imminent</p></div>
-                            <div><div className="text-2xl font-light text-amber-400">{renewal_opportunities.filter(r=>r.window_class==='upcoming').length}</div><p className="text-xs text-slate-500 mt-1">Upcoming</p></div>
-                            <div><div className="text-2xl font-light text-emerald-400">{renewal_opportunities.filter(r=>r.window_class==='horizon').length}</div><p className="text-xs text-slate-500 mt-1">Horizon</p></div>
-                        </div>
+                {/* ===== CONTRACTS ===== */}
+                <TabsContent value="contracts" className="mt-4 space-y-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {category_breakdown.map((cat,i) => (
+                            <Card key={i} className="border border-civant-border bg-civant-navy/55 shadow-none"><CardContent className="p-4">
+                                <p className="text-xs text-slate-500 uppercase tracking-wider">{fmtCluster(cat.cluster)}</p>
+                                <p className="text-xl font-bold text-slate-100 mt-1">{cat.award_count} award{cat.award_count !== 1 ? 's' : ''}</p>
+                                <p className="text-sm text-civant-teal">{fmtEur(cat.total_value)}</p>
+                                <p className="text-xs text-slate-500 mt-1">{cat.distinct_buyers} buyer{cat.distinct_buyers !== 1 ? 's' : ''} · {cat.active_contracts} active</p>
+                            </CardContent></Card>
+                        ))}
                     </div>
-                    {renewal_opportunities.length > 0 ? (
-                        <div>
+                    <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
+                        <CardHeader className="pb-3"><CardTitle className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Recent Contracts</CardTitle></CardHeader>
+                        <CardContent>
                             <table className="w-full text-sm">
-                                <thead><tr className="border-b border-civant-border/40 text-xs text-slate-500 uppercase tracking-wider">
-                                    <th className="text-left py-3 pr-4 font-medium">Buyer</th><th className="text-right py-3 px-4 font-medium">Value</th><th className="text-left py-3 px-4 font-medium">Category</th><th className="text-left py-3 px-4 font-medium">Expiry</th><th className="text-left py-3 pl-4 font-medium">Strength</th>
+                                <thead><tr className="border-b border-civant-border text-xs text-slate-500 uppercase tracking-wider">
+                                    <th className="text-left py-3 pr-4">Buyer</th><th className="text-right py-3 px-4">Value</th><th className="text-left py-3 px-4">Category</th><th className="text-left py-3 px-4">Awarded</th><th className="text-left py-3 px-4">Ends</th><th className="text-left py-3 pl-4">Type</th>
                                 </tr></thead>
-                                <tbody>{renewal_opportunities.map((r,i) => (
-                                    <tr key={i} className="border-b border-civant-border/20 hover:bg-slate-800/20 transition-colors">
-                                        <td className="py-4 pr-4"><div className="text-slate-200">{r.buyer_name}</div>{r.framework_flag && <span className="text-xs text-slate-600">Framework</span>}</td>
-                                        <td className="py-4 px-4 text-right text-slate-200">{fmtEur(r.value_eur)}</td>
-                                        <td className="py-4 px-4 text-slate-400">{fmtCluster(r.cpv_cluster)}</td>
-                                        <td className="py-4 px-4"><span className="text-slate-400">{r.end_date}</span> <span className="text-slate-600 text-xs">({r.days_until_expiry}d)</span></td>
-                                        <td className="py-4 pl-4"><IncumbentBadge strength={r.incumbent_strength} /></td>
+                                <tbody>{recent_contracts.map((c,i) => (
+                                    <tr key={i} className="border-b border-civant-border/50 hover:bg-slate-900/40 transition-colors">
+                                        <td className="py-3 pr-4 font-medium text-slate-100">{c.buyer_name}</td>
+                                        <td className="py-3 px-4 text-right text-slate-100">{fmtEur(c.value_eur)}</td>
+                                        <td className="py-3 px-4 text-slate-300">{fmtCluster(c.cpv_cluster)}</td>
+                                        <td className="py-3 px-4 text-slate-300">{c.award_date}</td>
+                                        <td className="py-3 px-4 text-slate-300">{c.end_date||'—'}</td>
+                                        <td className="py-3 pl-4">{c.framework_flag && <Badge variant="outline" className="text-[10px]">Framework</Badge>}</td>
                                     </tr>
                                 ))}</tbody>
                             </table>
-                            <p className="text-xs text-slate-600 mt-6">Based on contract expiry and incumbency dynamics. Windows estimated from duration and procurement patterns.</p>
-                        </div>
-                    ) : (
-                        <p className="text-slate-500 py-8 text-center">No contracts expiring in the next 12 months</p>
+                        </CardContent>
+                    </Card>
+                    {yearly_trend.length > 0 && (
+                        <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
+                            <CardHeader className="pb-3"><div className="flex items-center justify-between">
+                                <CardTitle className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Award Trend</CardTitle>
+                                <div className="flex items-center gap-1.5">{trend==='growing'?<TrendingUp className="h-4 w-4 text-emerald-500"/>:trend==='declining'?<TrendingDown className="h-4 w-4 text-red-500"/>:<Minus className="h-4 w-4 text-slate-400"/>}<span className="text-sm text-slate-300 capitalize">{trend}</span></div>
+                            </div></CardHeader>
+                            <CardContent>
+                                <div className="flex items-end gap-1.5 h-32">
+                                    {yearly_trend.map((y,i) => { const mx = Math.max(...yearly_trend.map(t=>t.awards)); const h = mx>0?(y.awards/mx)*100:0; return (
+                                        <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                                            <span className="text-[10px] text-slate-500">{y.awards}</span>
+                                            <div className="w-full bg-civant-teal/30 rounded-t hover:bg-civant-teal/50 transition-colors" style={{height:`${Math.max(h,4)}%`}} title={`${y.year}: ${y.awards} awards, ${fmtEur(y.total_value)}`} />
+                                            <span className="text-[10px] text-slate-500">{y.year}</span>
+                                        </div>
+                                    ); })}
+                                </div>
+                            </CardContent>
+                        </Card>
                     )}
                 </TabsContent>
 
-                {/* ===== CONTRACTS ===== */}
-                <TabsContent value="contracts" className="mt-8 space-y-8">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                        {category_breakdown.map((cat,i) => (
-                            <div key={i}>
-                                <p className="text-xs text-slate-500 uppercase tracking-wider">{fmtCluster(cat.cluster)}</p>
-                                <p className="text-2xl font-light text-slate-100 mt-2">{cat.award_count} <span className="text-sm text-slate-500">award{cat.award_count !== 1 ? 's' : ''}</span></p>
-                                <p className="text-sm text-civant-teal mt-0.5">{fmtEur(cat.total_value)}</p>
-                                <p className="text-xs text-slate-600 mt-1">{cat.distinct_buyers} buyer{cat.distinct_buyers !== 1 ? 's' : ''} · {cat.active_contracts} active</p>
+                {/* ===== OPPORTUNITIES ===== */}
+                <TabsContent value="landscape" className="mt-4 space-y-4">
+                    <div className="grid grid-cols-3 gap-3">
+                        <Card className="border border-civant-border bg-civant-navy/55 shadow-none"><CardContent className="p-4">
+                            <div className="flex items-center gap-3"><div className="text-3xl font-bold text-slate-100">{renewal_opportunities.length}</div><div><p className="text-sm text-slate-400">renewal{renewal_opportunities.length !== 1 ? 's' : ''}</p><p className="text-xs text-slate-500">within 12 months</p></div></div>
+                        </CardContent></Card>
+                        <Card className="border border-civant-border bg-civant-navy/55 shadow-none"><CardContent className="p-4">
+                            <div className="text-3xl font-bold text-civant-teal">{fmtEur(renewal_opportunities.reduce((s,r)=>s+(r.value_eur||0),0))}</div><p className="text-sm text-slate-400">opportunity value</p>
+                        </CardContent></Card>
+                        <Card className="border border-civant-border bg-civant-navy/55 shadow-none"><CardContent className="p-4">
+                            <div className="flex gap-4">
+                                <div className="text-center"><div className="text-2xl font-bold text-red-400">{renewal_opportunities.filter(r=>r.window_class==='imminent').length}</div><div className="text-[10px] text-slate-500">IMMINENT</div></div>
+                                <div className="text-center"><div className="text-2xl font-bold text-amber-400">{renewal_opportunities.filter(r=>r.window_class==='upcoming').length}</div><div className="text-[10px] text-slate-500">UPCOMING</div></div>
+                                <div className="text-center"><div className="text-2xl font-bold text-emerald-400">{renewal_opportunities.filter(r=>r.window_class==='horizon').length}</div><div className="text-[10px] text-slate-500">HORIZON</div></div>
                             </div>
-                        ))}
+                        </CardContent></Card>
                     </div>
-                    <div>
-                        <h3 className="text-sm text-slate-500 uppercase tracking-wider mb-4">Recent Contracts</h3>
-                        <table className="w-full text-sm">
-                            <thead><tr className="border-b border-civant-border/40 text-xs text-slate-500 uppercase tracking-wider">
-                                <th className="text-left py-3 pr-4 font-medium">Buyer</th><th className="text-right py-3 px-4 font-medium">Value</th><th className="text-left py-3 px-4 font-medium">Category</th><th className="text-left py-3 px-4 font-medium">Awarded</th><th className="text-left py-3 px-4 font-medium">Ends</th><th className="text-left py-3 pl-4 font-medium">Type</th>
-                            </tr></thead>
-                            <tbody>{recent_contracts.map((c,i) => (
-                                <tr key={i} className="border-b border-civant-border/20 hover:bg-slate-800/20 transition-colors">
-                                    <td className="py-4 pr-4 text-slate-200">{c.buyer_name}</td>
-                                    <td className="py-4 px-4 text-right text-slate-200">{fmtEur(c.value_eur)}</td>
-                                    <td className="py-4 px-4 text-slate-400">{fmtCluster(c.cpv_cluster)}</td>
-                                    <td className="py-4 px-4 text-slate-400">{c.award_date}</td>
-                                    <td className="py-4 px-4 text-slate-400">{c.end_date||'—'}</td>
-                                    <td className="py-4 pl-4">{c.framework_flag && <span className="text-xs text-slate-500">Framework</span>}</td>
-                                </tr>
-                            ))}</tbody>
-                        </table>
-                    </div>
-                    {yearly_trend.length > 0 && (
-                        <div>
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-sm text-slate-500 uppercase tracking-wider">Award Trend</h3>
-                                <div className="flex items-center gap-1.5">{trend==='growing'?<TrendingUp className="h-4 w-4 text-emerald-500"/>:trend==='declining'?<TrendingDown className="h-4 w-4 text-red-500"/>:<Minus className="h-4 w-4 text-slate-400"/>}<span className="text-sm text-slate-400 capitalize">{trend}</span></div>
-                            </div>
-                            <div className="flex items-end gap-2 h-28">
-                                {yearly_trend.map((y,i) => { const mx = Math.max(...yearly_trend.map(t=>t.awards)); const h = mx>0?(y.awards/mx)*100:0; return (
-                                    <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                                        <span className="text-xs text-slate-600">{y.awards}</span>
-                                        <div className="w-full bg-civant-teal/20 rounded-sm hover:bg-civant-teal/40 transition-colors" style={{height:`${Math.max(h,4)}%`}} title={`${y.year}: ${y.awards} awards, ${fmtEur(y.total_value)}`} />
-                                        <span className="text-xs text-slate-600">{y.year}</span>
-                                    </div>
-                                ); })}
-                            </div>
-                        </div>
+                    {renewal_opportunities.length > 0 ? (
+                        <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
+                            <CardContent className="pt-4">
+                                <table className="w-full text-sm">
+                                    <thead><tr className="border-b border-civant-border text-xs text-slate-500 uppercase tracking-wider">
+                                        <th className="text-left py-3 pr-4">Buyer</th><th className="text-right py-3 px-4">Value</th><th className="text-left py-3 px-4">Category</th><th className="text-left py-3 px-4">Expiry</th><th className="text-left py-3 pl-4">Strength</th>
+                                    </tr></thead>
+                                    <tbody>{renewal_opportunities.map((r,i) => (
+                                        <tr key={i} className="border-b border-civant-border/50 hover:bg-slate-900/40 transition-colors">
+                                            <td className="py-3 pr-4"><div className="font-medium text-slate-100">{r.buyer_name}</div>{r.framework_flag && <span className="text-[10px] text-slate-500">Framework</span>}</td>
+                                            <td className="py-3 px-4 text-right font-medium text-slate-100">{fmtEur(r.value_eur)}</td>
+                                            <td className="py-3 px-4 text-slate-300">{fmtCluster(r.cpv_cluster)}</td>
+                                            <td className="py-3 px-4"><div className="text-slate-300">{r.end_date}</div><div className="text-[10px] text-slate-500">{r.days_until_expiry} days</div></td>
+                                            <td className="py-3 pl-4"><IncumbentBadge strength={r.incumbent_strength} /></td>
+                                        </tr>
+                                    ))}</tbody>
+                                </table>
+                            </CardContent>
+                        </Card>
+                    ) : (
+                        <Card className="border border-civant-border bg-civant-navy/55 shadow-none"><CardContent className="py-8 text-center text-slate-400">No contracts expiring in the next 12 months</CardContent></Card>
                     )}
                 </TabsContent>
 
                 {/* ===== BUYERS ===== */}
-                <TabsContent value="buyers" className="mt-8">
-                    <div className="space-y-1">
-                        {buyer_relationships.map((b,i) => (
-                            <div key={i} className="flex items-center justify-between py-4 border-b border-civant-border/20 hover:bg-slate-800/10 transition-colors">
-                                <div className="flex-1">
-                                    <div className="text-slate-200">{b.buyer_name}</div>
-                                    <div className="text-xs text-slate-600 mt-1">{b.first_award} → {b.last_award}{b.active_contracts>0 && <span className="text-emerald-500 ml-2">· {b.active_contracts} active</span>}</div>
-                                </div>
-                                <div className="flex items-center gap-4">
-                                    <div className="text-right">
-                                        <div className="text-sm text-slate-200">{fmtEur(b.total_value)}</div>
-                                        <div className="text-xs text-slate-600">{b.award_count} award{b.award_count !== 1 ? 's' : ''}</div>
-                                    </div>
-                                    <StrengthBadge strength={b.relationship_strength}/>
-                                </div>
+                <TabsContent value="buyers" className="mt-4">
+                    <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
+                        <CardContent className="pt-4"><div className="space-y-2">{buyer_relationships.map((b,i) => (
+                            <div key={i} className="flex items-center justify-between p-3 bg-slate-900/40 rounded-lg hover:bg-slate-900/60 transition-colors">
+                                <div className="flex-1"><div className="font-medium text-slate-100">{b.buyer_name}</div><div className="text-xs text-slate-500 mt-0.5">{b.first_award} → {b.last_award}{b.active_contracts>0 && <span className="text-emerald-400 ml-2">· {b.active_contracts} active</span>}</div></div>
+                                <div className="flex items-center gap-3"><div className="text-right"><div className="text-sm font-medium text-slate-100">{fmtEur(b.total_value)}</div><div className="text-xs text-slate-500">{b.award_count} award{b.award_count !== 1 ? 's' : ''}</div></div><StrengthBadge strength={b.relationship_strength}/></div>
                             </div>
-                        ))}
-                    </div>
+                        ))}</div></CardContent>
+                    </Card>
                 </TabsContent>
 
-                {/* ===== INSIGHTS ===== */}
-                <TabsContent value="insights" className="mt-8 space-y-8">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* ===== INSIGHTS (now includes overview stats) ===== */}
+                <TabsContent value="insights" className="mt-4 space-y-4">
+                    {/* Overview Stats */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <Card className="border border-civant-border bg-civant-navy/55 shadow-none"><CardContent className="p-4">
+                            <p className="text-xs text-slate-500 uppercase tracking-wider">Contracts</p>
+                            <p className="text-xl font-bold text-slate-100 mt-1">{summary.total_awards}</p>
+                            <p className="text-xs text-slate-500 mt-1">{summary.years_active} years active</p>
+                        </CardContent></Card>
+                        <Card className="border border-civant-border bg-civant-navy/55 shadow-none"><CardContent className="p-4">
+                            <p className="text-xs text-slate-500 uppercase tracking-wider">Total Value</p>
+                            <p className="text-xl font-bold text-civant-teal mt-1">{fmtEur(summary.total_value_eur)}</p>
+                            <p className="text-xs text-slate-500 mt-1">avg {fmtEur(summary.avg_contract_value_eur)}</p>
+                        </CardContent></Card>
+                        <Card className="border border-civant-border bg-civant-navy/55 shadow-none"><CardContent className="p-4">
+                            <p className="text-xs text-slate-500 uppercase tracking-wider">Public Bodies</p>
+                            <p className="text-xl font-bold text-slate-100 mt-1">{summary.distinct_buyers}</p>
+                            <p className="text-xs text-slate-500 mt-1">{summary.active_contracts} active contracts</p>
+                        </CardContent></Card>
+                        <Card className="border border-civant-border bg-civant-navy/55 shadow-none"><CardContent className="p-4">
+                            <p className="text-xs text-slate-500 uppercase tracking-wider">Frameworks</p>
+                            <p className="text-xl font-bold text-slate-100 mt-1">{summary.has_frameworks}</p>
+                            <p className="text-xs text-slate-500 mt-1">largest {fmtEur(summary.max_contract_value_eur)}</p>
+                        </CardContent></Card>
+                    </div>
+
+                    {/* Strengths & Weaknesses */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {analysis?.strengths?.length > 0 && (
-                            <div>
-                                <h3 className="text-sm text-slate-500 uppercase tracking-wider flex items-center gap-2 mb-4"><Trophy className="h-4 w-4 text-emerald-500"/>Strengths</h3>
-                                <ul className="space-y-3">{analysis.strengths.map((s,i) => <li key={i} className="flex items-start gap-3 text-sm"><CheckCircle2 className="h-4 w-4 text-emerald-500/60 mt-0.5 flex-shrink-0"/><span className="text-slate-300">{s}</span></li>)}</ul>
-                            </div>
+                            <Card className="border border-civant-border bg-civant-navy/55 shadow-none"><CardHeader className="pb-3"><CardTitle className="text-sm font-semibold flex items-center gap-2"><Trophy className="h-4 w-4 text-emerald-500"/>Strengths</CardTitle></CardHeader><CardContent><ul className="space-y-2 text-sm">{analysis.strengths.map((s,i) => <li key={i} className="flex items-start gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-500 mt-0.5 flex-shrink-0"/><span className="text-slate-300">{s}</span></li>)}</ul></CardContent></Card>
                         )}
                         {analysis?.weaknesses?.length > 0 && (
-                            <div>
-                                <h3 className="text-sm text-slate-500 uppercase tracking-wider flex items-center gap-2 mb-4"><AlertCircle className="h-4 w-4 text-amber-500"/>Weaknesses</h3>
-                                <ul className="space-y-3">{analysis.weaknesses.map((w,i) => <li key={i} className="flex items-start gap-3 text-sm"><span className="text-amber-500/60 mt-0.5 flex-shrink-0">–</span><span className="text-slate-400">{w}</span></li>)}</ul>
-                            </div>
+                            <Card className="border border-civant-border bg-civant-navy/55 shadow-none"><CardHeader className="pb-3"><CardTitle className="text-sm font-semibold flex items-center gap-2"><AlertCircle className="h-4 w-4 text-amber-500"/>Weaknesses</CardTitle></CardHeader><CardContent><ul className="space-y-2 text-sm">{analysis.weaknesses.map((w,i) => <li key={i} className="flex items-start gap-2"><span className="text-amber-500 flex-shrink-0">•</span><span className="text-slate-300">{w}</span></li>)}</ul></CardContent></Card>
                         )}
                     </div>
+
+                    {/* Strategic Insights */}
                     {analysis?.strategic_insights?.length > 0 && (
-                        <div>
-                            <h3 className="text-sm text-slate-500 uppercase tracking-wider flex items-center gap-2 mb-4"><Sparkles className="h-4 w-4 text-civant-teal"/>Strategic Insights</h3>
-                            <ul className="space-y-3">{analysis.strategic_insights.map((s,i) => <li key={i} className="flex items-start gap-3 text-sm"><ArrowRight className="h-4 w-4 text-civant-teal/60 mt-0.5 flex-shrink-0"/><span className="text-slate-300">{s}</span></li>)}</ul>
-                        </div>
+                        <Card className="border border-civant-border bg-civant-navy/55 shadow-none"><CardHeader className="pb-3"><CardTitle className="text-sm font-semibold flex items-center gap-2"><Sparkles className="h-4 w-4 text-civant-teal"/>Strategic Insights</CardTitle></CardHeader><CardContent><ul className="space-y-2 text-sm">{analysis.strategic_insights.map((s,i) => <li key={i} className="flex items-start gap-2"><ArrowRight className="h-4 w-4 text-civant-teal mt-0.5 flex-shrink-0"/><span className="text-slate-300">{s}</span></li>)}</ul></CardContent></Card>
                     )}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-4 border-t border-civant-border/20">
-                        <div>
-                            <h3 className="text-sm text-slate-500 uppercase tracking-wider mb-4">Value Analysis</h3>
-                            <div className="space-y-4 text-sm">
-                                <div className="flex justify-between"><span className="text-slate-500">Average Contract</span><span className="text-slate-200">{fmtEur(summary.avg_contract_value_eur)}</span></div>
-                                <div className="flex justify-between"><span className="text-slate-500">Largest Win</span><span className="text-emerald-400">{fmtEur(summary.max_contract_value_eur)}</span></div>
-                                <div className="flex justify-between"><span className="text-slate-500">Framework Agreements</span><span className="text-slate-200">{summary.has_frameworks}</span></div>
-                                <div className="flex justify-between"><span className="text-slate-500">Active Contracts</span><span className="text-slate-200">{summary.active_contracts}</span></div>
-                            </div>
-                        </div>
-                        <div>
-                            <h3 className="text-sm text-slate-500 uppercase tracking-wider mb-4">Categories</h3>
-                            <div className="space-y-3">{category_breakdown.slice(0,5).map((c,i) => (
-                                <div key={i} className="flex items-center justify-between text-sm"><span className="text-slate-300">{fmtCluster(c.cluster)}</span><span className="text-slate-500">{c.award_count}× · <span className="text-civant-teal">{fmtEur(c.total_value)}</span></span></div>
-                            ))}</div>
-                        </div>
-                    </div>
+
+                    {/* Categories */}
+                    <Card className="border border-civant-border bg-civant-navy/55 shadow-none"><CardHeader className="pb-3"><CardTitle className="text-sm font-semibold flex items-center gap-2"><Target className="h-4 w-4 text-civant-teal"/>Preferred Categories</CardTitle></CardHeader><CardContent><div className="space-y-2">{category_breakdown.slice(0,5).map((c,i) => (
+                        <div key={i} className="flex items-center justify-between text-sm"><span className="font-medium text-slate-100">{fmtCluster(c.cluster)}</span><div className="flex items-center gap-2"><Badge variant="outline" className="text-xs">{c.award_count}x</Badge><span className="text-xs text-civant-teal">{fmtEur(c.total_value)}</span></div></div>
+                    ))}</div></CardContent></Card>
                 </TabsContent>
             </Tabs>
         </div>
