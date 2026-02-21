@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import SupplierAutocomplete from "@/components/SupplierAutocomplete";
 
 const fmtEur = (v) => { if (!v) return '€0'; if (v >= 1e9) return `€${(v/1e9).toFixed(1)}B`; if (v >= 1e6) return `€${(v/1e6).toFixed(1)}M`; if (v >= 1e3) return `€${(v/1e3).toFixed(0)}K`; return `€${v.toLocaleString()}`; };
 const fmtCluster = (c) => c ? c.replace('cluster_','').split('_').map(w=>w[0].toUpperCase()+w.slice(1)).join(' ') : 'Unknown';
@@ -390,7 +391,7 @@ export default function Competitors() {
                         <DialogDescription>Track a competitor to analyze their bidding patterns and performance</DialogDescription>
                     </DialogHeader>
                     <form onSubmit={handleSubmit} className="space-y-4">
-                        <div><Label htmlFor="company_name">Company Name *</Label><Input id="company_name" value={formData.company_name} onChange={(e) => setFormData({...formData, company_name: e.target.value})} placeholder="e.g. BAM Contractors" required /></div>
+                        <div><Label htmlFor="company_name">Company Name *</Label><SupplierAutocomplete value={formData.company_name} onChange={(v) => setFormData({...formData, company_name: v})} placeholder="Start typing to search suppliers..." /></div>
                         <div><Label htmlFor="country">Primary Country</Label>
                             <Select value={formData.country} onValueChange={(v) => setFormData({...formData, country: v})}>
                                 <SelectTrigger><SelectValue placeholder="Select country" /></SelectTrigger>
