@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { supabase } from '@/lib/supabaseClient';
 
 const fmtEur = (v) => { if (!v) return '€0'; if (v >= 1e9) return `€${(v/1e9).toFixed(1)}B`; if (v >= 1e6) return `€${(v/1e6).toFixed(1)}M`; if (v >= 1e3) return `€${(v/1e3).toFixed(0)}K`; return `€${v.toLocaleString()}`; };
 const fmtCluster = (c) => c ? c.replace('cluster_','').split('_').map(w=>w[0].toUpperCase()+w.slice(1)).join(' ') : 'Unknown';
@@ -26,7 +27,7 @@ const StrengthBadge = ({strength}) => {
 };
 
 function CompetitorDashboard({ data, onClose }) {
-    const { summary, renewal_opportunities=[], buyer_relationships=[], category_breakdown=[], yearly_trend=[], recent_contracts=[], analysis, trend } = data;
+    const { summary, renewal_opportunities=[], buyer_relationships=[], category_breakdown=[], yearly_trend=[], recent_contracts=[], trading_names=[], analysis, trend } = data;
     if (!summary) return <Card className="border border-civant-border bg-civant-navy/55 shadow-none"><CardHeader><div className="flex justify-between"><CardTitle>{data.company_name}</CardTitle><Button variant="outline" size="sm" onClick={onClose}>Close</Button></div></CardHeader><CardContent><p className="text-slate-400">{data.found_tenders} tenders found. {data.message||''}</p></CardContent></Card>;
 
     return (
@@ -45,6 +46,16 @@ function CompetitorDashboard({ data, onClose }) {
                         <div className="flex items-center gap-3 mt-2 flex-wrap">
                             <Badge className="bg-civant-teal/15 text-civant-teal border border-civant-teal/40 text-xs">Opportunity Landscape: {summary.expiring_12m} renewals (12 months)</Badge>
                             <Badge className="bg-slate-700/50 text-slate-300 border border-slate-500/40 text-xs">🇮🇪 {fmtEur(renewal_opportunities.reduce((s,r) => s+(r.value_eur||0),0))} estimated value</Badge>
+                        </div>
+                    )}
+                    {trading_names.length > 1 && (
+                        <div className="flex items-center gap-2 mt-2 flex-wrap">
+                            <span className="text-xs text-slate-500">Also trading as:</span>
+                            {trading_names.map((tn, i) => (
+                                <Badge key={i} variant="outline" className="text-[10px] text-slate-400 border-slate-600">
+                                    {tn.name} <span className="text-slate-500 ml-1">({tn.award_count})</span>
+                                </Badge>
+                            ))}
                         </div>
                     )}
                 </div>
@@ -238,9 +249,64 @@ export default function Competitors() {
     const analyzeCompetitor = async (companyName) => {
         setAnalyzing(companyName); setAnalysis(null);
         try {
-            const response = await civant.functions.invoke('analyzeCompetitor', { company_name: companyName });
-            const d = response.data || response;
-            if (d.success) setAnalysis(d);
+            const { data, error } = await supabase.rpc('get_competitor_intelligence', {
+                p_tenant_id: 'civant_default',
+                p_search_term: companyName
+            });
+            if (error) throw new Error(error.message);
+            if (!data || !data.success) {
+                alert(data?.message || 'No awards found for this competitor');
+                return;
+            }
+            // Generate deterministic insights from the data
+            const summary = data.summary;
+            const categories = data.category_breakdown || [];
+            const buyers = data.buyer_relationships || [];
+            const renewals = data.renewal_opportunities || [];
+            const trend_data = data.yearly_trend || [];
+            let overallTrend = 'stable';
+            if (trend_data.length >= 3) {
+                const recent = trend_data.slice(-2);
+                const earlier = trend_data.slice(-4, -2);
+                const recentAvg = recent.reduce((s,t) => s+t.awards, 0) / recent.length;
+                const earlierAvg = earlier.length > 0 ? earlier.reduce((s,t) => s+t.awards, 0) / earlier.length : recentAvg;
+                if (recentAvg > earlierAvg * 1.2) overallTrend = 'growing';
+                else if (recentAvg < earlierAvg * 0.8) overallTrend = 'declining';
+            }
+            const strengths = [];
+            if (summary.total_awards > 20) strengths.push(`Extensive track record with ${summary.total_awards} public contracts over ${summary.years_active} years`);
+            else if (summary.total_awards > 5) strengths.push(`Established presence with ${summary.total_awards} public contracts`);
+            if (summary.has_frameworks > 0) strengths.push(`Holds ${summary.has_frameworks} framework agreements, indicating pre-qualified status`);
+            const strongBuyers = buyers.filter(b => b.relationship_strength === 'strong');
+            if (strongBuyers.length > 0) strengths.push(`Strong repeat relationships with ${strongBuyers.slice(0,3).map(b=>b.buyer_name).join(', ')}`);
+            if (summary.active_contracts > 3) strengths.push(`Currently active on ${summary.active_contracts} contracts`);
+            if (categories.length > 2) strengths.push(`Diversified across ${categories.length} procurement categories`);
+            if (summary.max_contract_value_eur > 50000000) strengths.push(`Proven capability on large-scale contracts (up to ${fmtEur(summary.max_contract_value_eur)})`);
+            const weaknesses = [];
+            if (categories[0] && categories.length > 1) { const pct = (categories[0].award_count / summary.total_awards * 100); if (pct > 70) weaknesses.push(`Heavy concentration in ${fmtCluster(categories[0].cluster)} (${Math.round(pct)}% of awards)`); }
+            const imminentCount = renewals.filter(r => r.window_class === 'imminent').length;
+            if (imminentCount > 0) weaknesses.push(`${imminentCount} contract(s) expiring imminently`);
+            if (summary.distinct_buyers < 5 && summary.total_awards > 5) weaknesses.push(`Concentrated buyer base (${summary.distinct_buyers} buyers)`);
+            const insights = [];
+            if (renewals.length > 0) { const tv = renewals.reduce((s,r) => s+(r.value_eur||0), 0); insights.push(`${renewals.length} contracts worth ${fmtEur(tv)} expiring in next 12 months — competitive entry points`); }
+            const lowLockIn = renewals.filter(r => (r.repeat_wins || 0) <= 1);
+            if (lowLockIn.length > 0) insights.push(`${lowLockIn.length} expiring contract(s) have low incumbent lock-in — strongest displacement opportunities`);
+            const emergingHV = buyers.filter(b => b.relationship_strength === 'emerging' && (b.total_value||0) > 10000000);
+            if (emergingHV.length > 0) insights.push(`Watch for vulnerability at ${emergingHV.slice(0,2).map(b=>b.buyer_name).join(', ')} — high-value but shallow relationships`);
+
+            setAnalysis({
+                success: true,
+                company_name: companyName,
+                found_tenders: summary.total_awards,
+                summary,
+                renewal_opportunities: renewals.map(r => ({...r, incumbent_strength: (r.repeat_wins||0) >= 3 ? 'strong_incumbent' : (r.repeat_wins||0) >= 2 ? 'moderate_incumbent' : 'low_lock_in'})),
+                buyer_relationships: buyers,
+                category_breakdown: categories,
+                yearly_trend: trend_data,
+                recent_contracts: data.recent_contracts || [],
+                trend: overallTrend,
+                analysis: { strengths, weaknesses, strategic_insights: insights }
+            });
         } catch (error) { console.error('Analysis failed:', error); alert('Analysis failed: ' + error.message); }
         finally { setAnalyzing(null); }
     };
