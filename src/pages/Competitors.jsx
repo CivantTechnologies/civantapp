@@ -49,12 +49,12 @@ function CompetitorDashboard({ data, onClose }) {
                 <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
             </div>
 
-            <Tabs defaultValue="contracts" className="w-full">
+            <Tabs defaultValue="insights" className="w-full">
                 <TabsList className="bg-slate-900/70 border border-civant-border">
-                    <TabsTrigger value="contracts" className="data-[state=active]:bg-civant-teal/15 data-[state=active]:text-civant-teal"><FileText className="h-3.5 w-3.5 mr-1.5" />Contracts</TabsTrigger>
+                    <TabsTrigger value="insights" className="data-[state=active]:bg-civant-teal/15 data-[state=active]:text-civant-teal"><Lightbulb className="h-3.5 w-3.5 mr-1.5" />Insights</TabsTrigger>
                     <TabsTrigger value="landscape" className="data-[state=active]:bg-civant-teal/15 data-[state=active]:text-civant-teal"><Target className="h-3.5 w-3.5 mr-1.5" />Opportunities</TabsTrigger>
                     <TabsTrigger value="buyers" className="data-[state=active]:bg-civant-teal/15 data-[state=active]:text-civant-teal"><Building2 className="h-3.5 w-3.5 mr-1.5" />Buyers</TabsTrigger>
-                    <TabsTrigger value="insights" className="data-[state=active]:bg-civant-teal/15 data-[state=active]:text-civant-teal"><Lightbulb className="h-3.5 w-3.5 mr-1.5" />Insights</TabsTrigger>
+                    <TabsTrigger value="contracts" className="data-[state=active]:bg-civant-teal/15 data-[state=active]:text-civant-teal"><FileText className="h-3.5 w-3.5 mr-1.5" />Contracts</TabsTrigger>
                 </TabsList>
 
                 {/* ===== CONTRACTS ===== */}
