@@ -270,6 +270,7 @@ export default function Competitors() {
                 p_tenant_id: 'civant_default',
                 p_search_term: companyName
             });
+            window.scrollTo({ top: 0, behavior: "smooth" });
             if (error) throw new Error(error.message);
             if (!data || !data.success) {
                 alert(data?.message || 'No awards found for this competitor');
@@ -325,6 +326,7 @@ export default function Competitors() {
                 trend: overallTrend,
                 analysis: { strengths, weaknesses, strategic_insights: insights }
             });
+            window.scrollTo({ top: 0, behavior: "smooth" });
         } catch (error) { console.error('Analysis failed:', error); alert('Analysis failed: ' + error.message); }
         finally { setAnalyzing(null); }
     };
