@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { civant } from '@/api/civantClient';
 import { useTenant } from '@/lib/tenant';
 import {
     Building2, CreditCard, Loader2, Save, ChevronRight, ChevronLeft,
@@ -632,12 +632,12 @@ export default function CompanyProfile() {
         if (!activeTenantId) return;
         setLoading(true);
         try {
-            const { data, error } = await supabase
-                .from('company_profiles')
-                .select('*')
-                .eq('tenant_id', activeTenantId)
-                .maybeSingle();
-            if (error && error.code !== 'PGRST116') throw error;
+            const rows = await civant.entities.company_profiles.filter(
+                { tenant_id: activeTenantId },
+                '-updated_at',
+                1
+            );
+            const data = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
             setProfile(data || { tenant_id: activeTenantId, company_name: '', onboarding_completed: false });
         } catch (e) {
             console.error('Failed to load company profile:', e);
@@ -656,11 +656,8 @@ export default function CompanyProfile() {
         setSaveMsg('');
         try {
             const payload = { ...form, tenant_id: activeTenantId, updated_at: new Date().toISOString() };
-            const { error } = await supabase
-                .from('company_profiles')
-                .upsert(payload, { onConflict: 'tenant_id' });
-            if (error) throw error;
-            setProfile(payload);
+            const saved = await civant.entities.company_profiles.create(payload);
+            setProfile(saved && typeof saved === 'object' ? saved : payload);
             if (payload.onboarding_completed) refreshOnboarding();
             setSaveMsg('Saved successfully');
             setTimeout(() => setSaveMsg(''), 3000);

@@ -16,6 +16,7 @@ import {
   Users,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
+import { civant } from '@/api/civantClient';
 import { useTenant } from '@/lib/tenant';
 import { createPageUrl } from '../utils';
 import {
@@ -429,11 +430,13 @@ export default function Predictions() {
   const loadProfile = useCallback(async () => {
     if (!activeTenantId) return null;
     try {
-      const { data } = await supabase
-        .from('company_profiles')
-        .select('target_cpv_clusters,target_countries,target_buyer_types,contract_size_min_eur,contract_size_max_eur')
-        .eq('tenant_id', activeTenantId)
-        .maybeSingle();
+      const rows = await civant.entities.company_profiles.filter(
+        { tenant_id: activeTenantId },
+        '-updated_at',
+        1,
+        'target_cpv_clusters,target_countries,target_buyer_types,contract_size_min_eur,contract_size_max_eur'
+      );
+      const data = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
       setCompanyProfile(data || null);
       return data || null;
     } catch (e) {
