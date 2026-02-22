@@ -3,10 +3,10 @@ import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import {
   AlertTriangle,
-  Building2,
   Calendar,
   ChevronDown,
   ChevronUp,
+  CircleAlert,
   Clock,
   Filter,
   Loader2,
@@ -50,9 +50,10 @@ const COUNTRY_OPTIONS = [
 
 const URGENCY_OPTIONS = [
   { value: 'all', label: 'All Urgency' },
-  { value: 'imminent', label: 'Imminent' },
+  { value: 'overdue', label: 'Overdue' },
   { value: 'upcoming', label: 'Upcoming' },
-  { value: 'planned', label: 'Planned' },
+  { value: 'horizon', label: 'Horizon' },
+  { value: 'distant', label: 'Distant' },
 ];
 
 const SOURCE_OPTIONS = [
@@ -70,13 +71,9 @@ const SIGNAL_TYPE_LABELS = {
 /**
  * Maps prediction category values to the profile cluster IDs.
  * The company profile wizard uses cluster IDs like cluster_it_software,
- * but predictions store categories in multiple formats:
- *   - cluster_digital, cluster_facilities, cluster_professional_services (prefixed)
- *   - Digital, Professional Services, Construction (plain labels)
- * This map normalises both to profile cluster IDs for filtering.
+ * but predictions store categories in multiple formats.
  */
 const CATEGORY_TO_PROFILE_CLUSTER = {
-  // Direct cluster_ prefixed values from renewal signals
   'cluster_digital': 'cluster_it_software',
   'cluster_it_software': 'cluster_it_software',
   'cluster_professional_services': 'cluster_consulting',
@@ -104,11 +101,11 @@ const CATEGORY_TO_PROFILE_CLUSTER = {
   'cluster_defence_security': 'cluster_defence_security',
   'cluster_security': 'cluster_defence_security',
   'cluster_research': 'cluster_research',
-  // Plain label values from award data
   'Digital': 'cluster_it_software',
   'IT': 'cluster_it_software',
   'Software': 'cluster_it_software',
   'Telecommunications': 'cluster_it_software',
+  'Telecoms': 'cluster_it_software',
   'Professional Services': 'cluster_consulting',
   'Consulting': 'cluster_consulting',
   'Construction': 'cluster_construction',
@@ -123,21 +120,26 @@ const CATEGORY_TO_PROFILE_CLUSTER = {
   'Education': 'cluster_education_training',
   'Education Equipment': 'cluster_education_training',
   'Transport': 'cluster_transport',
+  'Transport Equipment': 'cluster_transport',
   'Vehicles': 'cluster_transport',
   'Food': 'cluster_food_catering',
   'Hospitality': 'cluster_food_catering',
   'Energy': 'cluster_energy_environment',
   'Environmental': 'cluster_energy_environment',
   'Agriculture': 'cluster_energy_environment',
+  'Utilities': 'cluster_energy_environment',
   'Financial': 'cluster_financial_legal',
   'Legal': 'cluster_financial_legal',
   'Culture': 'cluster_communications_media',
   'Printing': 'cluster_communications_media',
+  'Publishing': 'cluster_communications_media',
   'Industrial Equipment': 'cluster_manufacturing',
   'Chemicals': 'cluster_manufacturing',
   'Textiles': 'cluster_manufacturing',
+  'Mining': 'cluster_manufacturing',
   'Security': 'cluster_defence_security',
   'Research': 'cluster_research',
+  'Scientific': 'cluster_research',
 };
 
 function normaliseCategory(category) {
@@ -149,14 +151,16 @@ function normaliseCategory(category) {
 
 function urgencyStyle(urgency) {
   switch (String(urgency || '').toLowerCase()) {
-    case 'imminent':
-      return { bg: 'bg-rose-500/12', border: 'border-rose-400/30', text: 'text-rose-300', Icon: AlertTriangle, pulse: true };
+    case 'overdue':
+      return { bg: 'bg-red-500/15', border: 'border-red-400/40', text: 'text-red-300', Icon: CircleAlert, pulse: true, label: 'Overdue' };
     case 'upcoming':
-      return { bg: 'bg-amber-500/12', border: 'border-amber-400/30', text: 'text-amber-300', Icon: Timer, pulse: false };
-    case 'planned':
-      return { bg: 'bg-blue-500/12', border: 'border-blue-400/30', text: 'text-blue-300', Icon: Calendar, pulse: false };
+      return { bg: 'bg-amber-500/12', border: 'border-amber-400/30', text: 'text-amber-300', Icon: AlertTriangle, pulse: false, label: 'Upcoming' };
+    case 'horizon':
+      return { bg: 'bg-blue-500/12', border: 'border-blue-400/30', text: 'text-blue-300', Icon: Timer, pulse: false, label: 'Horizon' };
+    case 'distant':
+      return { bg: 'bg-slate-500/10', border: 'border-slate-400/25', text: 'text-slate-400', Icon: Calendar, pulse: false, label: 'Distant' };
     default:
-      return { bg: 'bg-slate-500/10', border: 'border-slate-400/20', text: 'text-slate-400', Icon: Clock, pulse: false };
+      return { bg: 'bg-slate-500/10', border: 'border-slate-400/20', text: 'text-slate-400', Icon: Clock, pulse: false, label: urgency || '' };
   }
 }
 
@@ -169,27 +173,30 @@ function signalBadgeClass(signalType) {
   }
 }
 
-function confidenceBandClass(band) {
-  switch (String(band || '').toLowerCase()) {
-    case 'very high': return 'bg-civant-teal/15 text-civant-teal border-civant-teal/40';
-    case 'high':      return 'bg-blue-500/15 text-blue-300 border-blue-400/35';
-    case 'medium':    return 'bg-amber-500/15 text-amber-300 border-amber-400/35';
-    default:          return 'bg-slate-500/15 text-slate-300 border-slate-400/30';
-  }
-}
-
 const pct    = (v) => `${Math.round(Number(v || 0) * 100)}%`;
 const fDate  = (v) => { if (!v) return '—'; const d = new Date(v); return Number.isNaN(d.getTime()) ? String(v) : format(d, 'MMM d, yyyy'); };
 const fVal   = (n) => { n = Number(n || 0); return n >= 1e6 ? `€${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `€${(n / 1e3).toFixed(0)}K` : n > 0 ? `€${n.toLocaleString()}` : '—'; };
-const daysTo = (v) => { if (!v) return null; const d = new Date(v); return Number.isNaN(d.getTime()) ? null : Math.ceil((d - new Date()) / 864e5); };
+
+function daysLabel(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return null;
+  const days = Math.ceil((d - new Date()) / 864e5);
+  if (days < -30) return { text: `${Math.abs(days)}d overdue`, cls: 'text-red-400' };
+  if (days < 0) return { text: `${Math.abs(days)}d overdue`, cls: 'text-red-300' };
+  if (days === 0) return { text: 'Today', cls: 'text-red-300' };
+  if (days <= 30) return { text: `${days}d away`, cls: 'text-amber-400' };
+  if (days <= 90) return { text: `${days}d away`, cls: 'text-blue-300' };
+  return { text: `${days}d away`, cls: 'text-slate-500' };
+}
 
 const isRenewal = (row) => !!row.signal_type;
 
 function sortPredictions(rows) {
-  const urgencyRank = { imminent: 0, upcoming: 1, planned: 2 };
+  const urgencyRank = { overdue: 0, upcoming: 1, horizon: 2, distant: 3 };
   return [...rows].sort((a, b) => {
-    const uA = urgencyRank[a.urgency] ?? 3;
-    const uB = urgencyRank[b.urgency] ?? 3;
+    const uA = urgencyRank[a.urgency] ?? 4;
+    const uB = urgencyRank[b.urgency] ?? 4;
     if (uA !== uB) return uA - uB;
     const dateA = a.predicted_tender_date || '';
     const dateB = b.predicted_tender_date || '';
@@ -204,7 +211,7 @@ function PredictionCard({ row }) {
   const [open, setOpen] = useState(false);
   const renewal = isRenewal(row);
   const us = urgencyStyle(row.urgency);
-  const days = daysTo(row.predicted_tender_date);
+  const dl = daysLabel(row.predicted_tender_date);
 
   const src = row.renewal_source || {};
   const incumbents = src.incumbent_suppliers || [];
@@ -238,12 +245,7 @@ function PredictionCard({ row }) {
             )}
             {renewal && row.urgency && (
               <Badge className={`text-[11px] font-medium border ${us.bg} ${us.border} ${us.text}`}>
-                {row.urgency.charAt(0).toUpperCase() + row.urgency.slice(1)}
-              </Badge>
-            )}
-            {!renewal && row.confidence_band && (
-              <Badge className={`text-[11px] font-medium border ${confidenceBandClass(row.confidence_band)}`}>
-                {row.confidence_band}
+                {us.label}
               </Badge>
             )}
             {!renewal && (
@@ -256,13 +258,11 @@ function PredictionCard({ row }) {
 
         <div className="hidden sm:flex items-center gap-6 shrink-0 text-right">
           <div>
-            <p className="text-[11px] uppercase tracking-wider text-slate-500">Predicted</p>
+            <p className="text-[11px] uppercase tracking-wider text-slate-500">
+              {row.urgency === 'overdue' ? 'Expected' : 'Predicted'}
+            </p>
             <p className="text-sm font-semibold text-slate-200">{fDate(row.predicted_tender_date)}</p>
-            {days !== null && (
-              <p className={`text-xs mt-0.5 ${days <= 30 ? 'text-rose-400' : days <= 90 ? 'text-amber-400' : 'text-slate-500'}`}>
-                {days <= 0 ? 'Overdue' : `${days}d away`}
-              </p>
-            )}
+            {dl && <p className={`text-xs mt-0.5 ${dl.cls}`}>{dl.text}</p>}
           </div>
           {renewal && (
             <div>
@@ -278,12 +278,15 @@ function PredictionCard({ row }) {
         </div>
       </div>
 
+      {/* Mobile metrics */}
       <div className="flex sm:hidden items-center gap-4 px-5 pb-3 text-xs">
         <span className="text-slate-400">{fDate(row.predicted_tender_date)}</span>
+        {dl && <span className={dl.cls}>{dl.text}</span>}
         {renewal && <span className="text-civant-teal font-medium">{fVal(row.total_value_eur)}</span>}
         <span className="text-slate-400">{pct(row.probability || row.confidence)}</span>
       </div>
 
+      {/* Expanded detail */}
       {open && (
         <div className="px-5 pb-5 space-y-4 border-t border-white/[0.04]">
           {renewal && (
@@ -477,7 +480,6 @@ export default function Predictions() {
   const filtered = useMemo(() => {
     let rows = [...allPredictions];
 
-    // Company profile filtering with category normalisation
     if (companyProfile) {
       const clusters = companyProfile.target_cpv_clusters || [];
       const countries = companyProfile.target_countries || [];
@@ -485,18 +487,14 @@ export default function Predictions() {
       const maxVal = companyProfile.contract_size_max_eur || 0;
 
       rows = rows.filter((r) => {
-        // Country: match against both country and region fields
         if (countries.length > 0) {
           const rc = r.country || r.region;
           if (rc && !countries.includes(rc)) return false;
         }
-        // Category: normalise prediction category to profile cluster ID
         if (clusters.length > 0 && r.category) {
           const mapped = normaliseCategory(r.category);
           if (mapped && !clusters.includes(mapped)) return false;
-          // If no mapping exists, let it through (don't filter unknown categories)
         }
-        // Value: only filter if the prediction has a value
         const val = Number(r.total_value_eur || 0);
         if (minVal > 0 && val > 0 && val < minVal) return false;
         if (maxVal > 0 && val > 0 && val > maxVal) return false;
@@ -518,7 +516,7 @@ export default function Predictions() {
       total: filtered.length,
       renewals: renewals.length,
       engine: filtered.length - renewals.length,
-      imminent: renewals.filter(r => r.urgency === 'imminent').length,
+      overdue: renewals.filter(r => r.urgency === 'overdue').length,
       upcoming: renewals.filter(r => r.urgency === 'upcoming').length,
       totalValue: renewals.reduce((s, r) => s + Number(r.total_value_eur || 0), 0),
     };
@@ -591,10 +589,11 @@ export default function Predictions() {
           <Card className="bg-white/[0.02] border border-white/[0.06]">
             <CardContent className="pt-5 flex items-center justify-between">
               <div>
-                <p className="text-[11px] text-slate-500 uppercase tracking-wider">Imminent</p>
-                <p className="text-3xl font-bold text-rose-400">{stats.imminent}</p>
+                <p className="text-[11px] text-slate-500 uppercase tracking-wider">Overdue</p>
+                <p className="text-3xl font-bold text-red-400">{stats.overdue}</p>
+                <p className="text-xs text-red-400/60 mt-0.5">Likely active now</p>
               </div>
-              <AlertTriangle className="w-7 h-7 text-rose-400 opacity-60" />
+              <CircleAlert className="w-7 h-7 text-red-400 opacity-60" />
             </CardContent>
           </Card>
           <Card className="bg-white/[0.02] border border-white/[0.06]">
@@ -603,7 +602,7 @@ export default function Predictions() {
                 <p className="text-[11px] text-slate-500 uppercase tracking-wider">Upcoming</p>
                 <p className="text-3xl font-bold text-amber-400">{stats.upcoming}</p>
               </div>
-              <Timer className="w-7 h-7 text-amber-400 opacity-60" />
+              <AlertTriangle className="w-7 h-7 text-amber-400 opacity-60" />
             </CardContent>
           </Card>
           <Card className="bg-white/[0.02] border border-white/[0.06]">
