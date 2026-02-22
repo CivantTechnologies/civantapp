@@ -124,6 +124,9 @@ const DEFAULT_FILTERS = Object.freeze({
     sortBy: 'relevance'
 });
 
+const DEFAULT_LOAD_LIMIT = 150;
+const APPLY_LOAD_LIMIT = 250;
+
 const SPAIN_OPEN_PRESET = Object.freeze({
     ...DEFAULT_FILTERS,
     country: 'ES',
@@ -171,7 +174,7 @@ export default function Search() {
     const location = useLocation();
     const [tenders, setTenders] = useState([]);
     const [filteredTenders, setFilteredTenders] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
     const [showFilters, setShowFilters] = useState(false);
     const [searchMeta, setSearchMeta] = useState(null);
     const { activeTenantId, isLoadingTenants } = useTenant();
@@ -196,7 +199,7 @@ export default function Search() {
         if (isLoadingTenants) return;
         if (!activeTenantId) return;
         setLoading(true);
-        void loadTenders(appliedFilters);
+        void loadTenders(appliedFilters, DEFAULT_LOAD_LIMIT);
     }, [activeTenantId, isLoadingTenants]);
 
     useEffect(() => {
@@ -323,14 +326,14 @@ export default function Search() {
         return rows.slice(0, maxRows);
     };
     
-    const loadTenders = async (snapshot = appliedFilters) => {
+    const loadTenders = async (snapshot = appliedFilters, resultLimit = DEFAULT_LOAD_LIMIT) => {
         const filters = normalizeFilterSnapshot(snapshot);
 
         try {
             const startedAtMs = Date.now();
             const response = await civant.functions.invoke('searchTenders', {
                 ...filters,
-                limit: 500
+                limit: resultLimit
             });
 
             const data = Array.isArray(response?.items)
@@ -553,7 +556,7 @@ export default function Search() {
         setLoading(true);
         setAppliedFilters(nextFilters);
         setLastSearchAt(new Date());
-        void loadTenders(nextFilters);
+        void loadTenders(nextFilters, APPLY_LOAD_LIMIT);
     };
     
     const getSourceBadge = (source) => {
@@ -581,14 +584,6 @@ export default function Search() {
     const getCountryFlag = (country) => {
         return country === 'FR' ? '🇫🇷' : country === 'IE' ? '🇮🇪' : country === 'ES' ? '🇪🇸' : '🌍';
     };
-    
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center h-64">
-                <Loader2 className="h-8 w-8 animate-spin text-civant-teal" />
-            </div>
-        );
-    }
     
     return (
         <div className="space-y-6">
@@ -817,11 +812,19 @@ export default function Search() {
                 <p className="text-sm text-slate-400">
                     Showing <span className="font-medium text-slate-100">{filteredTenders.length}</span> tenders
                 </p>
-                {lastSearchAt ? (
-                    <p className="text-xs text-slate-500">
-                        Search run at {format(lastSearchAt, 'HH:mm:ss')}
-                    </p>
-                ) : null}
+                <div className="flex items-center gap-3">
+                    {loading ? (
+                        <p className="text-xs text-civant-teal flex items-center gap-1.5">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Refreshing...
+                        </p>
+                    ) : null}
+                    {lastSearchAt ? (
+                        <p className="text-xs text-slate-500">
+                            Search run at {format(lastSearchAt, 'HH:mm:ss')}
+                        </p>
+                    ) : null}
+                </div>
             </div>
 
             {tedOnlyResults ? (
@@ -891,7 +894,14 @@ export default function Search() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-800">
-                            {filteredTenders.length === 0 ? (
+                            {loading && filteredTenders.length === 0 ? (
+                                <tr>
+                                    <td colSpan={5} className="px-4 py-12 text-center text-slate-300">
+                                        <Loader2 className="h-8 w-8 mx-auto mb-2 animate-spin text-civant-teal" />
+                                        <p>Loading tenders...</p>
+                                    </td>
+                                </tr>
+                            ) : filteredTenders.length === 0 ? (
                                 <tr>
                                     <td colSpan={5} className="px-4 py-12 text-center text-slate-400">
                                         <SearchIcon className="h-8 w-8 mx-auto mb-2 text-slate-300" />
