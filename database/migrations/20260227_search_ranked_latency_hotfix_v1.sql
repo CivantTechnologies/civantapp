@@ -1,10 +1,10 @@
 -- Search latency hotfix: force index-first recency retrieval for notices_search_current.
 -- Targets P0 route/search latency by eliminating seq-scan + top-N sort over tenant-wide rows.
 
-create index if not exists idx_notices_search_current_tenant_source_last_seen_desc
+create index concurrently if not exists idx_notices_search_current_tenant_source_last_seen_desc
   on public.notices_search_current (tenant_id, source, last_seen_at desc nulls last, canonical_id);
 
-create index if not exists idx_notices_search_current_tenant_region_last_seen_desc
+create index concurrently if not exists idx_notices_search_current_tenant_region_last_seen_desc
   on public.notices_search_current (tenant_id, region, last_seen_at desc nulls last, canonical_id);
 
 create or replace function public.search_tenders_ranked(
