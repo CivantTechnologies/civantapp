@@ -1,6 +1,15 @@
 import axios from 'axios';
+import { sendClientTelemetry } from '@/lib/client-telemetry';
 
 const ACTIVE_TENANT_STORAGE_KEY = 'civant_active_tenant';
+const SLOW_API_THRESHOLD_MS = 2500;
+
+function monotonicNowMs() {
+    if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+        return performance.now();
+    }
+    return Date.now();
+}
 
 function normalizeValue(value) {
     const text = String(value ?? '').trim();
@@ -210,14 +219,41 @@ export const createAxiosClient = ({
         }
     });
 
+    client.interceptors.request.use((requestConfig) => {
+        const mutableConfig = /** @type {any} */ (requestConfig);
+        mutableConfig.metadata = mutableConfig.metadata || {};
+        mutableConfig.metadata.startedAtMs = monotonicNowMs();
+        return mutableConfig;
+    });
+
     if (token) {
         client.defaults.headers.common.Authorization = `Bearer ${token}`;
     }
 
     if (interceptResponses) {
         client.interceptors.response.use(
-            (response) => response.data,
+            (response) => {
+                const responseConfig = /** @type {any} */ (response?.config || {});
+                const startedAtMs = Number(responseConfig?.metadata?.startedAtMs || 0);
+                if (startedAtMs > 0) {
+                    const durationMs = Math.round(monotonicNowMs() - startedAtMs);
+                    if (durationMs >= SLOW_API_THRESHOLD_MS) {
+                        sendClientTelemetry({
+                            event_type: 'slow_api',
+                            severity: 'warning',
+                            path: typeof window !== 'undefined' ? window.location.pathname : '',
+                            message: `${String(response?.config?.method || 'get').toUpperCase()} ${String(response?.config?.url || '')}`,
+                            status_code: Number(response?.status) || null,
+                            duration_ms: durationMs
+                        });
+                    }
+                }
+                return response.data;
+            },
             (error) => {
+                const errorConfig = /** @type {any} */ (error?.config || {});
+                const startedAtMs = Number(errorConfig?.metadata?.startedAtMs || 0);
+                const durationMs = startedAtMs > 0 ? Math.round(monotonicNowMs() - startedAtMs) : null;
                 const normalizedError = /** @type {any} */ (new Error(
                     error?.response?.data?.message || error?.response?.data?.error || error?.message || 'Request failed'
                 ));
@@ -225,6 +261,16 @@ export const createAxiosClient = ({
                 normalizedError.code = error?.response?.data?.code;
                 normalizedError.data = error?.response?.data;
                 normalizedError.originalError = error;
+
+                sendClientTelemetry({
+                    event_type: 'api_error',
+                    severity: 'error',
+                    path: typeof window !== 'undefined' ? window.location.pathname : '',
+                    message: `${String(error?.config?.method || 'get').toUpperCase()} ${String(error?.config?.url || '')} :: ${normalizedError.message}`,
+                    stack: normalizedError.stack || '',
+                    status_code: Number(normalizedError.status) || null,
+                    duration_ms: durationMs
+                });
 
                 if (typeof onError === 'function') {
                     onError(normalizedError);

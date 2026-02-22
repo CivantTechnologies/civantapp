@@ -3,7 +3,14 @@ import { Search, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { getCpvEntryByCode, normalizeCpvCodeList, searchCpvCatalog } from '@/lib/cpv-catalog';
+import {
+  getCpvCatalogLoadError,
+  getCpvEntryByCode,
+  isCpvCatalogReady,
+  normalizeCpvCodeList,
+  preloadCpvCatalog,
+  searchCpvCatalog
+} from '@/lib/cpv-catalog';
 
 function parsePastedCodes(text) {
   const matches = String(text || '').match(/\d{8}/g);
@@ -21,6 +28,8 @@ export default function CpvCodePicker({
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
+  const [catalogReady, setCatalogReady] = useState(() => isCpvCatalogReady());
+  const [catalogError, setCatalogError] = useState(() => getCpvCatalogLoadError()?.message || '');
   const rootRef = useRef(null);
 
   const selectedCodes = useMemo(() => normalizeCpvCodeList(value), [value]);
@@ -32,31 +41,46 @@ export default function CpvCodePicker({
         const cpv = getCpvEntryByCode(code, language);
         return {
           code,
-          label: cpv?.label || 'CPV description unavailable'
+          label: cpv?.label || (catalogReady ? 'CPV description unavailable' : 'Loading CPV description...')
         };
       }),
-    [language, selectedCodes]
+    [catalogReady, language, selectedCodes]
   );
 
   const suggestions = useMemo(
     () =>
-      searchCpvCatalog(query, {
-        language,
-        limit: 18,
-        excludeCodes: selectedCodes
-      }),
-    [query, language, selectedCodes]
+      catalogReady
+        ? searchCpvCatalog(query, {
+            language,
+            limit: 18,
+            excludeCodes: selectedCodes
+          })
+        : [],
+    [catalogReady, query, language, selectedCodes]
   );
 
   useEffect(() => {
-    const onClickOutside = (event) => {
-      if (!rootRef.current?.contains(event.target)) {
-        setOpen(false);
-      }
+    let cancelled = false;
+    if (catalogReady) return () => {
+      cancelled = true;
     };
-    document.addEventListener('mousedown', onClickOutside);
-    return () => document.removeEventListener('mousedown', onClickOutside);
-  }, []);
+
+    preloadCpvCatalog()
+      .then(() => {
+        if (cancelled) return;
+        setCatalogReady(true);
+        setCatalogError('');
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : 'Failed to load CPV catalog';
+        setCatalogError(message);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [catalogReady]);
 
   const commit = (nextCodes) => {
     onChange?.(normalizeCpvCodeList(nextCodes));
@@ -76,6 +100,7 @@ export default function CpvCodePicker({
   const handleKeyDown = (event) => {
     if (event.key === 'Enter') {
       event.preventDefault();
+      if (!catalogReady) return;
       if (suggestions.length > 0) {
         addCode(suggestions[0].code);
         return;
@@ -105,6 +130,16 @@ export default function CpvCodePicker({
     setQuery('');
     setOpen(true);
   };
+
+  useEffect(() => {
+    const onClickOutside = (event) => {
+      if (!rootRef.current?.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
 
   return (
     <div ref={rootRef} className={cn('space-y-2', className)}>
@@ -146,7 +181,13 @@ export default function CpvCodePicker({
 
         {open ? (
           <div className="border-t border-border max-h-64 overflow-y-auto">
-            {suggestions.length ? (
+            {!catalogReady && !catalogError ? (
+              <div className="px-3 py-3 text-xs text-muted-foreground">Loading CPV catalog...</div>
+            ) : catalogError ? (
+              <div className="px-3 py-3 text-xs text-amber-300">
+                CPV catalog unavailable right now. Try again in a few seconds.
+              </div>
+            ) : suggestions.length ? (
               suggestions.map((item) => (
                 <button
                   key={item.code}

@@ -1,4 +1,5 @@
 import React from 'react';
+import { sendClientTelemetry } from '@/lib/client-telemetry';
 
 export class AppErrorBoundary extends React.Component {
   constructor(props) {
@@ -15,6 +16,16 @@ export class AppErrorBoundary extends React.Component {
 
   componentDidCatch(error, info) {
     console.error('[Civant] Unhandled UI error:', error, info);
+    sendClientTelemetry({
+      event_type: 'ui_error',
+      severity: 'error',
+      path: typeof window !== 'undefined' ? window.location.pathname : '',
+      message: error instanceof Error ? error.message : 'Unhandled UI error',
+      stack: error instanceof Error ? error.stack || '' : '',
+      context: {
+        componentStack: info?.componentStack || ''
+      }
+    });
   }
 
   render() {

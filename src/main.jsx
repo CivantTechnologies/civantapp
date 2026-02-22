@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from '@/App.jsx';
 import '@/index.css';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
+import { sendClientTelemetry } from '@/lib/client-telemetry';
 import { logRuntimeConfigStatus, runtimeConfig } from '@/config';
 
 function ConfigErrorScreen() {
@@ -30,6 +31,36 @@ function ConfigErrorScreen() {
 }
 
 logRuntimeConfigStatus();
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', (event) => {
+    sendClientTelemetry({
+      event_type: 'ui_error',
+      severity: 'error',
+      path: window.location.pathname,
+      message: event?.message || 'Unhandled window error',
+      stack: event?.error?.stack || '',
+      context: {
+        filename: event?.filename || '',
+        lineno: Number(event?.lineno) || null,
+        colno: Number(event?.colno) || null
+      }
+    });
+  });
+
+  window.addEventListener('unhandledrejection', (event) => {
+    const reason = event?.reason;
+    const message = reason instanceof Error ? reason.message : String(reason || 'Unhandled promise rejection');
+    const stack = reason instanceof Error ? reason.stack || '' : '';
+    sendClientTelemetry({
+      event_type: 'unhandled_promise',
+      severity: 'error',
+      path: window.location.pathname,
+      message,
+      stack
+    });
+  });
+}
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <AppErrorBoundary>

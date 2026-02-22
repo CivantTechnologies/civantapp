@@ -11,6 +11,13 @@ test('search page uses lower initial and interactive load limits', () => {
   assert.match(source, /loadTenders\(nextFilters, APPLY_LOAD_LIMIT\)/);
 });
 
+test('search page lazy-loads the CPV picker to avoid route-bundle bloat', () => {
+  assert.match(source, /const CpvCodePicker = lazy\(\(\) => import\('[@/a-zA-Z0-9._-]*CpvCodePicker'\)\);/);
+  assert.match(source, /<Suspense fallback=\{<div className=\"text-xs text-slate-400/);
+  assert.match(source, /Loading CPV filter/);
+  assert.doesNotMatch(source, /import CpvCodePicker from/);
+});
+
 test('search page does not block full route render while loading', () => {
   assert.match(source, /Refreshing\.\.\./);
   assert.match(source, /Loading tenders\.\.\./);
