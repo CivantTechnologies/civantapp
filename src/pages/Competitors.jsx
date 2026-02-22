@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { civant } from '@/api/civantClient';
 import { supabase } from "@/lib/supabaseClient";
+import { useTenant } from "@/lib/tenant";
 import { Users, Plus, Edit2, Trash2, Loader2, Target, TrendingUp, TrendingDown, Minus, Sparkles, Trophy, AlertCircle, CheckCircle2, MapPin, ArrowRight } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -224,6 +225,7 @@ function CompetitorDashboard({ data, onClose }) {
 // ============================================================
 export default function Competitors() {
     const [user, setUser] = useState(null);
+    const { activeTenantId } = useTenant();
     const [competitors, setCompetitors] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
@@ -264,7 +266,7 @@ export default function Competitors() {
     const analyzeCompetitor = async (companyName) => {
         setAnalyzing(companyName); setAnalysis(null);
         try {
-            const { data: response, error: rpcError } = await supabase.rpc('get_competitor_intelligence', { p_tenant_id: 'civant_default', p_search_term: companyName }); if (rpcError) throw new Error(rpcError.message);
+            const { data: response, error: rpcError } = await supabase.rpc('get_competitor_intelligence', { p_tenant_id: activeTenantId, p_search_term: companyName }); if (rpcError) throw new Error(rpcError.message);
             const data = response?.data || response;
             window.scrollTo({ top: 0, behavior: "smooth" });
             if (data?.error) throw new Error(data.error);
