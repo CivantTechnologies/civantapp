@@ -9,6 +9,32 @@ function forbidden(message = 'Forbidden') {
   return err;
 }
 
+async function callRpc<T>(name: string, payload: Record<string, unknown>): Promise<T> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') || Deno.env.get('VITE_SUPABASE_URL');
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY not configured');
+  }
+
+  const response = await fetch(`${supabaseUrl}/rest/v1/rpc/${name}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${serviceRoleKey}`,
+      'apikey': serviceRoleKey,
+      'Prefer': 'return=representation'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`RPC ${name} failed: ${response.status} ${errorText}`);
+  }
+
+  return await response.json() as T;
+}
+
 Deno.serve(async (req) => {
   try {
     const civant = createClientFromRequest(req);
@@ -74,17 +100,49 @@ Deno.serve(async (req) => {
       return Response.json({ success: true, prediction: predictionRow });
     }
 
-    const [runs, queue, predictions] = await Promise.all([
+    if (action === 'lifecycle_review_decision') {
+      const candidateId = String(body.candidate_id || '');
+      const decision = String(body.decision || '');
+      const reviewNotes = String(body.review_notes || '');
+      if (!candidateId || !['approve', 'reject'].includes(decision)) {
+        return Response.json({ error: 'candidate_id and decision=approve|reject are required' }, { status: 400 });
+      }
+
+      const result = await callRpc<Record<string, unknown>>(
+        'resolve_prediction_reconciliation_candidate',
+        {
+          p_tenant_id: tenantId,
+          p_candidate_id: candidateId,
+          p_decision: decision,
+          p_reviewed_by: user.email || user.userId || 'admin',
+          p_review_notes: reviewNotes
+        }
+      );
+      return Response.json({ success: true, result });
+    }
+
+    const [runs, queue, predictions, lifecyclePredictions, lifecycleQueue] = await Promise.all([
       civant.asServiceRole.entities[PIPELINE_NAMES.ingestionRuns].filter({ tenant_id: tenantId }, '-started_at', 100),
       civant.asServiceRole.entities[PIPELINE_NAMES.reconciliationQueue].filter({ tenant_id: tenantId, status: 'pending' }, '-created_at', 200),
-      civant.asServiceRole.entities[PIPELINE_NAMES.predictions].filter({ tenant_id: tenantId }, '-generated_at', 200)
+      civant.asServiceRole.entities[PIPELINE_NAMES.predictions].filter({ tenant_id: tenantId }, '-generated_at', 200),
+      civant.asServiceRole.entities[PIPELINE_NAMES.predictionLifecycle].filter({ tenant_id: tenantId }, '-updated_at', 250),
+      civant.asServiceRole.entities[PIPELINE_NAMES.predictionReconciliationCandidates].filter({ tenant_id: tenantId, status: 'pending' }, '-created_at', 250)
     ]);
+
+    const lifecycleSummary = (Array.isArray(lifecyclePredictions) ? lifecyclePredictions : []).reduce<Record<string, number>>((acc, row) => {
+      const key = String((row as Record<string, unknown>)?.status || 'Unknown');
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
 
     return Response.json({
       success: true,
       runs,
       queue,
-      predictions
+      predictions,
+      lifecycle_predictions: lifecyclePredictions,
+      lifecycle_queue: lifecycleQueue,
+      lifecycle_summary: lifecycleSummary
     });
   } catch (error) {
     const status = (error as Error & { status?: number }).status || 500;
