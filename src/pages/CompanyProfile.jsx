@@ -168,7 +168,8 @@ function CompetitorInput({ value, onChange }) {
             {adding ? (
                 <SupplierAutocomplete
                     value=""
-                    onChange={(v) => {
+                    onChange={() => {}}
+                    onSelect={(v) => {
                         if (v && !value.includes(v)) onChange([...value, v]);
                         setAdding(false);
                     }}

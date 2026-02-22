@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-export default function SupplierAutocomplete({ value, onChange, placeholder }) {
+export default function SupplierAutocomplete({ value, onChange, onSelect, placeholder }) {
     const [query, setQuery] = useState(value || '');
     const [suggestions, setSuggestions] = useState([]);
     const [showDrop, setShowDrop] = useState(false);
@@ -46,6 +46,7 @@ export default function SupplierAutocomplete({ value, onChange, placeholder }) {
     const pick = (s) => {
         setQuery(s.name);
         onChange(s.name);
+        if (onSelect) onSelect(s.name);
         setShowDrop(false);
     };
 
