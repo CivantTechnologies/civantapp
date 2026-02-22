@@ -181,7 +181,7 @@ function daysLabel(dateStr) {
   if (!dateStr) return null;
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return null;
-  const days = Math.ceil((d - new Date()) / 864e5);
+  const days = Math.ceil((d.getTime() - Date.now()) / 864e5);
   if (days < -30) return { text: `${Math.abs(days)}d overdue`, cls: 'text-red-400' };
   if (days < 0) return { text: `${Math.abs(days)}d overdue`, cls: 'text-red-300' };
   if (days === 0) return { text: 'Today', cls: 'text-red-300' };

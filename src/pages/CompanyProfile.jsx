@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useTenant } from '@/lib/tenant';
-import { useAuth } from '@/lib/auth';
 import {
-    Building2, Globe, CreditCard, Loader2, Save, ChevronRight, ChevronLeft,
-    Check, MapPin, Tag, Users, Target, Briefcase, ArrowRight
+    Building2, CreditCard, Loader2, Save, ChevronRight, ChevronLeft,
+    Check, Tag, Target
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -77,7 +76,7 @@ const CONTRACT_SIZE_OPTIONS = [
     { value: 10000000, label: '€10M+' },
 ];
 
-function MultiChipSelect({ options, selected, onChange, renderOption }) {
+function MultiChipSelect({ options, selected, onChange, renderOption = null }) {
     return (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {options.map((opt) => {
