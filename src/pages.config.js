@@ -6,6 +6,7 @@ import __Layout from './Layout.jsx';
 const Alerts = lazy(() => import('./pages/Alerts'));
 const Architecture = lazy(() => import('./pages/Architecture'));
 const Competitors = lazy(() => import('./pages/Competitors'));
+const CompanyProfile = lazy(() => import("./pages/CompanyProfile"));
 const Connectors = lazy(() => import('./pages/Connectors'));
 const Insights = lazy(() => import('./pages/Insights'));
 const Integrations = lazy(() => import('./pages/Integrations'));
@@ -19,6 +20,7 @@ export const PAGES = {
     "Alerts": Alerts,
     "Architecture": Architecture,
     "Competitors": Competitors,
+    "CompanyProfile": CompanyProfile,
     "Connectors": Connectors,
     "Home": Home,
     "Insights": Insights,

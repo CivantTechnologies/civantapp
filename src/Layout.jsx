@@ -4,6 +4,7 @@ import { createPageUrl } from './utils';
 import { useAuth } from '@/lib/auth';
 import { useTenant } from '@/lib/tenant';
 import {
+  Building2,
   LayoutDashboard,
   Search,
   Bell,
@@ -51,6 +52,7 @@ export default function Layout({ children, currentPageName }) {
 
   const navItems = [
     { name: 'Home', page: 'Home', icon: LayoutDashboard },
+    { name: 'Company', page: 'CompanyProfile', icon: Building2 },
     { name: 'Profile', page: 'Profile', icon: UserRound },
     { name: 'Forecast', page: 'Forecast', icon: BarChart3 },
     { name: 'Search', page: 'Search', icon: Search },
