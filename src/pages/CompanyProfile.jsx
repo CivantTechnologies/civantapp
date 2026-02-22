@@ -4,7 +4,7 @@ import { useTenant } from '@/lib/tenant';
 import { useAuth } from '@/lib/auth';
 import {
     Building2, Globe, CreditCard, Loader2, Save, ChevronRight, ChevronLeft,
-    Check, MapPin, Tag, Users, Target, Briefcase, ArrowRight, Sparkles
+    Check, MapPin, Tag, Users, Target, Briefcase, ArrowRight
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -372,7 +372,7 @@ function OnboardingWizard({ profile, onSave, saving }) {
                         </Button>
                     ) : (
                         <Button type="button" onClick={finish} disabled={saving} className="bg-civant-teal text-slate-950 hover:bg-civant-teal/90">
-                            {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+                            {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Check className="h-4 w-4 mr-2" />}
                             Complete Setup
                         </Button>
                     )}
