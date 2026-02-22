@@ -32,6 +32,8 @@ START_DATE="${2:-${START_DATE:-2020-01-01}}"
 DRY_RUN_RAW="${3:-${DRY_RUN:-false}}"
 MAX_ROWS="${MAX_ROWS:-}"
 DATASET="${DATASET:-decp-2022-marches-valides}"
+SOURCE_NAME="${SOURCE_NAME:-decp_fr}"
+BATCH_ID="${BATCH_ID:-fr_decp_$(date -u +%Y%m%dT%H%M%SZ)_$RANDOM}"
 
 if [[ -z "${DATABASE_URL}" ]]; then
   echo "ERROR: DATABASE_URL (or SUPABASE_DB_URL) is required."
@@ -57,6 +59,11 @@ case "${DRY_RUN_RAW}" in
     exit 1
     ;;
 esac
+
+APPLY_SQL_BOOL="true"
+if [[ "${DRY_RUN}" == "true" ]]; then
+  APPLY_SQL_BOOL="false"
+fi
 
 if [[ "${PSQL_BIN}" == */* ]]; then
   if [[ ! -x "${PSQL_BIN}" ]]; then
@@ -116,7 +123,7 @@ if [[ -n "${MAX_ROWS}" ]]; then
 fi
 
 echo "== FR DECP End-Date Enrichment =="
-echo "tenant_id=${TENANT_ID} start_date=${START_DATE} dry_run=${DRY_RUN} dataset=${DATASET} max_rows=${MAX_ROWS:-<none>}"
+echo "tenant_id=${TENANT_ID} start_date=${START_DATE} dry_run=${DRY_RUN} dataset=${DATASET} source_name=${SOURCE_NAME} batch_id=${BATCH_ID} max_rows=${MAX_ROWS:-<none>}"
 echo "== Downloading DECP CSV =="
 curl -fsSL "${URL}" -o "${CSV_FILE}"
 
@@ -137,6 +144,18 @@ set lock_timeout = 0;
 set idle_in_transaction_session_timeout = 0;
 
 begin;
+
+do \$\$
+begin
+  if to_regclass('public.fr_award_enrichment_batches') is null
+     or to_regclass('public.fr_award_enrichment_raw') is null
+     or to_regclass('public.fr_award_enrichment_stage') is null
+     or to_regclass('public.fr_award_enrichment_rejects') is null
+     or to_regclass('public.fr_award_enrichment_run_metrics') is null then
+    raise exception 'Missing FR enrichment gate tables. Apply migration 20260226_fr_award_enrichment_gate_v1.sql first.';
+  end if;
+end
+\$\$;
 
 create temp table tmp_fr_decp_raw (
   id text,
@@ -466,40 +485,178 @@ where match_score < 92
 order by match_score desc, amount_abs_diff asc nulls last, award_canonical_id
 limit 15;
 
-with updated as (
-  update public.award_fact_fr af
-  set
-    duration_months = coalesce(af.duration_months, m.decp_duration_months),
-    end_date = coalesce(
-      af.end_date,
-      case
-        when af.award_date is not null and m.decp_duration_months is not null
-        then (af.award_date + make_interval(months => m.decp_duration_months))::date
-        else null
-      end
-    ),
-    framework_evidence = jsonb_strip_nulls(
-      coalesce(af.framework_evidence, '{}'::jsonb) ||
-      jsonb_build_object(
-        'fr_decp_dataset', '${DATASET}',
-        'fr_decp_id', m.decp_id,
-        'fr_decp_id_base', m.decp_id_base,
-        'fr_decp_source', m.source_system,
-        'fr_decp_match_score', m.match_score,
-        'fr_decp_acheteur_id', m.acheteur_id,
-        'fr_duration_months_source', case when af.duration_months is null and m.decp_duration_months is not null then 'decp_fr' end,
-        'fr_end_date_source', case when af.end_date is null and m.decp_duration_months is not null then 'award_date_plus_duration_months_decp_fr' end
-      )
-    )
-  from tmp_fr_decp_matches m
-  where af.tenant_id = m.tenant_id
-    and af.award_canonical_id = m.award_canonical_id
-    and af.end_date is null
-    and af.award_date is not null
-    and m.decp_duration_months is not null
-  returning 1
+insert into public.fr_award_enrichment_batches (
+  tenant_id,
+  batch_id,
+  source_name,
+  run_mode,
+  status,
+  notes
 )
-select count(*) as rows_updated from updated;
+values (
+  '${TENANT_ID}',
+  '${BATCH_ID}',
+  '${SOURCE_NAME}',
+  case when ${APPLY_SQL_BOOL} then 'apply' else 'dry_run' end,
+  'running',
+  jsonb_build_object(
+    'dataset', '${DATASET}',
+    'start_date', '${START_DATE}',
+    'script', 'rollout-fr-decp-enddate-enrichment.sh'
+  )
+)
+on conflict (tenant_id, batch_id) do update
+  set source_name = excluded.source_name,
+      run_mode = excluded.run_mode,
+      status = 'running',
+      notes = coalesce(public.fr_award_enrichment_batches.notes, '{}'::jsonb) || excluded.notes,
+      finished_at = null;
+
+insert into public.fr_award_enrichment_raw (
+  tenant_id,
+  batch_id,
+  source_name,
+  source_row_hash,
+  payload
+)
+select
+  m.tenant_id,
+  '${BATCH_ID}',
+  '${SOURCE_NAME}',
+  md5(concat_ws(
+    '|',
+    coalesce(m.decp_id, ''),
+    coalesce(m.decp_id_base, ''),
+    coalesce(m.decp_award_date::text, ''),
+    coalesce(m.decp_duration_months::text, ''),
+    coalesce(m.decp_amount_eur::text, ''),
+    coalesce(m.match_score::text, '')
+  )),
+  jsonb_strip_nulls(
+    jsonb_build_object(
+      'decp_id', m.decp_id,
+      'decp_id_base', m.decp_id_base,
+      'decp_award_date', m.decp_award_date,
+      'decp_duration_months', m.decp_duration_months,
+      'decp_amount_eur', m.decp_amount_eur,
+      'decp_cpv8', m.decp_cpv8,
+      'acheteur_id', m.acheteur_id,
+      'acheteur_id9', m.acheteur_id9,
+      'source_system', m.source_system,
+      'match_score', m.match_score
+    )
+  )
+from tmp_fr_decp_matches m
+on conflict (tenant_id, batch_id, source_name, source_row_hash) do nothing;
+
+insert into public.fr_award_enrichment_stage (
+  tenant_id,
+  batch_id,
+  source_name,
+  award_canonical_id,
+  source_notice_id,
+  award_date,
+  duration_months,
+  end_date_candidate,
+  source_method,
+  source_confidence,
+  source_rank,
+  evidence_url,
+  source_file,
+  raw_payload
+)
+select
+  m.tenant_id,
+  '${BATCH_ID}',
+  '${SOURCE_NAME}',
+  m.award_canonical_id,
+  m.source_notice_id,
+  m.award_date,
+  m.decp_duration_months,
+  case
+    when m.award_date is not null and m.decp_duration_months between 1 and 240
+      then (m.award_date + make_interval(months => m.decp_duration_months))::date
+    else null
+  end as end_date_candidate,
+  case
+    when m.match_score = 100 then 'decp_id_key_exact'
+    when m.match_score = 92 then 'decp_id_key_base'
+    when m.match_score = 86 then 'decp_structured_buyer_cpv_amount'
+    else 'decp_structured_buyer_title'
+  end as source_method,
+  case
+    when m.match_score >= 92 then 'high'
+    else 'medium'
+  end as source_confidence,
+  m.match_score as source_rank,
+  'https://data.economie.gouv.fr/explore/dataset/${DATASET}/' as evidence_url,
+  '${DATASET}' as source_file,
+  jsonb_strip_nulls(
+    jsonb_build_object(
+      'decp_id', m.decp_id,
+      'decp_id_base', m.decp_id_base,
+      'decp_source_system', m.source_system,
+      'decp_match_score', m.match_score,
+      'decp_acheteur_id', m.acheteur_id,
+      'decp_acheteur_id9', m.acheteur_id9,
+      'decp_award_date', m.decp_award_date,
+      'decp_amount_eur', m.decp_amount_eur,
+      'decp_duration_months', m.decp_duration_months,
+      'decp_cpv8', m.decp_cpv8
+    )
+  ) as raw_payload
+from tmp_fr_decp_matches m;
+
+update public.fr_award_enrichment_batches b
+set input_rows = (
+      select count(*)
+      from public.fr_award_enrichment_stage s
+      where s.tenant_id = '${TENANT_ID}'
+        and s.batch_id = '${BATCH_ID}'
+        and s.source_name = '${SOURCE_NAME}'
+    ),
+    notes = coalesce(b.notes, '{}'::jsonb) || jsonb_build_object(
+      'decp_rows', (select count(*) from tmp_fr_decp_norm),
+      'join_matches', (select count(*) from tmp_fr_decp_matches)
+    )
+where b.tenant_id = '${TENANT_ID}'
+  and b.batch_id = '${BATCH_ID}';
+
+\\echo 'Gate + merge summary'
+select *
+from public.civant_fr_enrichment_gate_and_merge(
+  '${TENANT_ID}',
+  '${BATCH_ID}',
+  '${SOURCE_NAME}',
+  ${APPLY_SQL_BOOL}
+);
+
+\\echo 'Batch stage status'
+select quality_status, count(*) as row_count
+from public.fr_award_enrichment_stage
+where tenant_id = '${TENANT_ID}'
+  and batch_id = '${BATCH_ID}'
+  and source_name = '${SOURCE_NAME}'
+group by quality_status
+order by quality_status;
+
+\\echo 'Batch reject reasons'
+select reject_reason, count(*) as row_count
+from public.fr_award_enrichment_rejects
+where tenant_id = '${TENANT_ID}'
+  and batch_id = '${BATCH_ID}'
+  and source_name = '${SOURCE_NAME}'
+group by reject_reason
+order by row_count desc, reject_reason
+limit 20;
+
+\\echo 'Batch metrics'
+select metric_name, metric_value
+from public.fr_award_enrichment_run_metrics
+where tenant_id = '${TENANT_ID}'
+  and batch_id = '${BATCH_ID}'
+  and source_name = '${SOURCE_NAME}'
+order by metric_name;
 
 \\echo 'Coverage in scope after update'
 select

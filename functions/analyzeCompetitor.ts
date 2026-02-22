@@ -68,6 +68,12 @@ Deno.serve(async (req) => {
         const categories = result.category_breakdown || [];
         const trend = result.yearly_trend || [];
         const contracts = result.recent_contracts || [];
+        const countryCounts = (summary.countries || {}) as Record<string, number>;
+        const activeCountries = Object.entries(countryCounts)
+            .filter(([, count]) => Number(count || 0) > 0)
+            .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
+            .map(([country]) => country);
+        const strongestRegion = activeCountries[0] || 'IE';
 
         // Determine overall trend from yearly data
         let overallTrend = 'stable';
@@ -163,8 +169,8 @@ Deno.serve(async (req) => {
                     success_rate: `${c.active_contracts} active`
                 })),
                 geographic_presence: {
-                    primary_countries: ['Ireland'],
-                    strongest_region: 'Ireland'
+                    primary_countries: activeCountries,
+                    strongest_region: strongestRegion
                 },
                 value_analysis: {
                     typical_range: `€${formatValue(summary.avg_contract_value_eur)} avg`,
