@@ -14,7 +14,7 @@ export function OnboardingProvider({ children }) {
     const [status, setStatus] = useState('loading'); // 'loading' | 'complete' | 'incomplete'
 
     const check = async () => {
-        if (!activeTenantId) { setStatus('incomplete'); return; }
+        if (!activeTenantId) return; // Stay in 'loading' — don't set incomplete
         try {
             const { data, error } = await supabase
                 .from('company_profiles')
@@ -30,14 +30,21 @@ export function OnboardingProvider({ children }) {
     };
 
     useEffect(() => {
-        if (!isLoadingTenants) check();
+        if (!isLoadingTenants) {
+            if (activeTenantId) {
+                check();
+            } else {
+                // Tenants finished loading but no active tenant — treat as incomplete
+                setStatus('incomplete');
+            }
+        }
     }, [activeTenantId, isLoadingTenants]);
 
     const refreshOnboarding = () => { check(); };
 
     return (
         <OnboardingContext.Provider value={{ onboardingComplete: status === 'complete', refreshOnboarding }}>
-            {status === 'loading' && !isLoadingTenants ? null : children}
+            {status === 'loading' ? null : children}
         </OnboardingContext.Provider>
     );
 }
@@ -46,17 +53,14 @@ export function RequireOnboarding({ children }) {
     const location = useLocation();
     const { onboardingComplete } = useOnboarding();
 
-    // Allow access to company profile page (for the wizard itself)
     const isOnboardingPage = location.pathname.toLowerCase() === '/companyprofile';
     if (isOnboardingPage) return children;
 
-    // Allow access to login and system pages
     const exempt = ['/login', '/system'];
     if (exempt.includes(location.pathname.toLowerCase())) return children;
 
     if (!onboardingComplete) {
         return <Navigate to="/companyprofile" replace />;
     }
-
     return children;
 }
