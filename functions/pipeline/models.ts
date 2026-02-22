@@ -95,6 +95,9 @@ export const PIPELINE_NAMES = {
   entityAliases: 'entity_aliases',
   tenderFeaturesWeekly: 'tender_features_weekly',
   predictions: 'predictions',
+  predictionsCurrent: 'predictions_current',
+  predictionLifecycle: 'prediction_lifecycle',
+  predictionReconciliationCandidates: 'prediction_reconciliation_candidates',
   marketSignals: 'market_signals',
   reconciliationQueue: 'reconciliation_queue'
 } as const;
