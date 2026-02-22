@@ -1,6 +1,6 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { supabase } from '@/lib/supabaseClient';
+import { civant } from '@/api/civantClient';
 import { useTenant } from '@/lib/tenant';
 
 const OnboardingContext = createContext({ onboardingComplete: false, refreshOnboarding: () => {} });
@@ -16,13 +16,13 @@ export function OnboardingProvider({ children }) {
     const check = async () => {
         if (!activeTenantId) return; // Stay in 'loading' — don't set incomplete
         try {
-            const { data, error } = await supabase
-                .from('company_profiles')
-                .select('onboarding_completed')
-                .eq('tenant_id', activeTenantId)
-                .maybeSingle();
-            if (error && error.code !== 'PGRST116') throw error;
-            setStatus(data?.onboarding_completed ? 'complete' : 'incomplete');
+            const rows = await civant.entities.company_profiles.filter(
+                { tenant_id: activeTenantId },
+                '-updated_at',
+                1
+            );
+            const profile = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+            setStatus(profile?.onboarding_completed ? 'complete' : 'incomplete');
         } catch (e) {
             console.error('Onboarding check failed:', e);
             setStatus('incomplete');

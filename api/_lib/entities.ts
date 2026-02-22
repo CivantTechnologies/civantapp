@@ -43,6 +43,7 @@ const ENTITY_TABLE_MAP: Record<string, string> = {
 };
 
 const TENANT_SCOPED_TABLES = new Set([
+  'company_profiles',
   'raw_documents',
   'ingestion_runs',
   'staging_records',
@@ -465,6 +466,9 @@ function applySort(qb: any, sortValue: string) {
 }
 
 function applyIdFilter(qb: any, tableName: string, id: string) {
+  if (tableName === 'company_profiles') {
+    return qb.eq('tenant_id', id);
+  }
   if (tableName === 'TendersCurrent') {
     return qb.eq('tender_id', id);
   }
@@ -541,6 +545,11 @@ export async function createEntity(req: DynamicRequest) {
   })();
 
   const writeOperation = (() => {
+    if (tableName === 'company_profiles') {
+      return supabase
+        .from(tableName as any)
+        .upsert(bodyWithTenant, { onConflict: 'tenant_id' });
+    }
     if (tableName === 'raw_documents') {
       return supabase
         .from(tableName as any)
