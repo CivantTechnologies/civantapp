@@ -207,7 +207,9 @@ function OnboardingWizard({ profile, onSave, saving }) {
         if (step < 2) {
             const nextStep = step + 1;
             setStep(nextStep);
-            set('onboarding_step', nextStep);
+            const updated = { ...form, onboarding_step: nextStep };
+            setForm(updated);
+            onSave(updated);
         }
     };
     const prev = () => { if (step > 0) setStep(step - 1); };
