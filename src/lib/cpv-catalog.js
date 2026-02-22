@@ -1,7 +1,7 @@
-import { getAllRaw } from 'cpv-eu';
-
 let cpvEntriesCache = null;
 let cpvByCodeCache = null;
+let cpvLoadPromise = null;
+let cpvLoadError = null;
 
 function normalizeCode(value, maxLength = 8) {
   return String(value || '')
@@ -22,10 +22,7 @@ function chooseLabel(labels, language = 'en') {
   );
 }
 
-function ensureCatalog() {
-  if (cpvEntriesCache && cpvByCodeCache) return;
-
-  const raw = getAllRaw();
+function buildCatalog(raw) {
   const entries = [];
   const byCode = new Map();
 
@@ -48,6 +45,40 @@ function ensureCatalog() {
   cpvByCodeCache = byCode;
 }
 
+function hasCatalog() {
+  return Boolean(cpvEntriesCache && cpvByCodeCache);
+}
+
+export function isCpvCatalogReady() {
+  return hasCatalog();
+}
+
+export function getCpvCatalogLoadError() {
+  return cpvLoadError;
+}
+
+export async function preloadCpvCatalog() {
+  if (hasCatalog()) return true;
+  if (cpvLoadPromise) return cpvLoadPromise;
+
+  cpvLoadPromise = (async () => {
+    const module = await import('cpv-eu');
+    const getAllRaw = module?.getAllRaw;
+    if (typeof getAllRaw !== 'function') {
+      throw new Error('cpv-eu getAllRaw export is unavailable');
+    }
+    buildCatalog(getAllRaw());
+    cpvLoadError = null;
+    return true;
+  })().catch((error) => {
+    cpvLoadError = error instanceof Error ? error : new Error('Failed to load CPV catalog');
+    cpvLoadPromise = null;
+    throw cpvLoadError;
+  });
+
+  return cpvLoadPromise;
+}
+
 function scoreEntry(entry, rawQuery, normalizedDigits, language) {
   const label = String(chooseLabel(entry.labels, language)).toLowerCase();
   const query = rawQuery.toLowerCase();
@@ -68,7 +99,7 @@ function scoreEntry(entry, rawQuery, normalizedDigits, language) {
 }
 
 export function getCpvEntryByCode(code, language = 'en') {
-  ensureCatalog();
+  if (!hasCatalog()) return null;
   const normalized = normalizeCode(code, 8);
   if (normalized.length !== 8) return null;
   const entry = cpvByCodeCache.get(normalized);
@@ -96,7 +127,7 @@ export function normalizeCpvCodeList(value) {
 }
 
 export function searchCpvCatalog(query, options = {}) {
-  ensureCatalog();
+  if (!hasCatalog()) return [];
   const language = options.language || 'en';
   const limit = Number(options.limit || 20);
   const excluded = new Set(normalizeCpvCodeList(options.excludeCodes || []));

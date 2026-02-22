@@ -1,0 +1,54 @@
+name: Pilot SLO Monitor
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    # Every 30 minutes (UTC), offset from top-of-hour.
+    - cron: "13,43 * * * *"
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install psql
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Run pilot SLO monitor
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "${SUPABASE_DB_URL}" ]; then
+            echo "Missing required secret SUPABASE_DB_URL"
+            exit 1
+          fi
+
+          psql "$SUPABASE_DB_URL" \
+            -v ON_ERROR_STOP=1 \
+            -v national_connector_max_stale_minutes=180 \
+            -v ted_connector_max_stale_minutes=1560 \
+            -v connector_failed_runs_24h_limit=10 \
+            -v predictive_signals_max_stale_minutes=45 \
+            -v predictive_incremental_max_stale_minutes=180 \
+            -v predictive_full_max_stale_minutes=2160 \
+            -v search_rpc_max_ms=7000 \
+            -f scripts/pilot-slo-monitor.sql
+
+      - name: Notify Slack on failure
+        if: ${{ failure() && secrets.SLACK_WEBHOOK_URL != '' }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          GH_REPO: ${{ github.repository }}
+          GH_RUN_ID: ${{ github.run_id }}
+          GH_REF_NAME: ${{ github.ref_name }}
+        run: |
+          RUN_URL="https://github.com/${GH_REPO}/actions/runs/${GH_RUN_ID}"
+          MESSAGE="Pilot SLO monitor failed on ${GH_REF_NAME}. Investigate: ${RUN_URL}"
+          payload=$(printf '{"text":"%s"}' "$MESSAGE")
+          curl -sS -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK_URL"

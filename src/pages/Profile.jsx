@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { UserRound, Save, Loader2, Upload, X } from 'lucide-react';
 import { civant } from '@/api/civantClient';
 import { useAuth } from '@/lib/auth';
@@ -22,9 +22,10 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import CpvCodePicker from '@/components/CpvCodePicker';
 import OptionMultiSelector from '@/components/OptionMultiSelector';
 import 'react-easy-crop/react-easy-crop.css';
+
+const CpvCodePicker = lazy(() => import('@/components/CpvCodePicker'));
 
 const PROFILE_DRAFT_VERSION = 1;
 const PROFILE_DRAFT_PREFIX = 'civant_profile_draft_v1';
@@ -942,13 +943,15 @@ export default function Profile() {
             <CardContent className="space-y-5">
               <div>
                 <Label htmlFor="cpv_interest_codes">CPV Codes of Interest</Label>
-                <CpvCodePicker
-                  value={ensureArray(form.cpv_interest_codes)}
-                  onChange={(codes) => setField('cpv_interest_codes', codes.join(', '))}
-                  placeholder="Search CPV by code or keyword (e.g. software, construction, medical)"
-                  maxSelections={30}
-                  className=""
-                />
+                <Suspense fallback={<div className="text-xs text-muted-foreground px-3 py-2 rounded-xl border border-border bg-muted/40">Loading CPV picker…</div>}>
+                  <CpvCodePicker
+                    value={ensureArray(form.cpv_interest_codes)}
+                    onChange={(codes) => setField('cpv_interest_codes', codes.join(', '))}
+                    placeholder="Search CPV by code or keyword (e.g. software, construction, medical)"
+                    maxSelections={30}
+                    className=""
+                  />
+                </Suspense>
                 <p className="mt-1 text-xs text-muted-foreground">Selected CPV codes are used for watchlists and alert scoring.</p>
               </div>
 

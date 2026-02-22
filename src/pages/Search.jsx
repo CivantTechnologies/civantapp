@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useMemo } from 'react';
 import { civant } from '@/api/civantClient';
 import { createPageUrl } from '../utils';
 import { useLocation } from 'react-router-dom';
@@ -17,7 +17,8 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { format, subDays, isAfter, addDays } from 'date-fns';
-import CpvCodePicker from '@/components/CpvCodePicker';
+
+const CpvCodePicker = lazy(() => import('@/components/CpvCodePicker'));
 
 function parseCpvFilterCodes(value) {
     const seen = new Set();
@@ -681,13 +682,15 @@ export default function Search() {
                                 
                                 <div className="sm:col-span-2 lg:col-span-2">
                                     <label className="text-xs font-medium text-slate-400 mb-1.5 block">CPV code</label>
-                                    <CpvCodePicker
-                                        value={cpvSearchCodes}
-                                        onChange={setCpvSearchCodes}
-                                        placeholder="Search CPV by code or keyword"
-                                        maxSelections={8}
-                                        className="text-sm"
-                                    />
+                                    <Suspense fallback={<div className="text-xs text-slate-400 px-3 py-2 rounded-xl border border-border bg-slate-900/40">Loading CPV filter…</div>}>
+                                        <CpvCodePicker
+                                            value={cpvSearchCodes}
+                                            onChange={setCpvSearchCodes}
+                                            placeholder="Search CPV by code or keyword"
+                                            maxSelections={8}
+                                            className="text-sm"
+                                        />
+                                    </Suspense>
                                 </div>
                                 
                                 <div>
