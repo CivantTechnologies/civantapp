@@ -3,6 +3,7 @@ import { PIPELINE_NAMES } from './models.ts';
 import { runClassifierAgent, runReconcilerAgent, runSignalsAgent } from './agents.ts';
 import { computeConfidence } from './scoring.ts';
 
+import { attach_renewal_signals, generate_renewal_predictions } from "./attach_renewal_signals.ts";
 type CivantClient = ReturnType<typeof createClientFromRequest>;
 type AnyRow = Record<string, any>;
 
@@ -551,6 +552,8 @@ export async function runPipeline(civant: CivantClient, params: {
   const features = await build_weekly_features(civant, { tenant_id: params.tenant_id });
   const signals = await attach_market_signals(civant, { run_id: params.run_id, tenant_id: params.tenant_id });
   const predictions = await generate_predictions(civant, { tenant_id: params.tenant_id, model_version: 'agentic-v1' });
+  const renewalSignals = await attach_renewal_signals(civant, { tenant_id: params.tenant_id });
+  const renewalPredictions = await generate_renewal_predictions(civant, { tenant_id: params.tenant_id, model_version: 'renewal-v1' });
 
   return {
     run_id: params.run_id,
@@ -560,6 +563,8 @@ export async function runPipeline(civant: CivantClient, params: {
     normalized,
     features,
     signals,
+    renewalSignals,
+    renewalPredictions,
     predictions
   };
 }
