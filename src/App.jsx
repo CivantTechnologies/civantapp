@@ -3,7 +3,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClientInstance } from '@/lib/query-client';
 import NavigationTracker from '@/lib/NavigationTracker';
 import { pagesConfig } from './pages.config';
-import { Suspense } from 'react';
+import { Suspense, useEffect } from 'react';
 import { BrowserRouter as Router, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/auth';
@@ -12,7 +12,7 @@ import { OnboardingProvider, RequireOnboarding } from "@/lib/OnboardingGate";
 import Login from '@/pages/Login';
 import { Button } from '@/components/ui/button';
 
-const { Pages, Layout, mainPage } = pagesConfig;
+const { Pages, Layout, mainPage, prefetchCorePages } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
 const MainPage = mainPageKey ? Pages[mainPageKey] : () => null;
 const SystemPage = Pages.System;
@@ -165,6 +165,30 @@ function ProtectedRoutes() {
 
 function AppRoutes() {
   const { isAuthenticated, isLoadingAuth } = useAuth();
+
+  useEffect(() => {
+    if (isLoadingAuth || !isAuthenticated) return;
+
+    let cancelled = false;
+    const runPrefetch = () => {
+      if (cancelled) return;
+      prefetchCorePages().catch(() => {});
+    };
+
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      const callbackId = window.requestIdleCallback(runPrefetch, { timeout: 2000 });
+      return () => {
+        cancelled = true;
+        window.cancelIdleCallback(callbackId);
+      };
+    }
+
+    const timeoutId = window.setTimeout(runPrefetch, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [isAuthenticated, isLoadingAuth]);
 
   if (isLoadingAuth) return <FullscreenLoader />;
 
