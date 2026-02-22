@@ -31,8 +31,10 @@ function createDisabledSupabase(reason) {
   };
 }
 
-export const supabase = runtimeConfig.isValid
-  ? createClient(runtimeConfig.supabaseUrl, runtimeConfig.supabaseAnonKey)
-  : createDisabledSupabase(
-      `Supabase client unavailable: ${runtimeConfig.issues.join('; ') || 'missing runtime configuration'}`
-    );
+export const supabase = /** @type {any} */ (
+  runtimeConfig.isValid
+    ? createClient(runtimeConfig.supabaseUrl, runtimeConfig.supabaseAnonKey)
+    : createDisabledSupabase(
+        `Supabase client unavailable: ${runtimeConfig.issues.join('; ') || 'missing runtime configuration'}`
+      )
+);
