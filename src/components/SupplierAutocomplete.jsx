@@ -23,7 +23,7 @@ export default function SupplierAutocomplete({ value, onChange, placeholder }) {
         if (term.length < 2) { setSuggestions([]); return; }
         setLoading(true);
         try {
-            const { data, error } = await (/** @type {any} */ (supabase)).rpc('search_suppliers', { p_term: term, p_limit: 8 });
+            const { data, error } = await supabase.rpc('search_suppliers', { p_term: term, p_limit: 8 });
             if (!error && data) {
                 setSuggestions(data);
                 setShowDrop(true);
