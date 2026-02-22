@@ -8,6 +8,7 @@ import { BrowserRouter as Router, Navigate, Route, Routes, useLocation } from 'r
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { TenantProvider } from '@/lib/tenant';
+import { OnboardingProvider, RequireOnboarding } from "@/lib/OnboardingGate";
 import Login from '@/pages/Login';
 import { Button } from '@/components/ui/button';
 
@@ -99,6 +100,7 @@ function RequireSystemRole({ children }) {
 }
 
 function ProtectedRoutes() {
+  const location = useLocation();
   const nonSystemPages = Object.entries(Pages).filter(([path]) => path !== 'System');
 
   return (
@@ -172,9 +174,9 @@ function AppRoutes() {
       <Route
         path="*"
         element={
-          <RequireAuth>
+          <RequireAuth><OnboardingProvider><RequireOnboarding>
             <ProtectedRoutes />
-          </RequireAuth>
+          </RequireOnboarding></OnboardingProvider></RequireAuth>
         }
       />
     </Routes>

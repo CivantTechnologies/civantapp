@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useOnboarding } from "@/lib/OnboardingGate";
 import SupplierAutocomplete from '@/components/SupplierAutocomplete';
 
 const BUYER_TYPES = [
@@ -619,6 +620,7 @@ function ProfileTabs({ profile, onSave, saving }) {
 
 export default function CompanyProfile() {
     const { activeTenantId, isLoadingTenants } = useTenant();
+    const { refreshOnboarding } = useOnboarding();
     const [profile, setProfile] = useState(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -657,6 +659,7 @@ export default function CompanyProfile() {
                 .upsert(payload, { onConflict: 'tenant_id' });
             if (error) throw error;
             setProfile(payload);
+            if (payload.onboarding_completed) refreshOnboarding();
             setSaveMsg('Saved successfully');
             setTimeout(() => setSaveMsg(''), 3000);
         } catch (e) {
