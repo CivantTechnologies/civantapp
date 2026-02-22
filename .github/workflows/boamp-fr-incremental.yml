@@ -2,8 +2,8 @@ name: "BOAMP FR Incremental Sync"
 
 on:
   schedule:
-    # Daily at 05:45 UTC.
-    - cron: "45 5 * * *"
+    # Daily fallback heavy run at 03:07 UTC (backup to 15m monitor).
+    - cron: "7 3 * * *"
   workflow_dispatch:
     inputs:
       tenant_id:
@@ -24,7 +24,7 @@ on:
         default: "30"
 
 concurrency:
-  group: "boamp-fr-incremental"
+  group: "national-15m-boamp"
   cancel-in-progress: false
 
 permissions:

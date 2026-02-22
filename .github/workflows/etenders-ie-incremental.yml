@@ -2,8 +2,8 @@ name: "ETenders IE Incremental Sync"
 
 on:
   schedule:
-    # Daily at 05:15 UTC.
-    - cron: "15 5 * * *"
+    # Daily fallback heavy run at 03:12 UTC (backup to 15m monitor).
+    - cron: "12 3 * * *"
   workflow_dispatch:
     inputs:
       tenant_id:
@@ -20,7 +20,7 @@ on:
         default: "false"
 
 concurrency:
-  group: "etenders-ie-incremental"
+  group: "national-15m-etenders"
   cancel-in-progress: false
 
 permissions:
