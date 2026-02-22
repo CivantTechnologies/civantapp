@@ -2,8 +2,8 @@ name: "PLACSP ES Incremental Sync"
 
 on:
   schedule:
-    # Daily at 06:15 UTC.
-    - cron: "15 6 * * *"
+    # Daily fallback heavy run at 03:17 UTC (backup to 15m monitor).
+    - cron: "17 3 * * *"
   workflow_dispatch:
     inputs:
       tenant_id:
@@ -24,7 +24,7 @@ on:
         default: "40"
 
 concurrency:
-  group: "placsp-es-incremental"
+  group: "national-15m-placsp"
   cancel-in-progress: false
 
 permissions:

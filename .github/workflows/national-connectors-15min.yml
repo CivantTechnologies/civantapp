@@ -1,52 +1,49 @@
-name: "TED Incremental Sync"
+name: "National Connectors 15m Monitor"
 
 on:
   schedule:
-    # Daily at 09:00 UTC.
-    - cron: "0 9 * * *"
+    # Every 15 minutes (UTC).
+    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       tenant_id:
         description: "Tenant id (defaults to civant_default)"
         required: false
         default: "civant_default"
-      start_date:
-        description: "Optional start date (YYYY-MM-DD). Leave blank to use stored cursor."
+      connector:
+        description: "Optional single connector (boamp|etenders|placsp). Leave blank for all."
         required: false
         default: ""
-      dry_run:
-        description: "Dry run (true/false)"
+      force_heavy:
+        description: "Force heavy sync even if detector finds no changes (true/false)"
         required: false
         default: "false"
-      countries:
-        description: "Comma-separated ISO3 countries"
-        required: false
-        default: "IRL,FRA,ESP"
-      max_pages:
-        description: "Max TED pages per country per run"
-        required: false
-        default: "40"
-
-concurrency:
-  group: "ted-incremental"
-  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  sync:
+  monitor-and-sync:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        connector: [boamp, etenders, placsp]
+
+    concurrency:
+      group: "national-15m-${{ matrix.connector }}"
+      cancel-in-progress: false
+
+    if: ${{ github.event_name == 'schedule' || github.event.inputs.connector == '' || github.event.inputs.connector == matrix.connector }}
 
     env:
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_POOLER_URL || secrets.SUPABASE_DB_URL }}
       CIVANT_TENANT_ID: ${{ secrets.CIVANT_TENANT_ID }}
       DISPATCH_TENANT_ID: ${{ github.event.inputs.tenant_id }}
-      DISPATCH_START_DATE: ${{ github.event.inputs.start_date }}
-      DISPATCH_DRY_RUN: ${{ github.event.inputs.dry_run }}
-      DISPATCH_COUNTRIES: ${{ github.event.inputs.countries }}
-      DISPATCH_MAX_PAGES: ${{ github.event.inputs.max_pages }}
+      DISPATCH_FORCE_HEAVY: ${{ github.event.inputs.force_heavy }}
+      API_BASE_URL: https://civantapp.vercel.app
+      APP_ID: civantapp
       PSQL_BIN: psql
 
     steps:
@@ -63,22 +60,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      - name: Run TED incremental sync
+      - name: Validate DB URL
         shell: bash
         run: |
           set -euo pipefail
-
-          TENANT_ID="${CIVANT_TENANT_ID:-${DISPATCH_TENANT_ID:-civant_default}}"
-          START_DATE="${DISPATCH_START_DATE:-}"
-          DRY_RUN="${DISPATCH_DRY_RUN:-false}"
-          COUNTRIES="${DISPATCH_COUNTRIES:-IRL,FRA,ESP}"
-          MAX_PAGES="${DISPATCH_MAX_PAGES:-40}"
-
           if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
             echo "ERROR: SUPABASE_DB_URL secret is required."
             exit 1
           fi
-
           if [[ "${SUPABASE_DB_URL}" != *"sslmode=require"* ]]; then
             if [[ "${SUPABASE_DB_URL}" == *"?"* ]]; then
               SUPABASE_DB_URL="${SUPABASE_DB_URL}&sslmode=require"
@@ -86,18 +75,25 @@ jobs:
               SUPABASE_DB_URL="${SUPABASE_DB_URL}?sslmode=require"
             fi
           fi
-          export SUPABASE_DB_URL
+          echo "SUPABASE_DB_URL=${SUPABASE_DB_URL}" >> "$GITHUB_ENV"
 
-          export COUNTRIES MAX_PAGES
+      - name: Run detector + conditional heavy sync (${{ matrix.connector }})
+        shell: bash
+        run: |
+          set -euo pipefail
+          TENANT_ID="${CIVANT_TENANT_ID:-${DISPATCH_TENANT_ID:-civant_default}}"
+          FORCE_HEAVY="${DISPATCH_FORCE_HEAVY:-false}"
+
+          # Retry once for transient source/API errors.
           for attempt in 1 2; do
-            if ./scripts/rollout-ted-incremental.sh "${TENANT_ID}" "${START_DATE}" "${DRY_RUN}"; then
+            if FORCE_HEAVY="${FORCE_HEAVY}" ./scripts/run-national-connector-check-and-sync.sh "${{ matrix.connector }}" "${TENANT_ID}"; then
               exit 0
             fi
-            echo "WARN: TED incremental attempt ${attempt}/2 failed."
+            echo "WARN: connector=${{ matrix.connector }} attempt=${attempt}/2 failed."
             if [[ "${attempt}" -lt 2 ]]; then
-              sleep 15
+              sleep 20
             fi
           done
 
-          echo "ERROR: TED incremental failed after 2 attempts."
+          echo "ERROR: connector=${{ matrix.connector }} failed after retries."
           exit 1
