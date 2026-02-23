@@ -306,7 +306,7 @@ export default function Predictions() {
     try {
       await loadProfile();
       const { data, error } = await supabase
-        .rpc('get_tenant_predictions', { p_tenant_id: activeTenantId });
+        .rpc('get_tenant_predictions', { p_tenant_id: activeTenantId }).range(0, 4999);
 
       if (error) {
         console.warn('get_tenant_predictions RPC unavailable:', error.message);
