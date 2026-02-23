@@ -1,9 +1,13 @@
-import React, { Suspense, lazy, useState, useEffect, useMemo } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useMemo, useCallback } from 'react';
 import { civant } from '@/api/civantClient';
 import { createPageUrl } from '../utils';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useTenant } from '@/lib/tenant';
 import { useAuth } from '@/lib/auth';
+import {
+    isCompanyScopeFilterTemporarilyDisabled,
+    setCompanyScopeFilterTemporarilyDisabled
+} from '@/lib/companyScopeSession';
 import { 
     Search as SearchIcon, 
     Filter,
@@ -19,6 +23,64 @@ import { Switch } from '@/components/ui/switch';
 import { format, subDays, isAfter, addDays } from 'date-fns';
 
 const CpvCodePicker = lazy(() => import('@/components/CpvCodePicker'));
+
+const CATEGORY_TO_PROFILE_CLUSTER = {
+    cluster_digital: 'cluster_it_software',
+    cluster_it_software: 'cluster_it_software',
+    cluster_professional_services: 'cluster_consulting',
+    cluster_consulting: 'cluster_consulting',
+    cluster_construction: 'cluster_construction',
+    cluster_facilities: 'cluster_facilities_maintenance',
+    cluster_facilities_maintenance: 'cluster_facilities_maintenance',
+    cluster_health: 'cluster_health_medical',
+    cluster_health_medical: 'cluster_health_medical',
+    cluster_education: 'cluster_education_training',
+    cluster_education_training: 'cluster_education_training',
+    cluster_transport: 'cluster_transport',
+    cluster_food: 'cluster_food_catering',
+    cluster_food_catering: 'cluster_food_catering',
+    cluster_energy: 'cluster_energy_environment',
+    cluster_energy_environment: 'cluster_energy_environment',
+    cluster_environment: 'cluster_energy_environment',
+    cluster_communications: 'cluster_communications_media',
+    cluster_communications_media: 'cluster_communications_media',
+    cluster_finance: 'cluster_financial_legal',
+    cluster_financial_legal: 'cluster_financial_legal',
+    cluster_legal: 'cluster_financial_legal',
+    cluster_manufacturing: 'cluster_manufacturing',
+    cluster_defence: 'cluster_defence_security',
+    cluster_defence_security: 'cluster_defence_security',
+    cluster_security: 'cluster_defence_security',
+    cluster_research: 'cluster_research'
+};
+
+function normalizeScopeCategory(category) {
+    if (!category) return null;
+    const raw = String(category).trim();
+    if (!raw) return null;
+    const key = raw in CATEGORY_TO_PROFILE_CLUSTER ? raw : raw.toLowerCase();
+    return CATEGORY_TO_PROFILE_CLUSTER[key] || null;
+}
+
+function tenderMatchesCompanyScope(tender, profile) {
+    if (!profile) return true;
+
+    const clusters = Array.isArray(profile.target_cpv_clusters) ? profile.target_cpv_clusters : [];
+    const countries = Array.isArray(profile.target_countries) ? profile.target_countries : [];
+    const minValue = Number(profile.contract_size_min_eur || 0);
+    const maxValue = Number(profile.contract_size_max_eur || 0);
+
+    const rowCountry = String(tender.country || '').toUpperCase();
+    if (countries.length > 0 && rowCountry && !countries.includes(rowCountry)) return false;
+
+    const normalizedCluster = normalizeScopeCategory(tender.cpv_cluster || tender.category);
+    if (clusters.length > 0 && normalizedCluster && !clusters.includes(normalizedCluster)) return false;
+
+    const amount = Number(tender.value_eur || tender.total_value_eur || tender.estimated_value_eur || 0);
+    if (minValue > 0 && amount > 0 && amount < minValue) return false;
+    if (maxValue > 0 && amount > 0 && amount > maxValue) return false;
+    return true;
+}
 
 function parseCpvFilterCodes(value) {
     const seen = new Set();
@@ -178,8 +240,12 @@ export default function Search() {
     const [loading, setLoading] = useState(false);
     const [showFilters, setShowFilters] = useState(false);
     const [searchMeta, setSearchMeta] = useState(null);
+    const [companyProfile, setCompanyProfile] = useState(null);
     const { activeTenantId, isLoadingTenants } = useTenant();
     const { roles } = useAuth();
+    const [scopeFilterTemporarilyDisabled, setScopeFilterTemporarilyDisabledState] = useState(() => (
+        isCompanyScopeFilterTemporarilyDisabled(activeTenantId)
+    ));
     
     // Filters
     const [keyword, setKeyword] = useState('');
@@ -195,13 +261,37 @@ export default function Search() {
     const [sortBy, setSortBy] = useState('relevance');
     const [appliedFilters, setAppliedFilters] = useState(() => normalizeFilterSnapshot(DEFAULT_FILTERS));
     const [lastSearchAt, setLastSearchAt] = useState(null);
+    const persistedScopeFilterEnabled = companyProfile?.company_scope_filter_enabled !== false;
+    const companyScopeFilteringActive = persistedScopeFilterEnabled && !scopeFilterTemporarilyDisabled;
+
+    useEffect(() => {
+        setScopeFilterTemporarilyDisabledState(isCompanyScopeFilterTemporarilyDisabled(activeTenantId));
+    }, [activeTenantId]);
+
+    const loadCompanyProfile = useCallback(async () => {
+        if (!activeTenantId) return;
+        try {
+            const rows = await civant.entities.company_profiles.filter(
+                { tenant_id: activeTenantId },
+                '-updated_at',
+                1,
+                'target_cpv_clusters,target_countries,contract_size_min_eur,contract_size_max_eur,company_scope_filter_enabled'
+            );
+            const profile = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+            setCompanyProfile(profile || null);
+        } catch (error) {
+            console.error('Failed to load company profile for scope mode:', error);
+            setCompanyProfile(null);
+        }
+    }, [activeTenantId]);
     
     useEffect(() => {
         if (isLoadingTenants) return;
         if (!activeTenantId) return;
+        void loadCompanyProfile();
         setLoading(true);
         void loadTenders(appliedFilters, DEFAULT_LOAD_LIMIT);
-    }, [activeTenantId, isLoadingTenants]);
+    }, [activeTenantId, isLoadingTenants, loadCompanyProfile]);
 
     useEffect(() => {
         const params = new URLSearchParams(location.search);
@@ -270,7 +360,7 @@ export default function Search() {
     
     useEffect(() => {
         applyFilters(appliedFilters);
-    }, [tenders, appliedFilters]);
+    }, [tenders, appliedFilters, companyProfile, companyScopeFilteringActive]);
 
     const getTenderPublicationDate = (tender) =>
         tender.publication_date || tender.published_at || tender.first_seen_at || tender.last_seen_at || tender.updated_at;
@@ -492,6 +582,16 @@ export default function Search() {
             });
         }
 
+        if (companyProfile) {
+            const scoped = filtered.map((tender) => ({
+                ...tender,
+                __scopeMatch: tenderMatchesCompanyScope(tender, companyProfile)
+            }));
+            filtered = companyScopeFilteringActive
+                ? scoped.filter((tender) => tender.__scopeMatch)
+                : scoped;
+        }
+
         const ranked = [...filtered];
         ranked.sort((a, b) => {
             if (filters.sortBy === 'published_desc') {
@@ -506,6 +606,11 @@ export default function Search() {
                 return left.getTime() - right.getTime();
             }
 
+            if (!companyScopeFilteringActive && companyProfile) {
+                const scopeDiff = Number(Boolean(b.__scopeMatch)) - Number(Boolean(a.__scopeMatch));
+                if (scopeDiff !== 0) return scopeDiff;
+            }
+
             const leftScore = Number(a.relevance_score || 0);
             const rightScore = Number(b.relevance_score || 0);
             if (rightScore !== leftScore) return rightScore - leftScore;
@@ -516,6 +621,16 @@ export default function Search() {
         });
         
         setFilteredTenders(ranked);
+    };
+
+    const clearScopeFilterTemporarily = () => {
+        setCompanyScopeFilterTemporarilyDisabled(activeTenantId, true);
+        setScopeFilterTemporarilyDisabledState(true);
+    };
+
+    const restoreScopeFilter = () => {
+        setCompanyScopeFilterTemporarilyDisabled(activeTenantId, false);
+        setScopeFilterTemporarilyDisabledState(false);
     };
     
     const clearFilters = () => {
@@ -593,6 +708,28 @@ export default function Search() {
                 <h1 className="text-2xl font-bold text-slate-100">Search Tenders</h1>
                 <p className="text-slate-400 mt-1">Find procurement opportunities matching your criteria</p>
             </div>
+
+            {companyProfile && companyScopeFilteringActive ? (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <span>Filtered by Company Scope</span>
+                    <Link to={createPageUrl('Company?tab=personalization')} className="text-cyan-300 hover:underline">Edit scope</Link>
+                    <button type="button" onClick={clearScopeFilterTemporarily} className="text-cyan-300 hover:underline">Clear temporarily</button>
+                </div>
+            ) : null}
+
+            {companyProfile && persistedScopeFilterEnabled && scopeFilterTemporarilyDisabled ? (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <span>Company scope filter temporarily cleared for this session.</span>
+                    <button type="button" onClick={restoreScopeFilter} className="text-cyan-300 hover:underline">Turn back on</button>
+                </div>
+            ) : null}
+
+            {companyProfile && !persistedScopeFilterEnabled ? (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <span>Full market view active. Company scope is used to prioritize and highlight.</span>
+                    <Link to={createPageUrl('Company?tab=personalization')} className="text-cyan-300 hover:underline">Edit scope behavior</Link>
+                </div>
+            ) : null}
             
             {/* Search Bar */}
             <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
@@ -953,6 +1090,11 @@ export default function Search() {
                                                                     Updated
                                                                 </Badge>
                                                             )}
+                                                            {!companyScopeFilteringActive && companyProfile && tender.__scopeMatch ? (
+                                                                <Badge className="bg-civant-teal/10 text-civant-teal border-civant-teal/30 text-xs">
+                                                                    Scope match
+                                                                </Badge>
+                                                            ) : null}
                                                         </div>
                                                     </div>
                                                 </div>

@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { civant } from '@/api/civantClient';
 import { useTenant } from '@/lib/tenant';
+import { useAuth } from '@/lib/auth';
+import { useLocation } from 'react-router-dom';
 import {
     Building2, CreditCard, Loader2, Save, ChevronRight, ChevronLeft,
     Check, Tag, Target
@@ -11,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useOnboarding } from "@/lib/OnboardingGate";
@@ -385,23 +388,38 @@ function OnboardingWizard({ profile, onSave, saving }) {
 
 // ===== MAIN PAGE (TABBED PROFILE) =====
 
-function ProfileTabs({ profile, onSave, saving }) {
+function ProfileTabs({ profile, onSave, saving, isOrgAdmin, initialTab = 'company' }) {
     const [form, setForm] = useState(profile);
-    const [activeTab, setActiveTab] = useState('company');
+    const [activeTab, setActiveTab] = useState(initialTab);
+    useEffect(() => {
+        setForm(profile);
+    }, [profile]);
+    useEffect(() => {
+        setActiveTab(initialTab);
+    }, [initialTab]);
     const set = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
+    const isDirty = useMemo(
+        () => JSON.stringify(form) !== JSON.stringify(profile),
+        [form, profile]
+    );
     const save = () => onSave(form);
 
     return (
-        <div className="space-y-6">
-            <div className="civant-hero flex min-h-[60vh] flex-col justify-center gap-5 py-16 md:py-20">
-                <h1 className="max-w-4xl text-4xl font-semibold tracking-tight text-slate-100 md:text-5xl">
-                    {form.company_name || 'Company profile'}
-                </h1>
-                <p className="max-w-3xl text-base text-slate-400 md:text-lg">
-                    Keep company data, targeting preferences, and account settings aligned before the next forecast cycle.
-                </p>
-                <div>
-                    <Button onClick={save} disabled={saving} className="bg-civant-teal text-slate-950 hover:bg-civant-teal/90">
+        <div className="space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="space-y-1.5">
+                    <h1 className="text-[clamp(1.7rem,2.2vw,2rem)] font-semibold tracking-tight text-slate-100">Company</h1>
+                    <p className="text-sm text-slate-400">Company profile and targeting preferences.</p>
+                    {form.company_name ? (
+                        <p className="text-xs text-slate-500">{form.company_name}</p>
+                    ) : null}
+                </div>
+                <div className="shrink-0 pt-0.5">
+                    <Button
+                        onClick={save}
+                        disabled={saving || !isDirty}
+                        className="bg-civant-teal text-slate-950 hover:bg-civant-teal/90 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
                         {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
                         Save Changes
                     </Button>
@@ -422,7 +440,7 @@ function ProfileTabs({ profile, onSave, saving }) {
                 </TabsList>
 
                 {/* ===== COMPANY INFO TAB ===== */}
-                <TabsContent value="company" className="mt-4 space-y-4">
+                <TabsContent value="company" className="mt-3 space-y-4">
                     <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none">
                         <CardContent className="p-6 space-y-4">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -462,7 +480,27 @@ function ProfileTabs({ profile, onSave, saving }) {
                 </TabsContent>
 
                 {/* ===== PERSONALIZATION TAB ===== */}
-                <TabsContent value="personalization" className="mt-4 space-y-4">
+                <TabsContent value="personalization" className="mt-3 space-y-4">
+                    {isOrgAdmin ? (
+                        <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none">
+                            <CardHeader><CardTitle className="text-base">Scope Behavior</CardTitle></CardHeader>
+                            <CardContent className="flex flex-wrap items-start justify-between gap-4">
+                                <div className="space-y-1">
+                                    <p className="text-sm font-medium text-slate-200">Use Company Scope to filter Forecast and Search</p>
+                                    {form.company_scope_filter_enabled !== false ? (
+                                        <p className="text-xs text-slate-400">ON: Results are filtered to your Company scope.</p>
+                                    ) : (
+                                        <p className="text-xs text-slate-400">OFF: Results show the full market. Scope is used to prioritize and highlight.</p>
+                                    )}
+                                </div>
+                                <Switch
+                                    checked={form.company_scope_filter_enabled !== false}
+                                    onCheckedChange={(checked) => set('company_scope_filter_enabled', checked)}
+                                />
+                            </CardContent>
+                        </Card>
+                    ) : null}
+
                     <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none">
                         <CardHeader><CardTitle className="text-base">Target Buyers</CardTitle></CardHeader>
                         <CardContent>
@@ -558,7 +596,7 @@ function ProfileTabs({ profile, onSave, saving }) {
                 </TabsContent>
 
                 {/* ===== BILLING TAB ===== */}
-                <TabsContent value="billing" className="mt-4 space-y-4">
+                <TabsContent value="billing" className="mt-3 space-y-4">
                     <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none">
                         <CardHeader><CardTitle className="text-base">Current Plan</CardTitle></CardHeader>
                         <CardContent>
@@ -623,11 +661,19 @@ function ProfileTabs({ profile, onSave, saving }) {
 
 export default function CompanyProfile() {
     const { activeTenantId, isLoadingTenants } = useTenant();
+    const { roles } = useAuth();
+    const location = useLocation();
     const { refreshOnboarding } = useOnboarding();
     const [profile, setProfile] = useState(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [saveMsg, setSaveMsg] = useState('');
+    const isOrgAdmin = Array.isArray(roles) && (roles.includes('admin') || roles.includes('creator'));
+    const initialTab = useMemo(() => {
+        const tab = new URLSearchParams(location.search).get('tab');
+        if (tab === 'personalization' || tab === 'billing' || tab === 'company') return tab;
+        return 'company';
+    }, [location.search]);
 
     const loadProfile = useCallback(async () => {
         if (!activeTenantId) return;
@@ -639,10 +685,13 @@ export default function CompanyProfile() {
                 1
             );
             const data = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
-            setProfile(data || { tenant_id: activeTenantId, company_name: '', onboarding_completed: false });
+            const hydrated = data
+                ? { ...data, company_scope_filter_enabled: data.company_scope_filter_enabled !== false }
+                : { tenant_id: activeTenantId, company_name: '', onboarding_completed: false, company_scope_filter_enabled: true };
+            setProfile(hydrated);
         } catch (e) {
             console.error('Failed to load company profile:', e);
-            setProfile({ tenant_id: activeTenantId, company_name: '', onboarding_completed: false });
+            setProfile({ tenant_id: activeTenantId, company_name: '', onboarding_completed: false, company_scope_filter_enabled: true });
         } finally {
             setLoading(false);
         }
@@ -683,7 +732,7 @@ export default function CompanyProfile() {
     }
 
     return (
-        <div className="space-y-6 max-w-5xl mx-auto">
+        <div className="mx-auto w-full max-w-[1040px] space-y-6">
             {!profile?.onboarding_completed ? (
                 <>
                     <div className="civant-hero mx-auto flex min-h-[60vh] max-w-4xl flex-col justify-center gap-5 text-center">
@@ -695,7 +744,13 @@ export default function CompanyProfile() {
                     <OnboardingWizard profile={profile} onSave={saveProfile} saving={saving} />
                 </>
             ) : (
-                <ProfileTabs profile={profile} onSave={saveProfile} saving={saving} />
+                <ProfileTabs
+                    profile={profile}
+                    onSave={saveProfile}
+                    saving={saving}
+                    isOrgAdmin={isOrgAdmin}
+                    initialTab={initialTab}
+                />
             )}
             {saveMsg && (
                 <div className={`text-center text-sm ${saveMsg.includes('Failed') ? 'text-red-400' : 'text-emerald-400'}`}>
