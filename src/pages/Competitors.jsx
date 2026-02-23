@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import SupplierAutocomplete from "@/components/SupplierAutocomplete";
+import { useLocation } from 'react-router-dom';
 
 const fmtEur = (v) => { if (!v) return '€0'; if (v >= 1e9) return `€${(v/1e9).toFixed(1)}B`; if (v >= 1e6) return `€${(v/1e6).toFixed(1)}M`; if (v >= 1e3) return `€${(v/1e3).toFixed(0)}K`; return `€${v.toLocaleString()}`; };
 const fmtCluster = (c) => c ? c.replace('cluster_','').split('_').map(w=>w[0].toUpperCase()+w.slice(1)).join(' ') : 'Unknown';
@@ -224,6 +225,7 @@ function CompetitorDashboard({ data, onClose }) {
 // Main Competitors Page
 // ============================================================
 export default function Competitors() {
+    const location = useLocation();
     const [user, setUser] = useState(null);
     const { activeTenantId } = useTenant();
     const [competitors, setCompetitors] = useState([]);
@@ -237,6 +239,15 @@ export default function Competitors() {
     const [formData, setFormData] = useState({ company_name: '', country: '', industry_sectors: '', notes: '', active: true });
 
     useEffect(() => { loadData(); }, []);
+
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        if (params.get('quickAdd') === '1') {
+            setEditingCompetitor(null);
+            resetForm();
+            setShowForm(true);
+        }
+    }, [location.search]);
 
     const loadData = async () => {
         try {

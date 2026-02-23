@@ -61,22 +61,25 @@ export default function Alerts() {
         active: true
     });
     
-    // Check URL params for prefilled data
+    // Check URL params for prefilled data / quick add
     useEffect(() => {
-        const urlParams = new URLSearchParams(window.location.search);
-        const buyer = urlParams.get('buyer');
-        const keyword = urlParams.get('keyword');
+        const params = new URLSearchParams(location.search);
+        const buyer = params.get('buyer');
+        const keyword = params.get('keyword');
+        const quickAdd = params.get('quickAdd') === '1';
         
-        if (buyer || keyword) {
+        if (buyer || keyword || quickAdd) {
             setFormData(prev => ({
                 ...prev,
                 buyer_contains: buyer || '',
                 keywords: keyword || '',
-                alert_name: `Alert for ${buyer || keyword || 'New Tender'}`
+                alert_name: quickAdd
+                    ? (prev.alert_name || 'New Alert')
+                    : `Alert for ${buyer || keyword || 'New Tender'}`
             }));
             setShowForm(true);
         }
-    }, []);
+    }, [location.search]);
     
     useEffect(() => {
         loadData();

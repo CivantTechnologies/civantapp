@@ -12,10 +12,21 @@ import { OnboardingProvider, RequireOnboarding } from "@/lib/OnboardingGate";
 import Login from '@/pages/Login';
 import { Button } from '@/components/ui/button';
 
-const { Pages, Layout, mainPage, prefetchCorePages } = pagesConfig;
-const mainPageKey = mainPage ?? Object.keys(Pages)[0];
-const MainPage = mainPageKey ? Pages[mainPageKey] : () => null;
+const { Pages, Layout, prefetchCorePages } = pagesConfig;
+const HomePage = Pages.Home;
+const ForecastPage = Pages.Forecast;
+const CompetitorsPage = Pages.Competitors;
+const CompanyProfilePage = Pages.CompanyProfile;
+const IntegrationsPage = Pages.Integrations;
+const ProfilePage = Pages.Profile;
+const SearchPage = Pages.Search;
+const AlertsPage = Pages.Alerts;
+const InsightsPage = Pages.Insights;
+const ConnectorsPage = Pages.Connectors;
+const PipelineAdminPage = Pages.PipelineAdmin;
+const ArchitecturePage = Pages.Architecture;
 const SystemPage = Pages.System;
+const TenderDetailPage = Pages.TenderDetail;
 
 const LayoutWrapper = ({ children, currentPageName }) => Layout
   ? <Layout currentPageName={currentPageName}>{children}</Layout>
@@ -32,11 +43,13 @@ function FullscreenLoader() {
 
 function AccessDeniedPage() {
   return (
-    <LayoutWrapper currentPageName="System">
+    <LayoutWrapper currentPageName="Operations">
       <div className="min-h-[40vh] flex items-center justify-center">
         <div className="max-w-md rounded-xl border border-border bg-card p-8 text-center space-y-2">
           <h1 className="text-xl font-semibold text-card-foreground">Not authorised</h1>
-          <p className="text-sm text-muted-foreground">You do not have permission to access System settings.</p>
+          <p className="text-sm text-muted-foreground">
+            You do not have permission to access Operations pages.
+          </p>
         </div>
       </div>
     </LayoutWrapper>
@@ -60,17 +73,17 @@ function RequireAuth({ children }) {
   return children;
 }
 
-function RequireSystemRole({ children }) {
+function RequireOperationsRole({ children }) {
   const { isLoadingAuth, profileStatus, roles, authWarning, retryProfile, logout } = useAuth();
 
   if (isLoadingAuth) return <FullscreenLoader />;
   if (profileStatus === 'loading' || profileStatus === 'idle') {
     return (
-      <LayoutWrapper currentPageName="System">
+      <LayoutWrapper currentPageName="Operations">
         <div className="min-h-[40vh] flex items-center justify-center">
           <div className="max-w-md rounded-xl border border-border bg-card p-8 text-center space-y-2">
             <h1 className="text-xl font-semibold text-card-foreground">Checking permissions</h1>
-            <p className="text-sm text-muted-foreground">Validating your role for System settings.</p>
+            <p className="text-sm text-muted-foreground">Validating your role for Operations.</p>
           </div>
         </div>
       </LayoutWrapper>
@@ -78,7 +91,7 @@ function RequireSystemRole({ children }) {
   }
   if (profileStatus !== 'ready') {
     return (
-      <LayoutWrapper currentPageName="System">
+      <LayoutWrapper currentPageName="Operations">
         <div className="min-h-[40vh] flex items-center justify-center px-4">
           <div className="max-w-md rounded-xl border border-border bg-card p-8 text-center space-y-3">
             <h1 className="text-xl font-semibold text-card-foreground">Role check unavailable</h1>
@@ -94,69 +107,212 @@ function RequireSystemRole({ children }) {
       </LayoutWrapper>
     );
   }
-  const allowed = Array.isArray(roles) && (roles.includes('admin') || roles.includes('creator'));
+  const allowed = Array.isArray(roles) && roles.includes('super_admin');
   if (!allowed) return <AccessDeniedPage />;
   return children;
 }
 
 function ProtectedRoutes() {
-  const location = useLocation();
-  const nonSystemPages = Object.entries(Pages).filter(([path]) => path !== 'System');
-
   return (
     <Routes>
       <Route
         path="/"
         element={
-          <LayoutWrapper currentPageName={mainPageKey}>
+          <LayoutWrapper currentPageName="Home">
             <Suspense fallback={<RouteLoader />}>
-              <MainPage />
+              <HomePage />
+            </Suspense>
+          </LayoutWrapper>
+        }
+      />
+
+      <Route path="/home" element={<Navigate to="/" replace />} />
+      <Route path="/Home" caseSensitive element={<Navigate to="/" replace />} />
+
+      <Route
+        path="/forecast"
+        element={
+          <LayoutWrapper currentPageName="Forecast">
+            <Suspense fallback={<RouteLoader />}>
+              <ForecastPage />
+            </Suspense>
+          </LayoutWrapper>
+        }
+      />
+      <Route path="/Predictions" caseSensitive element={<Navigate to="/forecast" replace />} />
+      <Route path="/predictions" element={<Navigate to="/forecast" replace />} />
+
+      <Route
+        path="/competitors"
+        element={
+          <LayoutWrapper currentPageName="Competitors">
+            <Suspense fallback={<RouteLoader />}>
+              <CompetitorsPage />
             </Suspense>
           </LayoutWrapper>
         }
       />
 
       <Route
-        path="/system"
+        path="/company"
         element={
-          <RequireSystemRole>
-            <LayoutWrapper currentPageName="System">
+          <LayoutWrapper currentPageName="Company">
+            <Suspense fallback={<RouteLoader />}>
+              <CompanyProfilePage />
+            </Suspense>
+          </LayoutWrapper>
+        }
+      />
+
+      <Route
+        path="/company/integrations"
+        element={
+          <LayoutWrapper currentPageName="Company">
+            <Suspense fallback={<RouteLoader />}>
+              <IntegrationsPage />
+            </Suspense>
+          </LayoutWrapper>
+        }
+      />
+
+      <Route
+        path="/company/profile"
+        element={
+          <LayoutWrapper currentPageName="Company">
+            <Suspense fallback={<RouteLoader />}>
+              <ProfilePage />
+            </Suspense>
+          </LayoutWrapper>
+        }
+      />
+
+      <Route
+        path="/operations"
+        element={
+          <RequireOperationsRole>
+            <Navigate to="/operations/connectors" replace />
+          </RequireOperationsRole>
+        }
+      />
+      <Route
+        path="/operations/connectors"
+        element={
+          <RequireOperationsRole>
+            <LayoutWrapper currentPageName="Operations">
+              <Suspense fallback={<RouteLoader />}>
+                <ConnectorsPage />
+              </Suspense>
+            </LayoutWrapper>
+          </RequireOperationsRole>
+        }
+      />
+
+      <Route
+        path="/operations/pipeline"
+        element={
+          <RequireOperationsRole>
+            <LayoutWrapper currentPageName="Operations">
+              <Suspense fallback={<RouteLoader />}>
+                <PipelineAdminPage />
+              </Suspense>
+            </LayoutWrapper>
+          </RequireOperationsRole>
+        }
+      />
+
+      <Route
+        path="/operations/architecture"
+        element={
+          <RequireOperationsRole>
+            <LayoutWrapper currentPageName="Operations">
+              <Suspense fallback={<RouteLoader />}>
+                <ArchitecturePage />
+              </Suspense>
+            </LayoutWrapper>
+          </RequireOperationsRole>
+        }
+      />
+
+      <Route
+        path="/operations/system"
+        element={
+          <RequireOperationsRole>
+            <LayoutWrapper currentPageName="Operations">
               <Suspense fallback={<RouteLoader />}>
                 <SystemPage />
               </Suspense>
             </LayoutWrapper>
-          </RequireSystemRole>
+          </RequireOperationsRole>
         }
       />
-      <Route path="/System" caseSensitive element={<Navigate to="/system" replace />} />
 
-      <Route path="/Predictions" caseSensitive element={<Navigate to="/forecast" replace />} />
-      <Route path="/predictions" element={<Navigate to="/forecast" replace />} />
+      <Route
+        path="/workbench/search"
+        element={
+          <LayoutWrapper currentPageName="Home">
+            <Suspense fallback={<RouteLoader />}>
+              <SearchPage />
+            </Suspense>
+          </LayoutWrapper>
+        }
+      />
 
-      {nonSystemPages
-        .filter(([path]) => path !== path.toLowerCase())
-        .map(([path]) => (
-          <Route
-            key={`legacy-${path}`}
-            path={`/${path}`}
-            caseSensitive
-            element={<Navigate to={`/${path.toLowerCase()}`} replace />}
-          />
-        ))}
+      <Route
+        path="/workbench/alerts"
+        element={
+          <LayoutWrapper currentPageName="Home">
+            <Suspense fallback={<RouteLoader />}>
+              <AlertsPage />
+            </Suspense>
+          </LayoutWrapper>
+        }
+      />
 
-      {nonSystemPages.map(([path, Page]) => (
-        <Route
-          key={path}
-          path={`/${path.toLowerCase()}`}
-          element={
-            <LayoutWrapper currentPageName={path}>
-              <Suspense fallback={<RouteLoader />}>
-                <Page />
-              </Suspense>
-            </LayoutWrapper>
-          }
-        />
-      ))}
+      <Route
+        path="/workbench/insights"
+        element={
+          <LayoutWrapper currentPageName="Home">
+            <Suspense fallback={<RouteLoader />}>
+              <InsightsPage />
+            </Suspense>
+          </LayoutWrapper>
+        }
+      />
+
+      <Route
+        path="/tenderdetail"
+        element={
+          <LayoutWrapper currentPageName="Home">
+            <Suspense fallback={<RouteLoader />}>
+              <TenderDetailPage />
+            </Suspense>
+          </LayoutWrapper>
+        }
+      />
+
+      <Route path="/alerts" element={<Navigate to="/?openNotifications=1" replace />} />
+      <Route path="/search" element={<Navigate to="/?openSearch=1" replace />} />
+      <Route path="/insights" element={<Navigate to="/" replace />} />
+      <Route path="/integrations" element={<Navigate to="/company/integrations" replace />} />
+      <Route path="/connectors" element={<Navigate to="/operations/connectors" replace />} />
+      <Route path="/pipeline" element={<Navigate to="/operations/pipeline" replace />} />
+      <Route path="/pipelineadmin" element={<Navigate to="/operations/pipeline" replace />} />
+      <Route path="/architecture" element={<Navigate to="/operations/architecture" replace />} />
+      <Route path="/system" element={<Navigate to="/operations/system" replace />} />
+      <Route path="/profile" element={<Navigate to="/company" replace />} />
+      <Route path="/companyprofile" element={<Navigate to="/company" replace />} />
+
+      <Route path="/Alerts" caseSensitive element={<Navigate to="/?openNotifications=1" replace />} />
+      <Route path="/Search" caseSensitive element={<Navigate to="/?openSearch=1" replace />} />
+      <Route path="/Insights" caseSensitive element={<Navigate to="/" replace />} />
+      <Route path="/Integrations" caseSensitive element={<Navigate to="/company/integrations" replace />} />
+      <Route path="/Connectors" caseSensitive element={<Navigate to="/operations/connectors" replace />} />
+      <Route path="/PipelineAdmin" caseSensitive element={<Navigate to="/operations/pipeline" replace />} />
+      <Route path="/Pipeline" caseSensitive element={<Navigate to="/operations/pipeline" replace />} />
+      <Route path="/Architecture" caseSensitive element={<Navigate to="/operations/architecture" replace />} />
+      <Route path="/System" caseSensitive element={<Navigate to="/operations/system" replace />} />
+      <Route path="/Profile" caseSensitive element={<Navigate to="/company" replace />} />
+      <Route path="/CompanyProfile" caseSensitive element={<Navigate to="/company" replace />} />
 
       <Route path="*" element={<PageNotFound />} />
     </Routes>
