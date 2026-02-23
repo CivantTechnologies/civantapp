@@ -1,432 +1,625 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { civant } from '@/api/civantClient';
-import { supabase } from "@/lib/supabaseClient";
-import { useTenant } from "@/lib/tenant";
-import { Users, Plus, Edit2, Trash2, Loader2, Target, TrendingUp, TrendingDown, Minus, Sparkles, Trophy, AlertCircle, CheckCircle2, MapPin, ArrowRight } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { supabase } from '@/lib/supabaseClient';
+import { useTenant } from '@/lib/tenant';
+import { ArrowLeft, Edit2, Loader2, MapPin, Plus, Trash2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
+import SupplierAutocomplete from '@/components/SupplierAutocomplete';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import SupplierAutocomplete from "@/components/SupplierAutocomplete";
-import { useLocation } from 'react-router-dom';
+import { Textarea } from '@/components/ui/textarea';
+import { createPageUrl } from '@/utils';
 
-const fmtEur = (v) => { if (!v) return '€0'; if (v >= 1e9) return `€${(v/1e9).toFixed(1)}B`; if (v >= 1e6) return `€${(v/1e6).toFixed(1)}M`; if (v >= 1e3) return `€${(v/1e3).toFixed(0)}K`; return `€${v.toLocaleString()}`; };
-const fmtCluster = (c) => c ? c.replace('cluster_','').split('_').map(w=>w[0].toUpperCase()+w.slice(1)).join(' ') : 'Unknown';
-
-const IncumbentBadge = ({strength}) => {
-    const m = { strong_incumbent: ['bg-emerald-500/15 text-emerald-300 border border-emerald-400/40','Strong incumbent'], moderate_incumbent: ['bg-amber-500/15 text-amber-300 border border-amber-400/40','Competitive renewal'], low_lock_in: ['bg-red-500/15 text-red-300 border border-red-400/40','Low incumbent lock-in'] };
-    const [cls, label] = m[strength] || ['',''];
-    return <Badge className={`text-xs ${cls}`}>{label}</Badge>;
+const fmtEur = (v) => {
+  if (!v) return '€0';
+  if (v >= 1e9) return `€${(v / 1e9).toFixed(1)}B`;
+  if (v >= 1e6) return `€${(v / 1e6).toFixed(1)}M`;
+  if (v >= 1e3) return `€${(v / 1e3).toFixed(0)}K`;
+  return `€${Number(v).toLocaleString()}`;
 };
 
-const StrengthBadge = ({strength}) => {
-    const m = { strong: 'bg-emerald-500/15 text-emerald-300 border border-emerald-400/40', moderate: 'bg-amber-500/15 text-amber-300 border border-amber-400/40', emerging: 'bg-slate-700/50 text-slate-300 border border-slate-500/40' };
-    return <Badge className={`text-xs ${m[strength]||''}`}>{strength}</Badge>;
+const fmtCluster = (c) => {
+  if (!c) return 'Unknown';
+  return c.replace('cluster_', '').split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
 };
 
-function CompetitorDashboard({ data, onClose }) {
-    const { summary, renewal_opportunities=[], buyer_relationships=[], category_breakdown=[], yearly_trend=[], recent_contracts=[], trading_names=[], analysis, trend } = data;
-    if (!summary) return <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none"><CardHeader><div className="flex justify-between"><CardTitle>{data.company_name}</CardTitle><Button variant="outline" size="sm" onClick={onClose}>Close</Button></div></CardHeader><CardContent><p className="text-slate-400">{data.found_tenders} tenders found. {data.message||''}</p></CardContent></Card>;
+const countryLabel = (country) => {
+  if (!country) return null;
+  if (country === 'both') return 'IE & FR';
+  if (country === 'FR') return 'France';
+  if (country === 'ES') return 'Spain';
+  if (country === 'IE') return 'Ireland';
+  return country;
+};
 
-    return (
-        <div className="space-y-6">
-            {/* Minimal Header */}
-            <div className="flex items-start justify-between">
-                <div className="space-y-1.5">
-                    <div className="flex items-center gap-3">
-                        <h2 className="text-2xl font-semibold text-slate-100 uppercase tracking-wider">{data.company_name}</h2>
-                        {summary.expiring_12m > 0 && (
-                            <Badge className="bg-civant-teal/15 text-civant-teal border border-civant-teal/40 text-xs font-medium">{summary.expiring_12m} renewal{summary.expiring_12m !== 1 ? 's' : ''} · {fmtEur(renewal_opportunities.reduce((s,r) => s+(r.value_eur||0),0))}</Badge>
-                        )}
-                    </div>
+function buildCompetitorAnalysis(companyName, data) {
+  const summary = data?.summary;
+  const categories = data?.category_breakdown || [];
+  const buyers = data?.buyer_relationships || [];
+  const renewals = data?.renewal_opportunities || [];
+  const trendData = data?.yearly_trend || [];
 
-                </div>
-                <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
-            </div>
+  let overallTrend = 'stable';
+  if (trendData.length >= 3) {
+    const recent = trendData.slice(-2);
+    const earlier = trendData.slice(-4, -2);
+    const recentAvg = recent.reduce((s, t) => s + t.awards, 0) / recent.length;
+    const earlierAvg = earlier.length > 0 ? earlier.reduce((s, t) => s + t.awards, 0) / earlier.length : recentAvg;
+    if (recentAvg > earlierAvg * 1.2) overallTrend = 'growing';
+    else if (recentAvg < earlierAvg * 0.8) overallTrend = 'declining';
+  }
 
-            <Tabs defaultValue="insights" className="w-full">
-                <TabsList className="bg-slate-900/70 border border-white/[0.06]">
-                    <TabsTrigger value="insights" className="data-[state=active]:bg-civant-teal/15 data-[state=active]:text-civant-teal">Insights</TabsTrigger>
-                    <TabsTrigger value="landscape" className="data-[state=active]:bg-civant-teal/15 data-[state=active]:text-civant-teal">Opportunities</TabsTrigger>
-                    <TabsTrigger value="buyers" className="data-[state=active]:bg-civant-teal/15 data-[state=active]:text-civant-teal">Buyers</TabsTrigger>
-                    <TabsTrigger value="contracts" className="data-[state=active]:bg-civant-teal/15 data-[state=active]:text-civant-teal">Contracts</TabsTrigger>
-                </TabsList>
+  const strengths = [];
+  if (summary?.total_awards > 20) strengths.push(`${summary.total_awards} contracts over ${summary.years_active} years`);
+  else if (summary?.total_awards > 5) strengths.push(`${summary.total_awards} public contracts awarded`);
+  if (summary?.has_frameworks > 0) strengths.push(`${summary.has_frameworks} framework agreements`);
 
-                {/* ===== CONTRACTS ===== */}
-                <TabsContent value="contracts" className="mt-4 space-y-4">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        {category_breakdown.map((cat,i) => (
-                            <Card key={i} className="border border-white/[0.06] bg-white/[0.02] shadow-none"><CardContent className="p-4">
-                                <p className="text-xs text-slate-500 uppercase tracking-wider">{fmtCluster(cat.cluster)}</p>
-                                <p className="text-xl font-bold text-slate-100 mt-1">{cat.award_count} award{cat.award_count !== 1 ? 's' : ''}</p>
-                                <p className="text-sm text-civant-teal">{fmtEur(cat.total_value)}</p>
-                                <p className="text-xs text-slate-500 mt-1">{cat.distinct_buyers} buyer{cat.distinct_buyers !== 1 ? 's' : ''} · {cat.active_contracts} active</p>
-                            </CardContent></Card>
-                        ))}
-                    </div>
-                    <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none">
-                        <CardHeader className="pb-3"><CardTitle className="text-sm font-medium text-slate-500 uppercase tracking-widest">Recent Contracts</CardTitle></CardHeader>
-                        <CardContent>
-                            <table className="w-full text-sm">
-                                <thead><tr className="border-b border-white/[0.05] text-xs text-slate-500 uppercase tracking-wider">
-                                    <th className="text-left py-3 pr-4">Buyer</th><th className="text-right py-3 px-4">Value</th><th className="text-left py-3 px-4">Category</th><th className="text-left py-3 px-4">Awarded</th><th className="text-left py-3 px-4">Ends</th><th className="text-left py-3 pl-4">Type</th>
-                                </tr></thead>
-                                <tbody>{recent_contracts.map((c,i) => (
-                                    <tr key={i} className="border-b border-white/[0.04] hover:bg-slate-900/40 transition-colors">
-                                        <td className="py-3 pr-4 font-medium text-slate-100">{c.buyer_name}</td>
-                                        <td className="py-3 px-4 text-right text-slate-100">{fmtEur(c.value_eur)}</td>
-                                        <td className="py-3 px-4 text-slate-300">{fmtCluster(c.cpv_cluster)}</td>
-                                        <td className="py-3 px-4 text-slate-300">{c.award_date}</td>
-                                        <td className="py-3 px-4 text-slate-300">{c.end_date||'—'}</td>
-                                        <td className="py-3 pl-4">{c.framework_flag && <Badge variant="outline" className="text-[10px]">Framework</Badge>}</td>
-                                    </tr>
-                                ))}</tbody>
-                            </table>
-                        </CardContent>
-                    </Card>
-                    {yearly_trend.length > 0 && (
-                        <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none">
-                            <CardHeader className="pb-3"><div className="flex items-center justify-between">
-                                <CardTitle className="text-sm font-medium text-slate-500 uppercase tracking-widest">Award Trend</CardTitle>
-                                <div className="flex items-center gap-1.5">{trend==='growing'?<TrendingUp className="h-4 w-4 text-emerald-500"/>:trend==='declining'?<TrendingDown className="h-4 w-4 text-red-500"/>:<Minus className="h-4 w-4 text-slate-400"/>}<span className="text-sm text-slate-300 capitalize">{trend}</span></div>
-                            </div></CardHeader>
-                            <CardContent>
-                                <div className="flex items-end gap-1.5 h-32">
-                                    {yearly_trend.map((y,i) => { const mx = Math.max(...yearly_trend.map(t=>t.awards)); const h = mx>0?(y.awards/mx)*100:0; return (
-                                        <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                                            <span className="text-[10px] text-slate-500">{y.awards}</span>
-                                            <div className="w-full bg-civant-teal/30 rounded-t hover:bg-civant-teal/50 transition-colors" style={{height:`${Math.max(h,4)}%`}} title={`${y.year}: ${y.awards} awards, ${fmtEur(y.total_value)}`} />
-                                            <span className="text-[10px] text-slate-500">{y.year}</span>
-                                        </div>
-                                    ); })}
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )}
-                </TabsContent>
+  const strongBuyers = buyers.filter((b) => b.relationship_strength === 'strong');
+  if (strongBuyers.length > 0) {
+    strengths.push(`Strong buyer ties: ${strongBuyers.slice(0, 3).map((b) => b.buyer_name).join(', ')}`);
+  }
 
-                {/* ===== OPPORTUNITIES ===== */}
-                <TabsContent value="landscape" className="mt-4 space-y-4">
-                    <div className="grid grid-cols-3 gap-3">
-                        <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none"><CardContent className="p-4">
-                            <div className="flex items-center gap-3"><div className="text-3xl font-bold text-slate-100">{renewal_opportunities.length}</div><div><p className="text-sm text-slate-400">renewal{renewal_opportunities.length !== 1 ? 's' : ''}</p><p className="text-xs text-slate-500">within 12 months</p></div></div>
-                        </CardContent></Card>
-                        <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none"><CardContent className="p-4">
-                            <div className="text-3xl font-bold text-civant-teal">{fmtEur(renewal_opportunities.reduce((s,r)=>s+(r.value_eur||0),0))}</div><p className="text-sm text-slate-400">opportunity value</p>
-                        </CardContent></Card>
-                        <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none"><CardContent className="p-4">
-                            <div className="flex gap-4">
-                                <div className="text-center"><div className="text-2xl font-bold text-red-400">{renewal_opportunities.filter(r=>r.window_class==='imminent').length}</div><div className="text-[10px] text-slate-500">IMMINENT</div></div>
-                                <div className="text-center"><div className="text-2xl font-bold text-amber-400">{renewal_opportunities.filter(r=>r.window_class==='upcoming').length}</div><div className="text-[10px] text-slate-500">UPCOMING</div></div>
-                                <div className="text-center"><div className="text-2xl font-bold text-emerald-400">{renewal_opportunities.filter(r=>r.window_class==='horizon').length}</div><div className="text-[10px] text-slate-500">HORIZON</div></div>
-                            </div>
-                        </CardContent></Card>
-                    </div>
-                    {renewal_opportunities.length > 0 ? (
-                        <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none">
-                            <CardContent className="pt-4">
-                                <table className="w-full text-sm">
-                                    <thead><tr className="border-b border-white/[0.05] text-xs text-slate-500 uppercase tracking-wider">
-                                        <th className="text-left py-3 pr-4">Buyer</th><th className="text-right py-3 px-4">Value</th><th className="text-left py-3 px-4">Category</th><th className="text-left py-3 px-4">Expiry</th><th className="text-left py-3 pl-4">Strength</th>
-                                    </tr></thead>
-                                    <tbody>{renewal_opportunities.map((r,i) => (
-                                        <tr key={i} className="border-b border-white/[0.04] hover:bg-slate-900/40 transition-colors">
-                                            <td className="py-3 pr-4"><div className="font-medium text-slate-100">{r.buyer_name}</div>{r.framework_flag && <span className="text-[10px] text-slate-500">Framework</span>}</td>
-                                            <td className="py-3 px-4 text-right font-medium text-slate-100">{fmtEur(r.value_eur)}</td>
-                                            <td className="py-3 px-4 text-slate-300">{fmtCluster(r.cpv_cluster)}</td>
-                                            <td className="py-3 px-4"><div className="text-slate-300">{r.end_date}</div><div className="text-[10px] text-slate-500">{r.days_until_expiry} days</div></td>
-                                            <td className="py-3 pl-4"><IncumbentBadge strength={r.incumbent_strength} /></td>
-                                        </tr>
-                                    ))}</tbody>
-                                </table>
-                            </CardContent>
-                        </Card>
-                    ) : (
-                        <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none"><CardContent className="py-8 text-center text-slate-400">No contracts expiring in the next 12 months</CardContent></Card>
-                    )}
-                </TabsContent>
+  if (summary?.active_contracts > 3) strengths.push(`${summary.active_contracts} active contracts`);
+  if (categories.length > 2) strengths.push(`Diversified across ${categories.length} categories`);
 
-                {/* ===== BUYERS ===== */}
-                <TabsContent value="buyers" className="mt-4">
-                    <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none">
-                        <CardContent className="pt-4"><div className="space-y-2">{buyer_relationships.map((b,i) => (
-                            <div key={i} className="flex items-center justify-between p-3 bg-white/[0.02] rounded-lg hover:bg-white/[0.04] transition-colors">
-                                <div className="flex-1"><div className="font-medium text-slate-100">{b.buyer_name}</div><div className="text-xs text-slate-500 mt-0.5">{b.first_award} → {b.last_award}{b.active_contracts>0 && <span className="text-emerald-400 ml-2">· {b.active_contracts} active</span>}</div></div>
-                                <div className="flex items-center gap-3"><div className="text-right"><div className="text-sm font-medium text-slate-100">{fmtEur(b.total_value)}</div><div className="text-xs text-slate-500">{b.award_count} award{b.award_count !== 1 ? 's' : ''}</div></div><StrengthBadge strength={b.relationship_strength}/></div>
-                            </div>
-                        ))}</div></CardContent>
-                    </Card>
-                </TabsContent>
-
-                {/* ===== INSIGHTS (now includes overview stats) ===== */}
-                <TabsContent value="insights" className="mt-4 space-y-4">
-                    {/* Overview Stats */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none"><CardContent className="px-5 py-4">
-                            <p className="text-xs text-slate-600 uppercase tracking-widest">Contracts</p>
-                            <p className="text-2xl font-semibold text-slate-100 mt-1">{summary.total_awards}</p>
-                            <p className="text-[11px] text-slate-600 mt-1">{summary.years_active} years active</p>
-                        </CardContent></Card>
-                        <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none"><CardContent className="px-5 py-4">
-                            <p className="text-xs text-slate-600 uppercase tracking-widest">Total Value</p>
-                            <p className="text-2xl font-semibold text-civant-teal mt-1">{fmtEur(summary.total_value_eur)}</p>
-                            <p className="text-[11px] text-slate-600 mt-1">avg {fmtEur(summary.avg_contract_value_eur)}</p>
-                        </CardContent></Card>
-                        <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none"><CardContent className="px-5 py-4">
-                            <p className="text-xs text-slate-600 uppercase tracking-widest">Public Bodies</p>
-                            <p className="text-xl font-semibold text-slate-100 mt-1">{summary.distinct_buyers}</p>
-                            <p className="text-[11px] text-slate-600 mt-1">{summary.active_contracts} active</p>
-                        </CardContent></Card>
-                        <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none"><CardContent className="px-5 py-4">
-                            <p className="text-xs text-slate-600 uppercase tracking-widest">Frameworks</p>
-                            <p className="text-xl font-semibold text-slate-100 mt-1">{summary.has_frameworks}</p>
-                            <p className="text-[11px] text-slate-600 mt-1">largest {fmtEur(summary.max_contract_value_eur)}</p>
-                        </CardContent></Card>
-                    </div>
-
-                    {/* Strengths & Weaknesses */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {analysis?.strengths?.length > 0 && (
-                            <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none"><CardHeader className="pb-3"><CardTitle className="text-sm font-medium tracking-wide flex items-center gap-2"><Trophy className="h-4 w-4 text-emerald-500"/>Strengths</CardTitle></CardHeader><CardContent><ul className="space-y-2.5 text-sm">{analysis.strengths.map((s,i) => <li key={i} className="flex items-start gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-500 mt-0.5 flex-shrink-0"/><span className="text-slate-400">{s}</span></li>)}</ul></CardContent></Card>
-                        )}
-                        {analysis?.weaknesses?.length > 0 && (
-                            <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none"><CardHeader className="pb-3"><CardTitle className="text-sm font-medium tracking-wide flex items-center gap-2"><AlertCircle className="h-4 w-4 text-amber-500"/>Weaknesses</CardTitle></CardHeader><CardContent><ul className="space-y-2.5 text-sm">{analysis.weaknesses.map((w,i) => <li key={i} className="flex items-start gap-2"><span className="text-amber-500 flex-shrink-0">•</span><span className="text-slate-300">{w}</span></li>)}</ul></CardContent></Card>
-                        )}
-                    </div>
-
-                    {/* Strategic Insights */}
-                    {analysis?.strategic_insights?.length > 0 && (
-                        <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none"><CardHeader className="pb-3"><CardTitle className="text-sm font-medium tracking-wide flex items-center gap-2"><Sparkles className="h-4 w-4 text-civant-teal"/>Strategic Insights</CardTitle></CardHeader><CardContent><ul className="space-y-2.5 text-sm">{analysis.strategic_insights.map((s,i) => <li key={i} className="flex items-start gap-2"><ArrowRight className="h-4 w-4 text-civant-teal mt-0.5 flex-shrink-0"/><span className="text-slate-400">{s}</span></li>)}</ul></CardContent></Card>
-                    )}
-
-                    {/* Categories + Trading Names side by side */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none"><CardHeader className="pb-3"><CardTitle className="text-sm font-medium tracking-wide flex items-center gap-2"><Target className="h-4 w-4 text-civant-teal"/>Preferred Categories</CardTitle></CardHeader><CardContent><div className="space-y-2">{category_breakdown.slice(0,5).map((c,i) => (
-                            <div key={i} className="flex items-center justify-between text-sm"><span className="font-medium text-slate-100">{fmtCluster(c.cluster)}</span><div className="flex items-center gap-2"><Badge variant="outline" className="text-xs">{c.award_count}x</Badge><span className="text-xs text-civant-teal">{fmtEur(c.total_value)}</span></div></div>
-                        ))}</div></CardContent></Card>
-                        {trading_names.length > 0 && (
-                            <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none"><CardHeader className="pb-3"><CardTitle className="text-sm font-medium tracking-wide flex items-center gap-2"><Users className="h-4 w-4 text-civant-teal"/>Trading Names</CardTitle></CardHeader><CardContent><div className="space-y-2">{trading_names.map((tn,i) => (
-                                <div key={i} className="flex items-center justify-between text-sm"><span className="text-slate-300">{tn.name}</span><Badge variant="outline" className="text-xs">{tn.award_count} award{tn.award_count !== 1 ? 's' : ''}</Badge></div>
-                            ))}</div></CardContent></Card>
-                        )}
-                    </div>
-                </TabsContent>
-            </Tabs>
-        </div>
-    );
+  return {
+    success: true,
+    company_name: companyName,
+    found_tenders: summary?.total_awards || 0,
+    summary,
+    renewal_opportunities: renewals,
+    buyer_relationships: buyers,
+    category_breakdown: categories,
+    yearly_trend: trendData,
+    recent_contracts: data?.recent_contracts || [],
+    trading_names: data?.trading_names || [],
+    trend: overallTrend,
+    analysis: {
+      strengths
+    }
+  };
 }
 
-// ============================================================
-// Main Competitors Page
-// ============================================================
-export default function Competitors() {
-    const location = useLocation();
-    const [user, setUser] = useState(null);
-    const { activeTenantId } = useTenant();
-    const [competitors, setCompetitors] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [showForm, setShowForm] = useState(false);
-    const [editingCompetitor, setEditingCompetitor] = useState(null);
-    const [saving, setSaving] = useState(false);
-    const [saveError, setSaveError] = useState('');
-    const [analyzing, setAnalyzing] = useState(null);
-    const [analysis, setAnalysis] = useState(null);
-    const [formData, setFormData] = useState({ company_name: '', country: '', industry_sectors: '', notes: '', active: true });
+function MetricTile({ label, value, hint }) {
+  return (
+    <Card className="border border-white/[0.05] bg-white/[0.015] shadow-none">
+      <CardContent className="px-4 py-4">
+        <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
+        <p className="mt-1 text-2xl font-semibold tracking-tight text-card-foreground tabular-nums">{value}</p>
+        {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
+      </CardContent>
+    </Card>
+  );
+}
 
-    useEffect(() => { loadData(); }, []);
+function CompetitorDossier({
+  competitor,
+  competitors,
+  analysis,
+  loading,
+  onBack,
+  onSwitch,
+  onEdit,
+  onDelete
+}) {
+  const summary = analysis?.summary;
+  const strengths = analysis?.analysis?.strengths || [];
+  const categories = [...(analysis?.category_breakdown || [])]
+    .sort((a, b) => Number(b.award_count || 0) - Number(a.award_count || 0))
+    .slice(0, 5);
+  const buyers = analysis?.buyer_relationships || [];
+  const contracts = analysis?.recent_contracts || [];
 
-    useEffect(() => {
-        const params = new URLSearchParams(location.search);
-        if (params.get('quickAdd') === '1') {
-            setEditingCompetitor(null);
-            resetForm();
-            setShowForm(true);
-        }
-    }, [location.search]);
-
-    const loadData = async () => {
-        try {
-            const userData = await civant.auth.me();
-            setUser(userData);
-            const competitorsData = await civant.entities.Competitors.filter({ tracked_by_user: userData.email });
-            setCompetitors(competitorsData);
-        } catch (error) { console.error('Error loading data:', error); }
-        finally { setLoading(false); }
-    };
-
-    const handleSubmit = async (e) => {
-        e.preventDefault(); setSaving(true); setSaveError('');
-        try {
-            const payload = { ...formData, tracked_by_user: user?.email, active: true };
-            if (editingCompetitor) await civant.entities.Competitors.update(editingCompetitor.id, payload);
-            else await civant.entities.Competitors.create(payload);
-            setShowForm(false); setEditingCompetitor(null); resetForm(); await loadData();
-        } catch (error) { setSaveError(error.message); }
-        finally { setSaving(false); }
-    };
-
-    const handleEdit = (c) => { setEditingCompetitor(c); setFormData({ company_name: c.company_name||'', country: c.country||'', industry_sectors: c.industry_sectors||'', notes: c.notes||'', active: c.active!==false }); setShowForm(true); };
-    const handleDelete = async (id) => { if (!confirm('Remove this competitor?')) return; try { await civant.entities.Competitors.delete(id); await loadData(); } catch(e) { console.error('Delete failed:', e); } };
-    const resetForm = () => setFormData({ company_name: '', country: '', industry_sectors: '', notes: '', active: true });
-
-    const analyzeCompetitor = async (companyName) => {
-        setAnalyzing(companyName); setAnalysis(null);
-        try {
-            const { data: response, error: rpcError } = await supabase.rpc('get_competitor_intelligence', { p_tenant_id: activeTenantId, p_search_term: companyName }); if (rpcError) throw new Error(rpcError.message);
-            const data = response?.data || response;
-            window.scrollTo({ top: 0, behavior: "smooth" });
-            if (data?.error) throw new Error(data.error);
-            if (!data || !data.success) {
-                alert(data?.message || 'No awards found for this competitor');
-                return;
-            }
-            // Generate deterministic insights from the data
-            const summary = data.summary;
-            const categories = data.category_breakdown || [];
-            const buyers = data.buyer_relationships || [];
-            const renewals = data.renewal_opportunities || [];
-            const trend_data = data.yearly_trend || [];
-            let overallTrend = 'stable';
-            if (trend_data.length >= 3) {
-                const recent = trend_data.slice(-2);
-                const earlier = trend_data.slice(-4, -2);
-                const recentAvg = recent.reduce((s,t) => s+t.awards, 0) / recent.length;
-                const earlierAvg = earlier.length > 0 ? earlier.reduce((s,t) => s+t.awards, 0) / earlier.length : recentAvg;
-                if (recentAvg > earlierAvg * 1.2) overallTrend = 'growing';
-                else if (recentAvg < earlierAvg * 0.8) overallTrend = 'declining';
-            }
-            const strengths = [];
-            if (summary.total_awards > 20) strengths.push(`${summary.total_awards} contracts over ${summary.years_active} years`);
-            else if (summary.total_awards > 5) strengths.push(`${summary.total_awards} public contracts awarded`);
-            if (summary.has_frameworks > 0) strengths.push(`${summary.has_frameworks} framework agreements (pre-qualified)`);
-            const strongBuyers = buyers.filter(b => b.relationship_strength === 'strong');
-            if (strongBuyers.length > 0) strengths.push(`Strong relationships: ${strongBuyers.slice(0,3).map(b=>b.buyer_name).join(', ')}`);
-            if (summary.active_contracts > 3) strengths.push(`${summary.active_contracts} active contracts`);
-            if (categories.length > 2) strengths.push(`Diversified across ${categories.length} categories`);
-            if (summary.max_contract_value_eur > 50000000) strengths.push(`Large-scale capability (up to ${fmtEur(summary.max_contract_value_eur)})`);
-            const weaknesses = [];
-            if (categories[0] && categories.length > 1) { const pct = (categories[0].award_count / summary.total_awards * 100); if (pct > 70) weaknesses.push(`Heavy concentration in ${fmtCluster(categories[0].cluster)} (${Math.round(pct)}% of awards)`); }
-            const imminentCount = renewals.filter(r => r.window_class === 'imminent').length;
-            if (imminentCount > 0) weaknesses.push(`${imminentCount} contract${imminentCount !== 1 ? 's' : ''} expiring imminently`);
-            if (summary.distinct_buyers < 5 && summary.total_awards > 5) weaknesses.push(`Concentrated buyer base (${summary.distinct_buyers} buyers)`);
-            const insights = [];
-            if (renewals.length > 0) { const tv = renewals.reduce((s,r) => s+(r.value_eur||0), 0); insights.push(`${renewals.length} contracts (${fmtEur(tv)}) expiring in 12 months`); }
-            const lowLockIn = renewals.filter(r => (r.repeat_wins || 0) <= 1);
-            if (lowLockIn.length > 0) insights.push(`${lowLockIn.length} with low incumbent lock-in`);
-            const emergingHV = buyers.filter(b => b.relationship_strength === 'emerging' && (b.total_value||0) > 10000000);
-            if (emergingHV.length > 0) insights.push(`Watch for vulnerability at ${emergingHV.slice(0,2).map(b=>b.buyer_name).join(', ')} — high-value but shallow relationships`);
-
-            setAnalysis({
-                success: true,
-                company_name: companyName,
-                found_tenders: summary.total_awards,
-                summary,
-                renewal_opportunities: renewals.map(r => ({...r, incumbent_strength: (r.repeat_wins||0) >= 3 ? 'strong_incumbent' : (r.repeat_wins||0) >= 2 ? 'moderate_incumbent' : 'low_lock_in'})),
-                buyer_relationships: buyers,
-                category_breakdown: categories,
-                yearly_trend: trend_data,
-                recent_contracts: data.recent_contracts || [],
-                trading_names: data.trading_names || [],
-                trend: overallTrend,
-                analysis: { strengths, weaknesses, strategic_insights: insights }
-            });
-            window.scrollTo({ top: 0, behavior: "smooth" });
-        } catch (error) { console.error('Analysis failed:', error); alert('Analysis failed: ' + error.message); }
-        finally { setAnalyzing(null); }
-    };
-
-    if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-civant-teal" /></div>;
-
-    return (
-        <div className="space-y-6">
-            <div className="civant-hero flex min-h-[60vh] flex-col justify-center gap-5 py-16 md:py-20">
-                <h1 className="max-w-4xl text-4xl font-semibold tracking-tight text-slate-100 md:text-5xl">
-                    Competitor intelligence at account level.
-                </h1>
-                <p className="max-w-3xl text-base text-slate-400 md:text-lg">
-                    Track incumbency strength, renewal exposure, and relationship depth before each procurement cycle.
-                </p>
-                <div>
-                    <Button className="bg-civant-teal text-slate-950 hover:bg-civant-teal/90" onClick={() => { setEditingCompetitor(null); resetForm(); setShowForm(true); }}>
-                        <Plus className="h-4 w-4 mr-2" />Add Competitor
-                    </Button>
-                </div>
-            </div>
-
-            {/* Analysis Dashboard */}
-            {analysis && <CompetitorDashboard data={analysis} onClose={() => setAnalysis(null)} />}
-
-            {/* Competitor Cards */}
-            <div className="grid gap-4">
-                {competitors.length === 0 ? (
-                    <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none">
-                        <CardContent className="py-12 text-center">
-                            <Users className="h-12 w-12 mx-auto text-slate-300 mb-4" />
-                            <h3 className="text-lg font-semibold text-slate-100 mb-2">No competitors tracked yet</h3>
-                            <p className="text-slate-400 mb-4">Start tracking competitors to analyze their bidding patterns</p>
-                            <Button onClick={() => setShowForm(true)}><Plus className="h-4 w-4 mr-2" />Add Your First Competitor</Button>
-                        </CardContent>
-                    </Card>
-                ) : competitors.map(competitor => (
-                    <Card key={competitor.id} className="border border-white/[0.06] bg-white/[0.02] shadow-none hover:bg-slate-900/70 transition-colors">
-                        <CardContent className="p-6">
-                            <div className="flex items-start justify-between">
-                                <div className="flex-1">
-                                    <div className="flex items-center gap-3 mb-2">
-                                        <h3 className="text-lg font-semibold text-slate-100">{competitor.company_name}</h3>
-                                        {!competitor.active && <Badge variant="outline" className="text-slate-400">Inactive</Badge>}
-                                    </div>
-                                    <div className="flex flex-wrap gap-2 mb-3">
-                                        {competitor.country && <Badge variant="outline" className="text-xs"><MapPin className="h-3 w-3 mr-1" />{competitor.country === 'both' ? 'IE & FR' : competitor.country === 'FR' ? 'France' : 'Ireland'}</Badge>}
-                                        {competitor.industry_sectors && <Badge variant="outline" className="text-xs">{competitor.industry_sectors}</Badge>}
-                                    </div>
-                                    {competitor.notes && <p className="text-sm text-slate-300 mb-3">{competitor.notes}</p>}
-                                    <Button variant="outline" size="sm" onClick={() => analyzeCompetitor(competitor.company_name)} disabled={analyzing === competitor.company_name}>
-                                        {analyzing === competitor.company_name ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Analyzing...</> : <>Competitor Analysis</>}
-                                    </Button>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <Button variant="ghost" size="icon" onClick={() => handleEdit(competitor)}><Edit2 className="h-4 w-4 text-slate-400" /></Button>
-                                    <Button variant="ghost" size="icon" onClick={() => handleDelete(competitor.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-                ))}
-            </div>
-
-            {/* Add/Edit Dialog */}
-            <Dialog open={showForm} onOpenChange={setShowForm}>
-                <DialogContent className="sm:max-w-lg">
-                    <DialogHeader>
-                        <DialogTitle>{editingCompetitor ? 'Edit Competitor' : 'Add Competitor'}</DialogTitle>
-                        <DialogDescription>Track a competitor to analyze their bidding patterns and performance</DialogDescription>
-                    </DialogHeader>
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                        <div><Label htmlFor="company_name">Company Name *</Label><SupplierAutocomplete value={formData.company_name} onChange={(v) => setFormData({...formData, company_name: v})} placeholder="Start typing to search suppliers..." /></div>
-                        <div><Label htmlFor="country">Primary Country</Label>
-                            <Select value={formData.country} onValueChange={(v) => setFormData({...formData, country: v})}>
-                                <SelectTrigger><SelectValue placeholder="Select country" /></SelectTrigger>
-                                <SelectContent><SelectItem value="IE">Ireland</SelectItem><SelectItem value="FR">France</SelectItem><SelectItem value="ES">Spain</SelectItem><SelectItem value="both">Multiple</SelectItem></SelectContent>
-                            </Select>
-                        </div>
-                        <div><Label htmlFor="industry_sectors">Industry Sectors</Label><Input id="industry_sectors" value={formData.industry_sectors} onChange={(e) => setFormData({...formData, industry_sectors: e.target.value})} placeholder="e.g. IT Services, Construction" /></div>
-                        <div><Label htmlFor="notes">Notes</Label><Textarea id="notes" value={formData.notes} onChange={(e) => setFormData({...formData, notes: e.target.value})} placeholder="Any notes about this competitor..." rows={3} /></div>
-                        {saveError && <p className="text-sm text-red-400">{saveError}</p>}
-                        <DialogFooter>
-                            <Button type="button" variant="outline" onClick={() => { setShowForm(false); setEditingCompetitor(null); resetForm(); }}>Cancel</Button>
-                            <Button type="submit" className="bg-civant-teal text-slate-950 hover:bg-civant-teal/90" disabled={saving}>
-                                {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</> : editingCompetitor ? 'Update' : 'Add Competitor'}
-                            </Button>
-                        </DialogFooter>
-                    </form>
-                </DialogContent>
-            </Dialog>
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="space-y-1">
+          <Button variant="ghost" size="sm" className="-ml-2 text-slate-300" onClick={onBack}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Competitors / {competitor.company_name}
+          </Button>
+          <h1 className="text-3xl font-semibold tracking-tight text-slate-100">{competitor.company_name}</h1>
         </div>
+
+        <div className="flex items-center gap-2">
+          {competitors.length > 1 ? (
+            <Select value={String(competitor.id)} onValueChange={onSwitch}>
+              <SelectTrigger className="h-9 w-[260px] border-white/[0.08] bg-white/[0.02] text-sm text-slate-300">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {competitors.map((item) => (
+                  <SelectItem key={item.id} value={String(item.id)}>{item.company_name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
+          <Button variant="ghost" size="icon" onClick={() => onEdit(competitor)}><Edit2 className="h-4 w-4 text-slate-400" /></Button>
+          <Button variant="ghost" size="icon" onClick={() => onDelete(competitor.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+        </div>
+      </div>
+
+      <section className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-4 md:p-5">
+        {loading ? (
+          <div className="flex min-h-[220px] items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Building competitor dossier...
+          </div>
+        ) : !summary ? (
+          <div className="space-y-1 py-8 text-center text-sm text-muted-foreground">
+            <p>No dossier data available for this competitor yet.</p>
+            <p>Try another competitor or refresh after new awards are indexed.</p>
+          </div>
+        ) : (
+          <Tabs defaultValue="overview" className="w-full">
+            <TabsList className="bg-slate-900/60 border border-white/[0.06]">
+              <TabsTrigger value="overview" className="data-[state=active]:bg-civant-teal/15 data-[state=active]:text-civant-teal">Overview</TabsTrigger>
+              <TabsTrigger value="accounts" className="data-[state=active]:bg-civant-teal/15 data-[state=active]:text-civant-teal">Accounts</TabsTrigger>
+              <TabsTrigger value="contracts" className="data-[state=active]:bg-civant-teal/15 data-[state=active]:text-civant-teal">Contracts</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="overview" className="mt-4 space-y-4">
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <MetricTile label="Contracts" value={summary.total_awards || 0} hint={`${summary.years_active || 0} years active`} />
+                <MetricTile label="Total Value" value={fmtEur(summary.total_value_eur)} hint={`avg ${fmtEur(summary.avg_contract_value_eur)}`} />
+                <MetricTile label="Public Bodies" value={summary.distinct_buyers || 0} hint={`${summary.active_contracts || 0} active`} />
+                <MetricTile label="Frameworks" value={summary.has_frameworks || 0} hint={`largest ${fmtEur(summary.max_contract_value_eur)}`} />
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <Card className="border border-white/[0.05] bg-white/[0.01] shadow-none">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-slate-300">Strengths</CardTitle></CardHeader>
+                  <CardContent>
+                    {strengths.length > 0 ? (
+                      <ul className="space-y-2 text-sm text-slate-300">
+                        {strengths.slice(0, 5).map((item, index) => (
+                          <li key={`${item}-${index}`} className="flex items-start gap-2"><span className="mt-1 text-civant-teal">•</span><span>{item}</span></li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No strengths extracted yet.</p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className="border border-white/[0.05] bg-white/[0.01] shadow-none">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-slate-300">Preferred Categories / Where They Win</CardTitle></CardHeader>
+                  <CardContent>
+                    {categories.length > 0 ? (
+                      <div className="space-y-2">
+                        {categories.map((cat, index) => (
+                          <div key={`${cat.cluster}-${index}`} className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-2 text-slate-300">
+                              <span className="w-5 text-xs text-muted-foreground">{index + 1}</span>
+                              <span className="font-medium text-slate-100">{fmtCluster(cat.cluster)}</span>
+                            </div>
+                            <div className="text-right text-xs text-muted-foreground">
+                              <p>{cat.award_count || 0} awards</p>
+                              <p>{cat.distinct_buyers || 0} buyers · {fmtEur(cat.total_value)}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No category concentration available.</p>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="accounts" className="mt-4">
+              <Card className="border border-white/[0.05] bg-white/[0.01] shadow-none">
+                <CardContent className="pt-4">
+                  {buyers.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-white/[0.05] text-xs uppercase tracking-[0.08em] text-slate-500">
+                            <th className="py-3 pr-4 text-left">Buyer</th>
+                            <th className="px-4 py-3 text-right">Awards</th>
+                            <th className="px-4 py-3 text-right">Total Value</th>
+                            <th className="py-3 pl-4 text-left">Relationship</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {buyers.map((buyer, index) => (
+                            <tr key={`${buyer.buyer_name}-${index}`} className="border-b border-white/[0.04]">
+                              <td className="py-3 pr-4 font-medium text-slate-100">{buyer.buyer_name}</td>
+                              <td className="px-4 py-3 text-right text-slate-300">{buyer.award_count || 0}</td>
+                              <td className="px-4 py-3 text-right text-slate-300">{fmtEur(buyer.total_value)}</td>
+                              <td className="py-3 pl-4 text-slate-300">{buyer.relationship_strength || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="py-8 text-center text-sm text-muted-foreground">No buyer account data available.</p>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="contracts" className="mt-4">
+              <Card className="border border-white/[0.05] bg-white/[0.01] shadow-none">
+                <CardHeader className="pb-3"><CardTitle className="text-sm font-medium text-slate-300">Recent Contracts</CardTitle></CardHeader>
+                <CardContent>
+                  {contracts.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-white/[0.05] text-xs uppercase tracking-[0.08em] text-slate-500">
+                            <th className="py-3 pr-4 text-left">Buyer</th>
+                            <th className="px-4 py-3 text-right">Value</th>
+                            <th className="px-4 py-3 text-left">Category</th>
+                            <th className="px-4 py-3 text-left">Awarded</th>
+                            <th className="py-3 pl-4 text-left">Ends</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {contracts.map((contract, index) => (
+                            <tr key={`${contract.buyer_name}-${index}`} className="border-b border-white/[0.04]">
+                              <td className="py-3 pr-4 font-medium text-slate-100">{contract.buyer_name}</td>
+                              <td className="px-4 py-3 text-right text-slate-300">{fmtEur(contract.value_eur)}</td>
+                              <td className="px-4 py-3 text-slate-300">{fmtCluster(contract.cpv_cluster)}</td>
+                              <td className="px-4 py-3 text-slate-300">{contract.award_date || '—'}</td>
+                              <td className="py-3 pl-4 text-slate-300">{contract.end_date || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="py-8 text-center text-sm text-muted-foreground">No recent contracts available.</p>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        )}
+      </section>
+    </div>
+  );
+}
+
+export default function Competitors() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { competitorId } = useParams();
+  const { activeTenantId } = useTenant();
+
+  const [user, setUser] = useState(null);
+  const [competitors, setCompetitors] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const [search, setSearch] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [editingCompetitor, setEditingCompetitor] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [analyzingId, setAnalyzingId] = useState(null);
+  const [analysisByCompetitorId, setAnalysisByCompetitorId] = useState({});
+
+  const [formData, setFormData] = useState({
+    company_name: '',
+    country: '',
+    industry_sectors: '',
+    notes: '',
+    active: true
+  });
+
+  const resetForm = useCallback(() => {
+    setFormData({ company_name: '', country: '', industry_sectors: '', notes: '', active: true });
+  }, []);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const userData = await civant.auth.me();
+      setUser(userData);
+      const competitorsData = await civant.entities.Competitors.filter({ tracked_by_user: userData.email });
+      setCompetitors(competitorsData || []);
+    } catch (error) {
+      console.error('Error loading competitors:', error);
+      setCompetitors([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('quickAdd') === '1') {
+      setEditingCompetitor(null);
+      resetForm();
+      setShowForm(true);
+    }
+  }, [location.search, resetForm]);
+
+  const selectedCompetitor = useMemo(
+    () => competitors.find((c) => String(c.id) === String(competitorId || '')) || null,
+    [competitorId, competitors]
+  );
+
+  const analyzeCompetitor = useCallback(async (competitor) => {
+    if (!competitor || !activeTenantId) return null;
+
+    setAnalyzingId(competitor.id);
+    try {
+      const { data: response, error: rpcError } = await supabase.rpc('get_competitor_intelligence', {
+        p_tenant_id: activeTenantId,
+        p_search_term: competitor.company_name
+      });
+      if (rpcError) throw new Error(rpcError.message);
+
+      const payload = response?.data || response;
+      if (payload?.error) throw new Error(payload.error);
+      if (!payload || !payload.success) {
+        throw new Error(payload?.message || 'No awards found for this competitor');
+      }
+
+      const dossierData = buildCompetitorAnalysis(competitor.company_name, payload);
+      setAnalysisByCompetitorId((prev) => ({ ...prev, [competitor.id]: dossierData }));
+      return dossierData;
+    } catch (error) {
+      console.error('Competitor analysis failed:', error);
+      setAnalysisByCompetitorId((prev) => ({
+        ...prev,
+        [competitor.id]: {
+          success: false,
+          company_name: competitor.company_name,
+          message: error.message
+        }
+      }));
+      return null;
+    } finally {
+      setAnalyzingId(null);
+    }
+  }, [activeTenantId]);
+
+  useEffect(() => {
+    if (!selectedCompetitor || loading) return;
+    const existing = analysisByCompetitorId[selectedCompetitor.id];
+    if (!existing && analyzingId !== selectedCompetitor.id) {
+      void analyzeCompetitor(selectedCompetitor);
+    }
+  }, [analyzeCompetitor, analyzingId, analysisByCompetitorId, loading, selectedCompetitor]);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setSaveError('');
+    try {
+      const payload = { ...formData, tracked_by_user: user?.email, active: true };
+      if (editingCompetitor) {
+        await civant.entities.Competitors.update(editingCompetitor.id, payload);
+      } else {
+        await civant.entities.Competitors.create(payload);
+      }
+      setShowForm(false);
+      setEditingCompetitor(null);
+      resetForm();
+      await loadData();
+    } catch (error) {
+      setSaveError(error.message || 'Failed to save competitor.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEdit = (competitor) => {
+    setEditingCompetitor(competitor);
+    setFormData({
+      company_name: competitor.company_name || '',
+      country: competitor.country || '',
+      industry_sectors: competitor.industry_sectors || '',
+      notes: competitor.notes || '',
+      active: competitor.active !== false
+    });
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('Remove this competitor?')) return;
+    try {
+      await civant.entities.Competitors.delete(id);
+      setAnalysisByCompetitorId((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      await loadData();
+      if (String(competitorId || '') === String(id)) {
+        navigate(createPageUrl('competitors'));
+      }
+    } catch (error) {
+      console.error('Delete failed:', error);
+    }
+  };
+
+  const filteredCompetitors = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return competitors;
+    return competitors.filter((competitor) => {
+      const name = String(competitor.company_name || '').toLowerCase();
+      const sector = String(competitor.industry_sectors || '').toLowerCase();
+      const country = String(competitor.country || '').toLowerCase();
+      return name.includes(needle) || sector.includes(needle) || country.includes(needle);
+    });
+  }, [competitors, search]);
+
+  if (loading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-civant-teal" />
+      </div>
     );
+  }
+
+  return (
+    <div className="space-y-6">
+      {!competitorId ? (
+        <>
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-1">
+                <h1 className="text-4xl font-semibold tracking-tight text-slate-100">Competitors</h1>
+                <p className="text-sm text-slate-400">Track rival positioning and open each dossier for focused planning.</p>
+              </div>
+              <Button
+                className="bg-civant-teal text-slate-950 hover:bg-civant-teal/90"
+                onClick={() => {
+                  setEditingCompetitor(null);
+                  resetForm();
+                  setShowForm(true);
+                }}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Add Competitor
+              </Button>
+            </div>
+
+            <div className="max-w-md">
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search competitors"
+                className="h-10 border-white/[0.08] bg-white/[0.02]"
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4">
+            {filteredCompetitors.length === 0 ? (
+              <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none">
+                <CardContent className="py-12 text-center">
+                  <Users className="mx-auto mb-4 h-12 w-12 text-slate-300" />
+                  <h3 className="mb-2 text-lg font-semibold text-slate-100">No competitors tracked yet</h3>
+                  <p className="mb-4 text-slate-400">Start with one competitor and build account-level dossiers.</p>
+                  <Button onClick={() => setShowForm(true)}><Plus className="mr-2 h-4 w-4" />Add Your First Competitor</Button>
+                </CardContent>
+              </Card>
+            ) : (
+              filteredCompetitors.map((competitor) => (
+                <Card key={competitor.id} className="border border-white/[0.06] bg-white/[0.02] shadow-none transition-colors hover:bg-slate-900/60">
+                  <CardContent className="p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <h3 className="truncate text-lg font-semibold text-slate-100">{competitor.company_name}</h3>
+                        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                          {countryLabel(competitor.country) ? (
+                            <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{countryLabel(competitor.country)}</span>
+                          ) : null}
+                          {competitor.industry_sectors ? <span>{competitor.industry_sectors}</span> : null}
+                        </div>
+                        {competitor.notes ? <p className="text-sm text-slate-300">{competitor.notes}</p> : null}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-white/[0.1]"
+                          onClick={() => navigate(createPageUrl(`competitors/${competitor.id}`))}
+                        >
+                          Open Dossier
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleEdit(competitor)}><Edit2 className="h-4 w-4 text-slate-400" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(competitor.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </>
+      ) : selectedCompetitor ? (
+        <CompetitorDossier
+          competitor={selectedCompetitor}
+          competitors={competitors}
+          analysis={analysisByCompetitorId[selectedCompetitor.id]}
+          loading={analyzingId === selectedCompetitor.id || !analysisByCompetitorId[selectedCompetitor.id]}
+          onBack={() => navigate(createPageUrl('competitors'))}
+          onSwitch={(value) => navigate(createPageUrl(`competitors/${value}`))}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+        />
+      ) : (
+        <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none">
+          <CardContent className="space-y-3 py-10 text-center">
+            <p className="text-sm text-muted-foreground">Competitor not found in your tracked list.</p>
+            <Button variant="outline" onClick={() => navigate(createPageUrl('competitors'))}>Back to Competitors</Button>
+          </CardContent>
+        </Card>
+      )}
+
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingCompetitor ? 'Edit Competitor' : 'Add Competitor'}</DialogTitle>
+            <DialogDescription>Track a competitor to build an account-level dossier.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <Label htmlFor="company_name">Company Name *</Label>
+              <SupplierAutocomplete
+                value={formData.company_name}
+                onChange={(value) => setFormData({ ...formData, company_name: value })}
+                placeholder="Start typing to search suppliers..."
+              />
+            </div>
+            <div>
+              <Label htmlFor="country">Primary Country</Label>
+              <Select value={formData.country} onValueChange={(value) => setFormData({ ...formData, country: value })}>
+                <SelectTrigger><SelectValue placeholder="Select country" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="IE">Ireland</SelectItem>
+                  <SelectItem value="FR">France</SelectItem>
+                  <SelectItem value="ES">Spain</SelectItem>
+                  <SelectItem value="both">Multiple</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="industry_sectors">Industry Sectors</Label>
+              <Input
+                id="industry_sectors"
+                value={formData.industry_sectors}
+                onChange={(event) => setFormData({ ...formData, industry_sectors: event.target.value })}
+                placeholder="e.g. IT Services, Construction"
+              />
+            </div>
+            <div>
+              <Label htmlFor="notes">Notes</Label>
+              <Textarea
+                id="notes"
+                value={formData.notes}
+                onChange={(event) => setFormData({ ...formData, notes: event.target.value })}
+                placeholder="Any notes about this competitor..."
+                rows={3}
+              />
+            </div>
+            {saveError ? <p className="text-sm text-red-400">{saveError}</p> : null}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => { setShowForm(false); setEditingCompetitor(null); resetForm(); }}>Cancel</Button>
+              <Button type="submit" className="bg-civant-teal text-slate-950 hover:bg-civant-teal/90" disabled={saving}>
+                {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</> : editingCompetitor ? 'Update' : 'Add Competitor'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 }

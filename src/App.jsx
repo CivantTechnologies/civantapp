@@ -152,6 +152,16 @@ function ProtectedRoutes() {
           </LayoutWrapper>
         }
       />
+      <Route
+        path="/competitors/:competitorId"
+        element={
+          <LayoutWrapper currentPageName="Competitors">
+            <Suspense fallback={<RouteLoader />}>
+              <CompetitorsPage />
+            </Suspense>
+          </LayoutWrapper>
+        }
+      />
 
       <Route
         path="/company"
