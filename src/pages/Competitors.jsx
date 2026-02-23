@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { civant } from '@/api/civantClient';
 import { supabase } from '@/lib/supabaseClient';
 import { useTenant } from '@/lib/tenant';
-import { ArrowLeft, Edit2, Loader2, MapPin, Plus, Trash2, Users } from 'lucide-react';
+import { addMonths, differenceInCalendarDays, format, startOfMonth } from 'date-fns';
+import { ArrowLeft, Edit2, Loader2, MapPin, Trash2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -14,6 +15,8 @@ import SupplierAutocomplete from '@/components/SupplierAutocomplete';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { createPageUrl } from '@/utils';
+import CompetitiveExposureSnapshot from '@/components/competitors/CompetitiveExposureSnapshot';
+import RenewalExposureTimeline from '@/components/competitors/RenewalExposureTimeline';
 
 const fmtEur = (v) => {
   if (!v) return '€0';
@@ -36,6 +39,25 @@ const countryLabel = (country) => {
   if (country === 'IE') return 'Ireland';
   return country;
 };
+
+function parseDateOrNull(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function resolveRenewalDate(renewal) {
+  const explicit = parseDateOrNull(renewal?.end_date);
+  if (explicit) return explicit;
+
+  const daysUntil = Number(renewal?.days_until_expiry);
+  if (Number.isFinite(daysUntil)) {
+    const fallback = new Date();
+    fallback.setDate(fallback.getDate() + Math.max(0, Math.round(daysUntil)));
+    return fallback;
+  }
+  return null;
+}
 
 function buildCompetitorAnalysis(companyName, data) {
   const summary = data?.summary;
@@ -296,6 +318,7 @@ export default function Competitors() {
 
   const [user, setUser] = useState(null);
   const [competitors, setCompetitors] = useState([]);
+  const [companyProfile, setCompanyProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState('');
@@ -304,7 +327,9 @@ export default function Competitors() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [analyzingId, setAnalyzingId] = useState(null);
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
   const [analysisByCompetitorId, setAnalysisByCompetitorId] = useState({});
+  const prefetchingPortfolioRef = useRef(false);
 
   const [formData, setFormData] = useState({
     company_name: '',
@@ -325,13 +350,26 @@ export default function Competitors() {
       setUser(userData);
       const competitorsData = await civant.entities.Competitors.filter({ tracked_by_user: userData.email });
       setCompetitors(competitorsData || []);
+
+      if (activeTenantId) {
+        const profileRows = await civant.entities.company_profiles.filter(
+          { tenant_id: activeTenantId },
+          '-updated_at',
+          1,
+          'known_competitors,contract_size_min_eur'
+        );
+        setCompanyProfile(Array.isArray(profileRows) && profileRows.length > 0 ? profileRows[0] : null);
+      } else {
+        setCompanyProfile(null);
+      }
     } catch (error) {
       console.error('Error loading competitors:', error);
       setCompetitors([]);
+      setCompanyProfile(null);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeTenantId]);
 
   useEffect(() => {
     void loadData();
@@ -394,6 +432,35 @@ export default function Competitors() {
       void analyzeCompetitor(selectedCompetitor);
     }
   }, [analyzeCompetitor, analyzingId, analysisByCompetitorId, loading, selectedCompetitor]);
+
+  useEffect(() => {
+    if (competitorId || loading || competitors.length === 0 || !activeTenantId || prefetchingPortfolioRef.current) return;
+
+    const missing = competitors.filter((competitor) => !analysisByCompetitorId[competitor.id]);
+    if (missing.length === 0) {
+      setSnapshotLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    prefetchingPortfolioRef.current = true;
+    setSnapshotLoading(true);
+
+    const run = async () => {
+      for (const competitor of missing) {
+        if (cancelled) return;
+        await analyzeCompetitor(competitor);
+      }
+      if (!cancelled) setSnapshotLoading(false);
+      prefetchingPortfolioRef.current = false;
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+      prefetchingPortfolioRef.current = false;
+    };
+  }, [activeTenantId, analysisByCompetitorId, analyzeCompetitor, competitorId, competitors, loading]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -458,6 +525,165 @@ export default function Competitors() {
     });
   }, [competitors, search]);
 
+  const exposurePortfolio = useMemo(
+    () => competitors
+      .map((competitor) => ({
+        competitor,
+        dossier: analysisByCompetitorId[competitor.id]
+      }))
+      .filter((entry) => entry.dossier?.success && entry.dossier?.summary),
+    [analysisByCompetitorId, competitors]
+  );
+
+  const renewalExposureRows = useMemo(
+    () => exposurePortfolio.flatMap((entry) => (entry.dossier?.renewal_opportunities || []).map((renewal) => ({
+      ...renewal,
+      sourceCompetitor: entry.competitor.company_name
+    }))),
+    [exposurePortfolio]
+  );
+
+  const highValueThreshold = useMemo(() => {
+    const raw = Number(companyProfile?.contract_size_min_eur ?? 0);
+    return Number.isFinite(raw) && raw > 0 ? raw : 1_000_000;
+  }, [companyProfile]);
+
+  const exposureSnapshot = useMemo(() => {
+    const renewalExposure = renewalExposureRows.length;
+    const highValueWindows = renewalExposureRows.filter((row) => Number(row?.value_eur || 0) >= highValueThreshold).length;
+
+    const buyerFrequency = new Map();
+    const buyerSetsByCompetitor = exposurePortfolio.map((entry) => new Set(
+      (entry.dossier?.buyer_relationships || [])
+        .map((buyer) => String(buyer?.buyer_name || '').trim())
+        .filter(Boolean)
+    ));
+    buyerSetsByCompetitor.forEach((set) => {
+      set.forEach((buyerName) => {
+        buyerFrequency.set(buyerName, (buyerFrequency.get(buyerName) || 0) + 1);
+      });
+    });
+
+    const totalUniqueBuyers = buyerFrequency.size;
+    const sharedBuyers = [...buyerFrequency.values()].filter((count) => count > 1).length;
+    const sharedBuyerOverlapPct = totalUniqueBuyers > 0 ? Math.round((sharedBuyers / totalUniqueBuyers) * 100) : 0;
+
+    const now = new Date();
+    const recentBoundary = new Date(now);
+    recentBoundary.setDate(recentBoundary.getDate() - 90);
+    const priorBoundary = new Date(now);
+    priorBoundary.setDate(priorBoundary.getDate() - 180);
+
+    let recentWins = 0;
+    let priorWins = 0;
+    exposurePortfolio.forEach((entry) => {
+      (entry.dossier?.recent_contracts || []).forEach((contract) => {
+        const awardDate = parseDateOrNull(contract?.award_date);
+        if (!awardDate) return;
+        if (awardDate >= recentBoundary) recentWins += 1;
+        else if (awardDate >= priorBoundary && awardDate < recentBoundary) priorWins += 1;
+      });
+    });
+
+    let momentumLabel = 'Flat';
+    if (recentWins > priorWins * 1.1) momentumLabel = 'Up';
+    else if (recentWins < priorWins * 0.9) momentumLabel = 'Down';
+
+    return {
+      renewalExposure,
+      highValueWindows,
+      sharedBuyerOverlapPct,
+      momentumLabel,
+      recentWins,
+      priorWins
+    };
+  }, [exposurePortfolio, highValueThreshold, renewalExposureRows]);
+
+  const exposureTimeline = useMemo(() => {
+    const start = startOfMonth(new Date());
+    const end = addMonths(start, 12);
+    const months = Array.from({ length: 12 }, (_, index) => {
+      const monthDate = addMonths(start, index);
+      return {
+        key: format(monthDate, 'yyyy-MM'),
+        label: format(monthDate, 'MMM'),
+        competitorExposure: 0
+      };
+    });
+    const bucketByMonth = new Map(months.map((month) => [month.key, month]));
+
+    renewalExposureRows.forEach((renewal) => {
+      const renewalDate = resolveRenewalDate(renewal);
+      if (!renewalDate || renewalDate < start || renewalDate >= end) return;
+      const key = format(startOfMonth(renewalDate), 'yyyy-MM');
+      const bucket = bucketByMonth.get(key);
+      if (bucket) bucket.competitorExposure += 1;
+    });
+
+    return months;
+  }, [renewalExposureRows]);
+
+  const emergingCompetitors = useMemo(() => {
+    const tracked = new Set(competitors.map((competitor) => String(competitor.company_name || '').trim().toLowerCase()));
+    const byName = new Map();
+
+    exposurePortfolio.forEach((entry) => {
+      const buyerCount = (entry.dossier?.buyer_relationships || []).length;
+      const cpvOverlap = (entry.dossier?.category_breakdown || []).slice(0, 3).length;
+      const latestAwardMs = (entry.dossier?.recent_contracts || [])
+        .map((contract) => parseDateOrNull(contract?.award_date))
+        .filter(Boolean)
+        .map((date) => date.getTime())
+        .sort((a, b) => b - a)[0];
+      const recentAwardDays = Number.isFinite(latestAwardMs)
+        ? Math.max(0, differenceInCalendarDays(new Date(), new Date(latestAwardMs)))
+        : null;
+
+      (entry.dossier?.trading_names || []).forEach((candidate) => {
+        const rawName = String(candidate?.name || '').trim();
+        const normalized = rawName.toLowerCase();
+        if (!rawName || tracked.has(normalized)) return;
+
+        const entryScore = Number(candidate?.award_count || 0) * 3 + Math.min(buyerCount, 20) + (cpvOverlap * 2);
+        const existing = byName.get(normalized) || {
+          name: rawName,
+          score: 0,
+          sharedBuyers: 0,
+          cpvOverlap: 0,
+          recentAwardDays
+        };
+        existing.score += entryScore;
+        existing.sharedBuyers = Math.max(existing.sharedBuyers, buyerCount);
+        existing.cpvOverlap = Math.max(existing.cpvOverlap, cpvOverlap);
+        if (recentAwardDays !== null) {
+          existing.recentAwardDays = existing.recentAwardDays === null
+            ? recentAwardDays
+            : Math.min(existing.recentAwardDays, recentAwardDays);
+        }
+        byName.set(normalized, existing);
+      });
+    });
+
+    if (byName.size === 0 && Array.isArray(companyProfile?.known_competitors)) {
+      companyProfile.known_competitors.forEach((name) => {
+        const trimmed = String(name || '').trim();
+        const normalized = trimmed.toLowerCase();
+        if (!trimmed || tracked.has(normalized)) return;
+        byName.set(normalized, {
+          name: trimmed,
+          score: 1,
+          sharedBuyers: 0,
+          cpvOverlap: 0,
+          recentAwardDays: null
+        });
+      });
+    }
+
+    return [...byName.values()]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5);
+  }, [companyProfile?.known_competitors, competitors, exposurePortfolio]);
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -471,22 +697,9 @@ export default function Competitors() {
       {!competitorId ? (
         <>
           <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="space-y-1">
-                <h1 className="text-4xl font-semibold tracking-tight text-slate-100">Competitors</h1>
-                <p className="text-sm text-slate-400">Track rival positioning and open each dossier for focused planning.</p>
-              </div>
-              <Button
-                className="bg-civant-teal text-slate-950 hover:bg-civant-teal/90"
-                onClick={() => {
-                  setEditingCompetitor(null);
-                  resetForm();
-                  setShowForm(true);
-                }}
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Competitor
-              </Button>
+            <div className="space-y-1">
+              <h1 className="text-4xl font-semibold tracking-tight text-slate-100">Competitors</h1>
+              <p className="text-sm text-muted-foreground">Competitive exposure portfolio</p>
             </div>
 
             <div className="max-w-md">
@@ -499,14 +712,66 @@ export default function Competitors() {
             </div>
           </div>
 
+          <CompetitiveExposureSnapshot
+            loading={snapshotLoading}
+            metrics={[
+              {
+                label: 'Renewal Exposure (Next 12 Months)',
+                value: exposureSnapshot.renewalExposure.toLocaleString(),
+                hint: 'Total renewal windows across tracked competitors'
+              },
+              {
+                label: 'High-Value Windows',
+                value: exposureSnapshot.highValueWindows.toLocaleString(),
+                hint: `Value at or above ${fmtEur(highValueThreshold)}`
+              },
+              {
+                label: 'Shared Buyer Overlap',
+                value: `${exposureSnapshot.sharedBuyerOverlapPct}%`,
+                hint: 'Buyer overlap across tracked competitors'
+              },
+              {
+                label: 'Competitive Momentum (90d)',
+                value: exposureSnapshot.momentumLabel,
+                hint: `${exposureSnapshot.recentWins} wins vs ${exposureSnapshot.priorWins} in prior 90d`
+              }
+            ]}
+          />
+
+          <RenewalExposureTimeline data={exposureTimeline} loading={snapshotLoading} />
+
+          <section className="space-y-3">
+            <h3 className="text-base font-semibold text-card-foreground">Emerging Competitors</h3>
+            {snapshotLoading ? (
+              <div className="py-4 text-sm text-muted-foreground">Scanning emerging competitors...</div>
+            ) : emergingCompetitors.length > 0 ? (
+              <div className="divide-y divide-white/[0.06] rounded-2xl bg-white/[0.015] px-4">
+                {emergingCompetitors.map((item) => (
+                  <div key={item.name} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                    <p className="text-sm font-medium text-slate-100">{item.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Shared buyers {item.sharedBuyers} · CPV overlap {item.cpvOverlap}
+                      {item.recentAwardDays !== null ? ` · ${item.recentAwardDays}d since recent award` : ''}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No emerging competitors detected yet from current overlap signals.
+              </p>
+            )}
+          </section>
+
+          <section className="space-y-3">
+            <h3 className="text-base font-semibold text-card-foreground">Tracked Competitors</h3>
           <div className="grid gap-4">
             {filteredCompetitors.length === 0 ? (
               <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none">
                 <CardContent className="py-12 text-center">
                   <Users className="mx-auto mb-4 h-12 w-12 text-slate-300" />
                   <h3 className="mb-2 text-lg font-semibold text-slate-100">No competitors tracked yet</h3>
-                  <p className="mb-4 text-slate-400">Start with one competitor and build account-level dossiers.</p>
-                  <Button onClick={() => setShowForm(true)}><Plus className="mr-2 h-4 w-4" />Add Your First Competitor</Button>
+                  <p className="mb-4 text-slate-400">Use the global + action to add competitors to your portfolio.</p>
                 </CardContent>
               </Card>
             ) : (
@@ -543,6 +808,7 @@ export default function Competitors() {
               ))
             )}
           </div>
+          </section>
         </>
       ) : selectedCompetitor ? (
         <CompetitorDossier
