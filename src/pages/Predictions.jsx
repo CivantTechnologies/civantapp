@@ -308,7 +308,7 @@ export default function Predictions() {
     try {
       await loadProfile();
       const { data, error } = await supabase
-        .rpc('get_tenant_predictions', { p_tenant_id: activeTenantId }).range(0, 4999);
+        .rpc('get_tenant_predictions', { p_tenant_id: activeTenantId }).range(0, 19999);
 
       if (error) {
         console.warn('get_tenant_predictions RPC unavailable:', error.message);
@@ -317,7 +317,7 @@ export default function Predictions() {
           .select('*')
           .eq('tenant_id', activeTenantId)
           .order('generated_at', { ascending: false })
-          .limit(5000);
+          .limit(20000);
         if (fallbackError) throw fallbackError;
         setAllPredictions(fallback || []);
       } else {
