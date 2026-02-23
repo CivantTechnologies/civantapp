@@ -493,7 +493,7 @@ export default function Layout({ children, currentPageName }) {
               <div className="relative">
                 <select
                   id="workspace-switcher"
-                  className="h-9 w-[170px] rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 pr-8 text-xs text-slate-200 transition-colors focus:border-primary/40 focus:outline-none"
+                  className="h-9 w-[170px] appearance-none rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 pr-8 text-xs text-slate-200 transition-colors focus:border-primary/40 focus:outline-none"
                   value={activeTenantId}
                   onChange={(event) => setActiveTenantId(event.target.value)}
                   disabled={isLoadingTenants}
@@ -520,12 +520,10 @@ export default function Layout({ children, currentPageName }) {
                 className="civant-icon-button h-9 w-9 text-slate-300"
                 onClick={() => setGlobalSearchOpen(true)}
                 aria-label="Open global search"
+                title="Search (Cmd/Ctrl+K)"
               >
                 <Search className="h-5 w-5" />
               </Button>
-              <span className="hidden rounded-md border border-white/[0.08] px-1.5 py-0.5 text-[10px] uppercase tracking-[0.12em] text-slate-500 lg:inline-flex">
-                Cmd/Ctrl+K
-              </span>
             </div>
 
             <DropdownMenu>
@@ -587,7 +585,7 @@ export default function Layout({ children, currentPageName }) {
               <label className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Workspace</label>
               <div className="relative">
                 <select
-                  className="h-9 w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 pr-8 text-xs text-slate-200 transition-colors focus:border-primary/40 focus:outline-none"
+                  className="h-9 w-full appearance-none rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 pr-8 text-xs text-slate-200 transition-colors focus:border-primary/40 focus:outline-none"
                   value={activeTenantId}
                   onChange={(event) => setActiveTenantId(event.target.value)}
                   disabled={isLoadingTenants}
