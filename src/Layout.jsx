@@ -636,7 +636,7 @@ export default function Layout({ children, currentPageName }) {
               </div>
             </div>
 
-            <nav className="space-y-1 overflow-x-visible overflow-y-auto">
+            <nav className="space-y-1 overflow-x-visible overflow-y-hidden">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = Array.isArray(item.matches) && item.matches.includes(currentPageName);
