@@ -5,6 +5,10 @@ import { Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { civant } from '@/api/civantClient';
 import { useTenant } from '@/lib/tenant';
+import {
+  isCompanyScopeFilterTemporarilyDisabled,
+  setCompanyScopeFilterTemporarilyDisabled
+} from '@/lib/companyScopeSession';
 import { createPageUrl } from '../utils';
 import {
   Button,
@@ -23,8 +27,6 @@ import {
 } from '@/components/ui/select';
 import ForecastTimeline from '@/components/forecast/ForecastTimeline';
 import HomePlatformFooter from '@/components/home/HomePlatformFooter';
-
-const COUNTRY_FLAGS = { IE: '🇮🇪', FR: '🇫🇷', ES: '🇪🇸' };
 
 const COUNTRY_OPTIONS = [
   { value: 'all', label: 'All Countries' },
@@ -184,16 +186,40 @@ function buyerLabel(row) {
 }
 
 function sortPredictions(rows) {
-  return [...rows].sort((a, b) => {
-    const dateA = predictionDate(a);
-    const dateB = predictionDate(b);
-    const parsedA = dateA ? new Date(dateA) : null;
-    const parsedB = dateB ? new Date(dateB) : null;
-    const timeA = parsedA && !Number.isNaN(parsedA.getTime()) ? parsedA.getTime() : Number.POSITIVE_INFINITY;
-    const timeB = parsedB && !Number.isNaN(parsedB.getTime()) ? parsedB.getTime() : Number.POSITIVE_INFINITY;
-    if (timeA !== timeB) return timeA - timeB;
-    return predictionConfidencePercent(b) - predictionConfidencePercent(a);
-  });
+  return [...rows].sort(comparePredictions);
+}
+
+function comparePredictions(a, b) {
+  const dateA = predictionDate(a);
+  const dateB = predictionDate(b);
+  const parsedA = dateA ? new Date(dateA) : null;
+  const parsedB = dateB ? new Date(dateB) : null;
+  const timeA = parsedA && !Number.isNaN(parsedA.getTime()) ? parsedA.getTime() : Number.POSITIVE_INFINITY;
+  const timeB = parsedB && !Number.isNaN(parsedB.getTime()) ? parsedB.getTime() : Number.POSITIVE_INFINITY;
+  if (timeA !== timeB) return timeA - timeB;
+  return predictionConfidencePercent(b) - predictionConfidencePercent(a);
+}
+
+function predictionMatchesCompanyScope(row, profile) {
+  if (!profile) return true;
+
+  const clusters = Array.isArray(profile.target_cpv_clusters) ? profile.target_cpv_clusters : [];
+  const countries = Array.isArray(profile.target_countries) ? profile.target_countries : [];
+  const minValue = Number(profile.contract_size_min_eur || 0);
+  const maxValue = Number(profile.contract_size_max_eur || 0);
+
+  const rowCountry = row.country || row.region;
+  if (countries.length > 0 && rowCountry && !countries.includes(rowCountry)) return false;
+
+  if (clusters.length > 0 && row.category) {
+    const mapped = normaliseCategory(row.category);
+    if (mapped && !clusters.includes(mapped)) return false;
+  }
+
+  const amount = Number(row.total_value_eur || 0);
+  if (minValue > 0 && amount > 0 && amount < minValue) return false;
+  if (maxValue > 0 && amount > 0 && amount > maxValue) return false;
+  return true;
 }
 
 function priorityTimeWeight(row) {
@@ -245,7 +271,16 @@ export default function Predictions() {
   const [sourceFilter, setSourceFilter] = useState('all');
   const [allPredictions, setAllPredictions] = useState([]);
   const [companyProfile, setCompanyProfile] = useState(null);
+  const [scopeFilterTemporarilyDisabled, setScopeFilterTemporarilyDisabledState] = useState(() => (
+    isCompanyScopeFilterTemporarilyDisabled(activeTenantId)
+  ));
   const [loading, setLoading] = useState(true);
+  const persistedScopeFilterEnabled = companyProfile?.company_scope_filter_enabled !== false;
+  const companyScopeFilteringActive = persistedScopeFilterEnabled && !scopeFilterTemporarilyDisabled;
+
+  useEffect(() => {
+    setScopeFilterTemporarilyDisabledState(isCompanyScopeFilterTemporarilyDisabled(activeTenantId));
+  }, [activeTenantId]);
 
   const loadProfile = useCallback(async () => {
     if (!activeTenantId) return null;
@@ -254,7 +289,7 @@ export default function Predictions() {
         { tenant_id: activeTenantId },
         '-updated_at',
         1,
-        'target_cpv_clusters,target_countries,target_buyer_types,contract_size_min_eur,contract_size_max_eur'
+        'target_cpv_clusters,target_countries,target_buyer_types,contract_size_min_eur,contract_size_max_eur,company_scope_filter_enabled'
       );
       const profile = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
       setCompanyProfile(profile || null);
@@ -305,25 +340,10 @@ export default function Predictions() {
     let rows = [...allPredictions];
 
     if (companyProfile) {
-      const clusters = companyProfile.target_cpv_clusters || [];
-      const countries = companyProfile.target_countries || [];
-      const minValue = Number(companyProfile.contract_size_min_eur || 0);
-      const maxValue = Number(companyProfile.contract_size_max_eur || 0);
-
-      rows = rows.filter((row) => {
-        const rowCountry = row.country || row.region;
-        if (countries.length > 0 && rowCountry && !countries.includes(rowCountry)) return false;
-
-        if (clusters.length > 0 && row.category) {
-          const mapped = normaliseCategory(row.category);
-          if (mapped && !clusters.includes(mapped)) return false;
-        }
-
-        const amount = Number(row.total_value_eur || 0);
-        if (minValue > 0 && amount > 0 && amount < minValue) return false;
-        if (maxValue > 0 && amount > 0 && amount > maxValue) return false;
-        return true;
-      });
+      rows = rows.map((row) => ({ ...row, _scopeMatch: predictionMatchesCompanyScope(row, companyProfile) }));
+      if (companyScopeFilteringActive) {
+        rows = rows.filter((row) => row._scopeMatch);
+      }
     }
 
     if (countryFilter !== 'all') rows = rows.filter((row) => (row.country || row.region) === countryFilter);
@@ -331,8 +351,16 @@ export default function Predictions() {
     if (sourceFilter === 'renewal') rows = rows.filter(isRenewal);
     else if (sourceFilter === 'engine') rows = rows.filter((row) => !isRenewal(row));
 
+    if (companyProfile && !companyScopeFilteringActive) {
+      return [...rows].sort((a, b) => {
+        const scopeDiff = Number(Boolean(b._scopeMatch)) - Number(Boolean(a._scopeMatch));
+        if (scopeDiff !== 0) return scopeDiff;
+        return comparePredictions(a, b);
+      });
+    }
+
     return sortPredictions(rows);
-  }, [allPredictions, companyProfile, countryFilter, urgencyFilter, sourceFilter]);
+  }, [allPredictions, companyProfile, companyScopeFilteringActive, countryFilter, urgencyFilter, sourceFilter]);
 
   const renewalRows = useMemo(
     () => sortPredictions(filtered.filter(isRenewal)),
@@ -359,11 +387,15 @@ export default function Predictions() {
         confidencePercent: predictionConfidencePercent(row)
       }))
       .sort((a, b) => {
+        if (!companyScopeFilteringActive) {
+          const scopeDiff = Number(Boolean(b._scopeMatch)) - Number(Boolean(a._scopeMatch));
+          if (scopeDiff !== 0) return scopeDiff;
+        }
         if (b.priorityScore !== a.priorityScore) return b.priorityScore - a.priorityScore;
         return b.confidencePercent - a.confidencePercent;
       })
       .slice(0, 5),
-    [renewalRows]
+    [renewalRows, companyScopeFilteringActive]
   );
 
   const lastDataRefresh = useMemo(() => {
@@ -377,11 +409,36 @@ export default function Predictions() {
     return new Date(Math.max(...timestamps)).toISOString();
   }, [allPredictions]);
 
+  const clearScopeFilterTemporarily = useCallback(() => {
+    setCompanyScopeFilterTemporarilyDisabled(activeTenantId, true);
+    setScopeFilterTemporarilyDisabledState(true);
+  }, [activeTenantId]);
+
+  const restoreScopeFilter = useCallback(() => {
+    setCompanyScopeFilterTemporarilyDisabled(activeTenantId, false);
+    setScopeFilterTemporarilyDisabledState(false);
+  }, [activeTenantId]);
+  const scopeContextLabel = companyScopeFilteringActive
+    ? 'Renewal windows within your tracked scope.'
+    : 'Market-wide renewal windows prioritized by your Company scope.';
+  const summaryScopeHint = companyScopeFilteringActive
+    ? 'Within active scope'
+    : 'Market-wide, scope-prioritized';
+  const prioritySectionHint = companyScopeFilteringActive
+    ? 'Ranked by strategic priority within your tracked scope.'
+    : 'Ranked by strategic priority using your Company scope.';
+  const noPriorityHint = companyScopeFilteringActive
+    ? 'No priority opportunities identified within your current scope.'
+    : 'No priority opportunities identified in the current market set.';
+  const noForecastHint = companyScopeFilteringActive
+    ? 'No high-confidence renewal windows detected within your current scope.'
+    : 'No high-confidence renewal windows detected in the current market set.';
+
   return (
     <Page className="space-y-6">
       <div className="space-y-1">
         <PageTitle>Forecast</PageTitle>
-        <p className="text-sm text-muted-foreground">Renewal windows within your tracked scope.</p>
+        <p className="text-sm text-muted-foreground">{scopeContextLabel}</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 rounded-xl bg-white/[0.01] px-1 py-1.5">
@@ -418,15 +475,26 @@ export default function Predictions() {
         </Select>
       </div>
 
-      {companyProfile ? (
-        <p className="text-xs text-muted-foreground">
-          Scope follows profile targets:
-          {' '}{(companyProfile.target_countries || []).map((country) => COUNTRY_FLAGS[country] || country).join(' ')}
-          {' · '}{(companyProfile.target_cpv_clusters || []).length} categories
-          {Number(companyProfile.contract_size_min_eur || 0) > 0 ? ` · Min ${formatCurrency(companyProfile.contract_size_min_eur)}` : ''}
-          {' · '}
-          <Link to={createPageUrl('Company')} className="text-cyan-300 hover:underline">Edit scope</Link>
-        </p>
+      {companyProfile && companyScopeFilteringActive ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span>Filtered by Company Scope</span>
+          <Link to={createPageUrl('Company?tab=personalization')} className="text-cyan-300 hover:underline">Edit scope</Link>
+          <button type="button" onClick={clearScopeFilterTemporarily} className="text-cyan-300 hover:underline">Clear temporarily</button>
+        </div>
+      ) : null}
+
+      {companyProfile && persistedScopeFilterEnabled && scopeFilterTemporarilyDisabled ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span>Company scope filter temporarily cleared for this session.</span>
+          <button type="button" onClick={restoreScopeFilter} className="text-cyan-300 hover:underline">Turn back on</button>
+        </div>
+      ) : null}
+
+      {companyProfile && !persistedScopeFilterEnabled ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span>Full market view active. Company scope is used to prioritize and highlight.</span>
+          <Link to={createPageUrl('Company?tab=personalization')} className="text-cyan-300 hover:underline">Edit scope behavior</Link>
+        </div>
       ) : null}
 
       <PageBody className="space-y-6">
@@ -434,7 +502,7 @@ export default function Predictions() {
           <SummaryTile
             label="Renewal Windows Identified"
             value={stats.renewalWindowsIdentified.toLocaleString()}
-            hint="Within active scope"
+            hint={summaryScopeHint}
           />
           <SummaryTile
             label="Active Renewal Window"
@@ -456,7 +524,7 @@ export default function Predictions() {
         <section className="space-y-3">
           <div className="space-y-1">
             <h3 className="text-base font-semibold text-card-foreground">Top Priority Opportunities</h3>
-            <p className="text-xs text-muted-foreground">Ranked by strategic priority within your tracked scope.</p>
+            <p className="text-xs text-muted-foreground">{prioritySectionHint}</p>
           </div>
 
           {loading ? (
@@ -468,7 +536,7 @@ export default function Predictions() {
 
           {!loading && priorityRows.length === 0 ? (
             <div className="space-y-1 py-2 text-sm text-muted-foreground">
-              <p>No priority opportunities identified within your current scope.</p>
+              <p>{noPriorityHint}</p>
               <p>The forecast engine continues to monitor renewal cycles.</p>
             </div>
           ) : null}
@@ -482,6 +550,9 @@ export default function Predictions() {
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-card-foreground">{buyerLabel(row)}</p>
+                    {!companyScopeFilteringActive && row._scopeMatch ? (
+                      <p className="mt-0.5 text-[11px] text-cyan-300/90">Scope match</p>
+                    ) : null}
                     <p className="mt-0.5 text-xs text-muted-foreground">{formatRenewalWindow(row)}</p>
                     <p className="mt-1 text-sm font-medium text-slate-200 tabular-nums">
                       {row.confidencePercent}% confidence
@@ -520,9 +591,7 @@ export default function Predictions() {
           <Card className="border border-white/[0.06] bg-white/[0.015] shadow-none">
             <CardContent className="space-y-2 py-12 text-center">
               <p className="text-sm text-slate-300">Forecast engine active.</p>
-              <p className="text-sm text-muted-foreground">
-                No high-confidence renewal windows detected within your current scope.
-              </p>
+              <p className="text-sm text-muted-foreground">{noForecastHint}</p>
             </CardContent>
           </Card>
         ) : null}
@@ -535,6 +604,9 @@ export default function Predictions() {
                 <div key={row.id || row.prediction_id || index} className="grid grid-cols-1 gap-3 py-4 md:grid-cols-[2fr_1.4fr_1fr_1.6fr_auto] md:items-center md:gap-4">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-card-foreground">{buyerLabel(row)}</p>
+                    {!companyScopeFilteringActive && row._scopeMatch ? (
+                      <p className="text-[11px] text-cyan-300/90">Scope match</p>
+                    ) : null}
                     <p className="text-xs text-muted-foreground">{row.country || row.region || '—'}</p>
                   </div>
                   <div className="text-sm text-slate-300">{formatRenewalWindow(row)}</div>
