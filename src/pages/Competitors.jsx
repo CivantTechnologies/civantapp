@@ -736,6 +736,8 @@ export default function Competitors() {
 
   const [formData, setFormData] = useState({
     company_name: '',
+    website: '',
+    search_terms: '',
     country: '',
     industry_sectors: '',
     notes: '',
@@ -743,7 +745,9 @@ export default function Competitors() {
   });
 
   const resetForm = useCallback(() => {
-    setFormData({ company_name: '', country: '', industry_sectors: '', notes: '', active: true });
+    setFormData({ company_name: '',
+    website: '',
+    search_terms: '', country: '', industry_sectors: '', notes: '', active: true });
   }, []);
 
   const loadData = useCallback(async () => {
@@ -799,7 +803,7 @@ export default function Competitors() {
     try {
       const { data: response, error: rpcError } = await supabase.rpc('get_competitor_intelligence', {
         p_tenant_id: activeTenantId,
-        p_search_term: competitor.company_name
+        p_search_term: (competitor.search_terms || competitor.company_name).split(",")[0].trim()
       });
       if (rpcError) throw new Error(rpcError.message);
 
@@ -891,6 +895,8 @@ export default function Competitors() {
     setEditingCompetitor(competitor);
     setFormData({
       company_name: competitor.company_name || '',
+      website: competitor.website || '',
+      search_terms: competitor.search_terms || '',
       country: competitor.country || '',
       industry_sectors: competitor.industry_sectors || '',
       notes: competitor.notes || '',
@@ -1268,6 +1274,25 @@ export default function Competitors() {
                 onChange={(event) => setFormData({ ...formData, industry_sectors: event.target.value })}
                 placeholder="e.g. IT Services, Construction"
               />
+            </div>
+            <div>
+              <Label htmlFor="website">Website</Label>
+              <Input
+                id="website"
+                value={formData.website}
+                onChange={(event) => setFormData({ ...formData, website: event.target.value })}
+                placeholder="e.g. https://www.bam.com"
+              />
+            </div>
+            <div>
+              <Label htmlFor="search_terms">Search Terms</Label>
+              <Input
+                id="search_terms"
+                value={formData.search_terms}
+                onChange={(event) => setFormData({ ...formData, search_terms: event.target.value })}
+                placeholder="e.g. BAM, BAM FM, BAM PPP"
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">Comma-separated names to match across award data. Defaults to company name if empty.</p>
             </div>
             <div>
               <Label htmlFor="notes">Notes</Label>
