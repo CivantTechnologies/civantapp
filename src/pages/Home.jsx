@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { civant } from '@/api/civantClient';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import { useTenant } from '@/lib/tenant';
+import { supabase } from '@/lib/supabaseClient';
 import { 
     FileText, 
     Clock, 
@@ -15,13 +16,14 @@ import {
     Calendar,
     Building2
 } from 'lucide-react';
-import { Page, PageHero, PageHeroActions, PageTitle, PageDescription, PageBody, Card, CardContent, CardHeader, CardTitle, Button, Badge } from '@/components/ui';
-import { format, formatDistanceToNow, subDays, isAfter, startOfDay } from 'date-fns';
+import { Page, PageHero, PageTitle, PageDescription, PageBody, Card, CardContent, CardHeader, CardTitle, Button, Badge } from '@/components/ui';
+import { format, formatDistanceToNow, subDays, isAfter, startOfDay, addMonths } from 'date-fns';
 
 export default function Home() {
     const [stats, setStats] = useState(null);
     const [latestTenders, setLatestTenders] = useState([]);
     const [connectorHealth, setConnectorHealth] = useState([]);
+    const [predictionRows, setPredictionRows] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState('');
     const { activeTenantId, isLoadingTenants } = useTenant();
@@ -35,6 +37,32 @@ export default function Home() {
 
     const getTenderPublicationDate = (tender) => tender.publication_date || tender.published_at || tender.first_seen_at || tender.updated_at;
     const getTenderFirstSeen = (tender) => tender.first_seen_at || tender.published_at || tender.publication_date || tender.updated_at;
+    const parseDate = (value) => {
+        if (!value) return null;
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? null : date;
+    };
+    const confidencePercent = (value) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return null;
+        if (numeric <= 1) {
+            return Math.max(0, Math.min(100, Math.round(numeric * 100)));
+        }
+        return Math.max(0, Math.min(100, Math.round(numeric)));
+    };
+    const getPredictionDate = (row) =>
+        row?.predicted_tender_date
+        || row?.predicted_window_start
+        || row?.contract_end_date
+        || row?.generated_at
+        || null;
+    const getPredictionConfidence = (row) =>
+        confidencePercent(
+            row?.probability
+            ?? row?.confidence
+            ?? row?.confidence_score
+            ?? row?.forecast_score
+        );
 
     const mapRunToSource = (run) => {
         const candidates = [
@@ -97,15 +125,33 @@ export default function Home() {
                 return !Number.isNaN(deadline.getTime()) && deadline >= startOfDay(now);
             }).length;
 
+            const fallbackCompetitorMovement7d = allTenders.filter(t =>
+                getTenderFirstSeen(t) && isAfter(new Date(getTenderFirstSeen(t)), subDays(now, 7))
+            ).length;
+
             setStats({
                 newTenders24h: Number(dashboardStats?.new_tenders_24h ?? fallbackNew24h ?? 0),
                 deadlinesIn7Days: Number(dashboardStats?.deadlines_in_7_days ?? fallbackDeadlines7d ?? 0),
                 alertsTriggered: Number(dashboardStats?.alerts_triggered_24h ?? 0),
-                openTendersNow: Number(dashboardStats?.open_tenders_now ?? fallbackOpenTendersNow ?? 0)
+                openTendersNow: Number(dashboardStats?.open_tenders_now ?? fallbackOpenTendersNow ?? 0),
+                competitorMovement7d: Number(dashboardStats?.competitor_movement_7d ?? fallbackCompetitorMovement7d ?? 0)
             });
             
             // Latest tenders
             setLatestTenders(allTenders.slice(0, 8));
+
+            // Highest-confidence signal source (existing forecast engine data).
+            let predictions = [];
+            try {
+                const { data, error } = await supabase
+                    .rpc('get_tenant_predictions', { p_tenant_id: activeTenantId })
+                    .limit(250);
+                if (error) throw error;
+                predictions = Array.isArray(data) ? data : [];
+            } catch (error) {
+                console.warn('get_tenant_predictions unavailable for briefing:', error);
+            }
+            setPredictionRows(predictions);
             
             // Connector health - get latest run per source
             const runs = await civant.entities.ConnectorRuns.list('-started_at', 50);
@@ -131,6 +177,75 @@ export default function Home() {
             setLoading(false);
         }
     };
+
+    const briefing = useMemo(() => {
+        const now = new Date();
+        const horizon = addMonths(now, 6);
+
+        const predictionTimeline = predictionRows
+            .map((row) => ({
+                row,
+                confidence: getPredictionConfidence(row),
+                predictedAt: parseDate(getPredictionDate(row))
+            }));
+
+        const rankedPredictions = predictionTimeline
+            .filter((entry) => entry.confidence !== null)
+            .sort((a, b) => Number(b.confidence) - Number(a.confidence));
+
+        const topPrediction = rankedPredictions[0]?.row || null;
+        const topPredictionConfidence = rankedPredictions[0]?.confidence ?? null;
+        const topTender = latestTenders[0] || null;
+
+        const predictionDate = topPrediction ? parseDate(getPredictionDate(topPrediction)) : null;
+        const publicationDate = topTender ? parseDate(getTenderPublicationDate(topTender)) : null;
+        const fromWindow = parseDate(topPrediction?.predicted_window_start);
+        const toWindow = parseDate(topPrediction?.predicted_window_end);
+
+        const timeframe = fromWindow && toWindow
+            ? `${format(fromWindow, 'MMM yyyy')} - ${format(toWindow, 'MMM yyyy')}`
+            : predictionDate
+                ? `Window ${format(predictionDate, 'MMM yyyy')}`
+                : publicationDate
+                    ? `Published ${format(publicationDate, 'MMM d, yyyy')}`
+                    : 'Window pending';
+
+        const region = topPrediction?.region || topPrediction?.country || topTender?.country || 'Multi-region';
+        const sector = topPrediction?.category
+            || topPrediction?.cpv_cluster_label
+            || topPrediction?.cpv_cluster_id
+            || topTender?.sector
+            || topTender?.cpv_cluster
+            || 'General procurement';
+        const buyer = topPrediction?.buyer_name
+            || topPrediction?.buyer_display_name
+            || topTender?.buyer_name
+            || '';
+
+        const title = topPrediction?.signal_title
+            || topPrediction?.title
+            || (buyer ? `${buyer} procurement cycle watch` : null)
+            || topTender?.title
+            || 'No high-confidence signal available';
+
+        const upcomingRenewals = predictionTimeline.filter((entry) => {
+            if (!entry.predictedAt) return false;
+            return entry.predictedAt >= now && entry.predictedAt <= horizon;
+        }).length;
+        const highConfidenceSignals = rankedPredictions.filter((entry) => Number(entry.confidence) >= 75).length;
+
+        return {
+            title,
+            timeframe,
+            confidence: topPredictionConfidence ?? 0,
+            region,
+            sector,
+            buyer,
+            upcomingRenewals,
+            highConfidenceSignals,
+            competitorMovement7d: Number(stats?.competitorMovement7d ?? 0)
+        };
+    }, [latestTenders, predictionRows, stats]);
     
     const StatCard = ({ title, value, icon: Icon, color, subtext, to }) => (
         <Link
@@ -191,27 +306,52 @@ export default function Home() {
     
     return (
         <Page className="space-y-8">
-            <PageHero>
-                <PageTitle className="max-w-4xl">
-                    Track procurement movement early and act with confidence.
-                </PageTitle>
-                <PageDescription>
-                    Monitor live tender activity, surface key shifts, and prioritize where your team should engage next.
-                </PageDescription>
-                <PageHeroActions>
-                    <Button asChild variant="primary">
-                        <Link to={createPageUrl('Search')}>
-                            Explore tenders
-                            <ArrowRight className="h-4 w-4 ml-1" />
-                        </Link>
-                    </Button>
-                    <Button asChild variant="secondary">
-                        <Link to={createPageUrl('Forecast')}>
-                            View forecast
-                        </Link>
-                    </Button>
-                </PageHeroActions>
-            </PageHero>
+            <section className="bg-black/12">
+                <div className="grid grid-cols-1 gap-10 px-12 py-14 md:py-16 lg:grid-cols-[minmax(0,1.95fr)_minmax(0,1fr)] lg:items-end">
+                    <div className="space-y-5">
+                        <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Intelligence Briefing</p>
+                        <h1 className="max-w-4xl text-3xl font-semibold tracking-tight text-card-foreground md:text-5xl">
+                            {briefing.title}
+                        </h1>
+                        <p className="text-sm text-muted-foreground md:text-base">
+                            {briefing.timeframe} · Confidence {briefing.confidence}% · {briefing.region} · {briefing.sector}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-3 pt-1">
+                            <Button asChild variant="primary">
+                                <Link to={createPageUrl('Forecast')}>
+                                    View Forecast
+                                </Link>
+                            </Button>
+                            <Button asChild variant="ghost" className="text-muted-foreground hover:text-card-foreground">
+                                <Link to={createPageUrl(briefing.buyer ? `Search?buyer=${encodeURIComponent(briefing.buyer)}` : 'Search')}>
+                                    View Buyer
+                                </Link>
+                            </Button>
+                        </div>
+                    </div>
+
+                    <div className="space-y-6">
+                        <div>
+                            <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Upcoming renewals (6 months)</p>
+                            <p className="mt-1 text-3xl font-semibold tracking-tight text-card-foreground">
+                                {briefing.upcomingRenewals.toLocaleString()}
+                            </p>
+                        </div>
+                        <div>
+                            <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">High confidence signals</p>
+                            <p className="mt-1 text-3xl font-semibold tracking-tight text-card-foreground">
+                                {briefing.highConfidenceSignals.toLocaleString()}
+                            </p>
+                        </div>
+                        <div>
+                            <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Competitor movement (7 days)</p>
+                            <p className="mt-1 text-3xl font-semibold tracking-tight text-card-foreground">
+                                {briefing.competitorMovement7d.toLocaleString()}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </section>
 
             <PageBody>
                 {loadError ? (
