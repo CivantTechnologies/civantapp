@@ -8,7 +8,6 @@ import {
   Building2,
   LayoutDashboard,
   Search,
-  Bell,
   BarChart3,
   Settings,
   Menu,
@@ -43,7 +42,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 export default function Layout({ children, currentPageName }) {
-  const { currentUser, roles, profileStatus, logout, authWarning } = useAuth();
+  const { session, currentUser, roles, profileStatus, logout, authWarning } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const {
@@ -260,16 +259,15 @@ export default function Layout({ children, currentPageName }) {
   );
   const tenantCount = Array.isArray(tenants) ? tenants.length : 0;
   const canSwitchWorkspace = tenantCount > 1;
-  const userMetadata = currentUser?.user_metadata || {};
+  const userMetadata = session?.user?.user_metadata || currentUser?.user_metadata || {};
   const userDisplayName = String(
     userMetadata.full_name
     || userMetadata.name
     || currentUser?.email?.split('@')?.[0]
     || 'User'
   );
-  const userEmail = String(currentUser?.email || '');
   const userAvatarUrl = userMetadata.avatar_url || userMetadata.picture || userMetadata.photo_url || '';
-  const avatarInitial = String(userDisplayName || userEmail || 'U').trim().charAt(0).toUpperCase() || 'U';
+  const avatarInitial = String(userDisplayName || currentUser?.email || 'U').trim().charAt(0).toUpperCase() || 'U';
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -545,17 +543,6 @@ export default function Layout({ children, currentPageName }) {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="civant-icon-button h-9 w-9 text-slate-300"
-              onClick={() => setNotificationsOpen(true)}
-              aria-label="Open notifications"
-            >
-              <Bell className="h-5 w-5" />
-            </Button>
-
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
@@ -576,7 +563,6 @@ export default function Layout({ children, currentPageName }) {
               >
                 <DropdownMenuLabel className="px-3 py-2.5">
                   <p className="truncate text-sm font-medium text-slate-100">{userDisplayName}</p>
-                  <p className="truncate pt-0.5 text-xs font-normal text-slate-500">{userEmail || 'Signed in'}</p>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator className="bg-white/[0.06]" />
 
@@ -685,10 +671,6 @@ export default function Layout({ children, currentPageName }) {
                     >
                       <Icon className={`h-5 w-5 ${isActive ? 'text-primary/80' : 'text-slate-500'}`} />
                       {item.name}
-                      {hasDrawer ? <ChevronDown className="ml-auto h-3.5 w-3.5 text-slate-500" /> : null}
-                      {isActive && !hasDrawer ? (
-                        <ChevronRight className="ml-auto h-3.5 w-3.5 text-primary/70" />
-                      ) : null}
                     </Link>
 
                     {hasDrawer ? (
