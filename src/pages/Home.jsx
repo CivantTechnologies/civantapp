@@ -5,19 +5,16 @@ import { createPageUrl } from '../utils';
 import { useTenant } from '@/lib/tenant';
 import { supabase } from '@/lib/supabaseClient';
 import IntelligenceTrajectorySection from '@/components/home/IntelligenceTrajectorySection';
+import HomePlatformFooter from '@/components/home/HomePlatformFooter';
 import { 
     FileText, 
     Clock, 
     Bell, 
     TrendingUp,
     ArrowRight,
-    CheckCircle2,
-    AlertCircle,
     Loader2,
-    Calendar,
-    Building2
 } from 'lucide-react';
-import { Page, PageHero, PageTitle, PageDescription, PageBody, Card, CardContent, CardHeader, CardTitle, Button, Badge } from '@/components/ui';
+import { Page, PageHero, PageTitle, PageDescription, PageBody, Card, CardContent, CardHeader, CardTitle, Button } from '@/components/ui';
 import { format, formatDistanceToNow, subDays, subMonths, isAfter, startOfDay, startOfMonth, addMonths } from 'date-fns';
 
 const CLUSTER_ALIAS_MAP = {
@@ -68,8 +65,8 @@ const BUYER_TYPE_PATTERNS = {
 export default function Home() {
     const [stats, setStats] = useState(null);
     const [latestTenders, setLatestTenders] = useState([]);
-    const [connectorHealth, setConnectorHealth] = useState([]);
     const [predictionRows, setPredictionRows] = useState([]);
+    const [lastDataUpdateAt, setLastDataUpdateAt] = useState(null);
     const [trajectorySeries12m, setTrajectorySeries12m] = useState([]);
     const [trajectoryIndicators, setTrajectoryIndicators] = useState({
         missedRenewalCycles12m: 0,
@@ -281,32 +278,6 @@ export default function Home() {
         };
     };
 
-    const mapRunToSource = (run) => {
-        const candidates = [
-            run?.source,
-            run?.connector_key,
-            run?.connector_id
-        ].map((value) => String(value || '').trim()).filter(Boolean);
-
-        for (const candidate of candidates) {
-            const upper = candidate.toUpperCase();
-            if (upper.startsWith('ETENDERS_IE_INCREMENTAL')) return 'ETENDERS_IE';
-            if (upper.startsWith('ETENDERS_IE')) return 'ETENDERS_IE';
-            if (upper.startsWith('BOAMP_FR')) return 'BOAMP_FR';
-            if (upper.startsWith('PLACSP_ES')) return 'PLACSP_ES';
-            if (upper === 'TED' || upper.startsWith('TED_')) return 'TED';
-        }
-
-        return '';
-    };
-
-    const readRunFetchedCount = (run) => {
-        const metadata = run?.metadata && typeof run.metadata === 'object' ? run.metadata : {};
-        const value = run?.fetched_count ?? metadata?.fetched_count ?? metadata?.rows_fetched ?? 0;
-        const parsed = Number(value);
-        return Number.isFinite(parsed) ? parsed : 0;
-    };
-    
     const loadDashboardData = async () => {
         try {
             setLoadError('');
@@ -401,26 +372,17 @@ export default function Home() {
             setTrajectorySeries12m(buildMonthlyTrajectorySeries(allTenders, scopedTenders));
             setTrajectoryIndicators(computeTrajectoryIndicators(scopedTenders, scopedPredictions));
             
-            // Latest tenders
-            setLatestTenders(allTenders.slice(0, 8));
+            // Recent relevant activity is scoped and intentionally compact.
+            setLatestTenders(scopedTenders.slice(0, 5));
             setPredictionRows(scopedPredictions);
             
-            // Connector health - get latest run per source
-            const runs = await civant.entities.ConnectorRuns.list('-started_at', 50);
-            const latestBySource = {};
-            runs.forEach(run => {
-                const source = mapRunToSource(run);
-                if (!source) return;
-                if (!latestBySource[source]) {
-                    latestBySource[source] = {
-                        ...run,
-                        source,
-                        fetched_count: readRunFetchedCount(run),
-                        run_started_at: run?.started_at || run?.created_at || null
-                    };
-                }
-            });
-            setConnectorHealth(Object.values(latestBySource));
+            try {
+                const [latestRun] = await civant.entities.ConnectorRuns.list('-started_at', 1);
+                setLastDataUpdateAt(latestRun?.started_at || latestRun?.created_at || null);
+            } catch (error) {
+                console.warn('Unable to fetch latest connector run timestamp:', error);
+                setLastDataUpdateAt(null);
+            }
             
         } catch (error) {
             console.error('Error loading dashboard:', error);
@@ -513,19 +475,6 @@ export default function Home() {
         </Link>
     );
     
-    const getSourceBadge = (source) => {
-        const colors = {
-            'BOAMP_FR': 'bg-secondary text-secondary-foreground border-border',
-            'TED': 'bg-primary/20 text-primary border-primary/30',
-            'ETENDERS_IE': 'bg-primary/15 text-card-foreground border-border'
-        };
-        return colors[source] || 'bg-secondary text-secondary-foreground border-border';
-    };
-    
-    const getCountryFlag = (country) => {
-        return country === 'FR' ? '🇫🇷' : country === 'IE' ? '🇮🇪' : country === 'ES' ? '🇪🇸' : '🌍';
-    };
-    
     if (loading) {
         return (
             <div className="flex items-center justify-center h-64">
@@ -561,6 +510,9 @@ export default function Home() {
                         </p>
                         <p className="text-sm text-muted-foreground">
                             {briefing.opensLabel} · Confidence {briefing.confidence}% · {briefing.region} · {briefing.sector}
+                        </p>
+                        <p className="text-xs text-muted-foreground/75">
+                            Last data update: {lastDataUpdateAt ? formatDistanceToNow(new Date(lastDataUpdateAt), { addSuffix: true }) : 'Unknown'}
                         </p>
                         <div className="flex flex-wrap items-center gap-3 pt-2">
                             <Button asChild variant="primary">
@@ -643,133 +595,59 @@ export default function Home() {
                     indicators={trajectoryIndicators}
                 />
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Latest Tenders */}
-                <div className="lg:col-span-2">
-                    <Card>
-                        <CardHeader className="pb-3">
-                            <div className="flex items-center justify-between">
-                                <CardTitle className="text-lg font-semibold">Latest Tenders</CardTitle>
-                                <Link to={createPageUrl('Search')}>
-                                    <Button variant="ghost" size="sm">
-                                        View all <ArrowRight className="h-4 w-4 ml-1" />
-                                    </Button>
-                                </Link>
-                            </div>
-                        </CardHeader>
-                        <CardContent className="p-0">
-                            <div className="divide-y divide-border/80">
-                                {latestTenders.length === 0 ? (
-                                    <div className="p-8 text-center text-muted-foreground">
-                                        <FileText className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                                        <p>No tenders yet. Run a connector to fetch data.</p>
-                                    </div>
-                                ) : (
-                                    latestTenders.map(tender => {
-                                        const firstSeenAt = getTenderFirstSeen(tender);
-                                        const isNew = firstSeenAt && isAfter(new Date(firstSeenAt), subDays(new Date(), 1));
-                                        const isUpdated = tender.version_count > 1;
-                                        
-                                        return (
-                                            <Link
-                                                key={tender.id}
-                                                to={createPageUrl(`TenderDetail?id=${tender.id}`)}
-                                                className="block p-4 hover:bg-muted/40 transition-colors"
-                                            >
-                                                <div className="flex items-start gap-3">
-                                                    <div className="text-lg">{getCountryFlag(tender.country)}</div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center gap-2 flex-wrap">
-                                                            <h3 className="font-medium text-card-foreground truncate">
-                                                                {tender.title}
-                                                            </h3>
-                                                            {isNew && (
-                                                                <Badge className="text-xs" variant="primary">
-                                                                    New
-                                                                </Badge>
-                                                            )}
-                                                            {isUpdated && (
-                                                                <Badge className="text-xs" variant="secondary">
-                                                                    Updated
-                                                                </Badge>
-                                                            )}
-                                                        </div>
-                                                        <div className="flex items-center gap-3 mt-1.5 text-sm text-muted-foreground">
-                                                            <span className="flex items-center gap-1">
-                                                                <Building2 className="h-3.5 w-3.5" />
-                                                                {tender.buyer_name || 'Unknown buyer'}
-                                                            </span>
-                                                            {tender.deadline_date && (
-                                                                <span className="flex items-center gap-1">
-                                                                    <Calendar className="h-3.5 w-3.5" />
-                                                                    {format(new Date(tender.deadline_date), 'MMM d, yyyy')}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    <Badge className={`${getSourceBadge(tender.source)} border text-xs`}>
-                                                        {tender.source}
-                                                    </Badge>
-                                                </div>
-                                            </Link>
-                                        );
-                                    })
-                                )}
-                            </div>
-                        </CardContent>
-                    </Card>
-                </div>
-                
-                {/* Connector Health */}
-                <div>
-                    <Card>
-                        <CardHeader className="pb-3">
-                            <CardTitle className="text-lg font-semibold">Connector Health</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                            {['BOAMP_FR', 'TED', 'ETENDERS_IE', 'PLACSP_ES'].map(source => {
-                                const run = connectorHealth.find(r => r.source === source);
-                                const status = String(run?.status || '').toLowerCase();
-                                
-                                return (
-                                    <div 
-                                        key={source}
-                                        className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/30"
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            {status === 'success' ? (
-                                                <CheckCircle2 className="h-5 w-5 text-primary" />
-                                            ) : status === 'fail' || status === 'failed' || status === 'error' ? (
-                                                <AlertCircle className="h-5 w-5 text-destructive" />
-                                            ) : status === 'partial' ? (
-                                                <AlertCircle className="h-5 w-5 text-card-foreground" />
-                                            ) : (
-                                                <div className="h-5 w-5 rounded-full bg-secondary" />
-                                            )}
-                                            <div>
-                                                <p className="font-medium text-sm text-card-foreground">{source}</p>
-                                                {run ? (
-                                                    <p className="text-xs text-muted-foreground">
-                                                        {run.run_started_at ? formatDistanceToNow(new Date(run.run_started_at), { addSuffix: true }) : 'No run timestamp'}
+                <Card className="border border-white/[0.06] bg-white/[0.015] shadow-none">
+                    <CardHeader className="pb-3">
+                        <div className="flex items-center justify-between">
+                            <CardTitle className="text-lg font-semibold">Recent Relevant Activity</CardTitle>
+                            <Link to={createPageUrl('Search')}>
+                                <Button variant="ghost" size="sm">
+                                    View all <ArrowRight className="ml-1 h-4 w-4" />
+                                </Button>
+                            </Link>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                        <div className="divide-y divide-white/[0.06]">
+                            {latestTenders.length === 0 ? (
+                                <div className="px-6 py-8 text-sm text-muted-foreground">
+                                    No relevant activity yet. We will surface updates as tracked signals arrive.
+                                </div>
+                            ) : (
+                                latestTenders.map((tender) => {
+                                    const publishedAt = getTenderPublicationDate(tender);
+                                    return (
+                                        <Link
+                                            key={tender.id}
+                                            to={createPageUrl(`TenderDetail?id=${tender.id}`)}
+                                            className="block px-6 py-4 transition-colors hover:bg-white/[0.02]"
+                                        >
+                                            <div className="flex items-start justify-between gap-4">
+                                                <div className="min-w-0 flex-1 space-y-1">
+                                                    <p className="truncate text-sm font-medium text-card-foreground">
+                                                        {tender.title || 'Untitled notice'}
                                                     </p>
-                                                ) : (
-                                                    <p className="text-xs text-muted-foreground">Never run</p>
-                                                )}
+                                                    <p className="truncate text-xs text-muted-foreground">
+                                                        {tender.buyer_name || 'Unknown buyer'}
+                                                        {publishedAt ? ` · ${format(new Date(publishedAt), 'MMM d, yyyy')}` : ''}
+                                                        {tender.source ? ` · ${String(tender.source).toUpperCase()}` : ''}
+                                                    </p>
+                                                </div>
+                                                <span className="pt-0.5 text-xs text-muted-foreground">→</span>
                                             </div>
-                                        </div>
-                                        {run && (
-                                            <div className="text-right">
-                                                <p className="text-sm font-medium text-card-foreground">{run.fetched_count || 0}</p>
-                                                <p className="text-xs text-muted-foreground">fetched</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </CardContent>
-                    </Card>
-                </div>
-                </div>
+                                        </Link>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <HomePlatformFooter
+                    version={import.meta.env.VITE_APP_VERSION || 'v0.9.3'}
+                    lastDataRefresh={lastDataUpdateAt}
+                    supportTo={createPageUrl('Company?section=support')}
+                    legalTo={createPageUrl('Company?section=legal')}
+                />
             </PageBody>
         </Page>
     );
