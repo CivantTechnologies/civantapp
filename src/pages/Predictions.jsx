@@ -215,7 +215,15 @@ function strategicWeight(row) {
 }
 
 function priorityScore(row) {
-  return predictionConfidencePercent(row) * priorityTimeWeight(row) * strategicWeight(row);
+  const prob = Number(row?.probability ?? 0);
+  const conf = Number(row?.confidence ?? 0);
+  const tw = priorityTimeWeight(row);
+  const sw = strategicWeight(row);
+
+  if (!Number.isFinite(prob) || prob <= 0) return 0;
+  if (!Number.isFinite(conf) || conf <= 0) return 0;
+
+  return prob * conf * tw * sw;
 }
 
 function SummaryTile({ label, value, hint }) {
