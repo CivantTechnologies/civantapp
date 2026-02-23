@@ -36,11 +36,12 @@ const COUNTRY_OPTIONS = [
 ];
 
 const URGENCY_OPTIONS = [
-  { value: 'all', label: 'All Urgency' },
-  { value: 'overdue', label: 'Overdue' },
+  { value: 'actionable', label: 'Actionable' },
   { value: 'upcoming', label: 'Upcoming' },
   { value: 'horizon', label: 'Horizon' },
-  { value: 'distant', label: 'Distant' }
+  { value: 'distant', label: 'Distant' },
+  { value: 'overdue', label: 'Overdue (Unverified)' },
+  { value: 'all', label: 'All (incl. Overdue)' }
 ];
 
 const SOURCE_OPTIONS = [
@@ -269,7 +270,7 @@ function SummaryTile({ label, value, hint }) {
 export default function Predictions() {
   const { activeTenantId, isLoadingTenants } = useTenant();
   const [countryFilter, setCountryFilter] = useState('all');
-  const [urgencyFilter, setUrgencyFilter] = useState('all');
+  const [urgencyFilter, setUrgencyFilter] = useState('actionable');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [allPredictions, setAllPredictions] = useState([]);
   const [companyProfile, setCompanyProfile] = useState(null);
@@ -348,7 +349,8 @@ export default function Predictions() {
     }
 
     if (countryFilter !== 'all') rows = rows.filter((row) => (row.country || row.region) === countryFilter);
-    if (urgencyFilter !== 'all') rows = rows.filter((row) => row.urgency === urgencyFilter);
+    if (urgencyFilter === 'actionable') rows = rows.filter((row) => (row.urgency || '').toLowerCase() !== 'overdue');
+    else if (urgencyFilter !== 'all') rows = rows.filter((row) => row.urgency === urgencyFilter);
     if (sourceFilter !== 'all') rows = rows.filter((row) => row.signal_type === sourceFilter);
 
     if (companyProfile && !companyScopeFilteringActive) {
@@ -368,14 +370,15 @@ export default function Predictions() {
   );
 
   const stats = useMemo(() => {
-    const overdue = filtered.filter((row) => String(row.urgency || '').toLowerCase() === 'overdue').length;
-    const scheduled = filtered.filter((row) => String(row.urgency || '').toLowerCase() !== 'overdue').length;
-    const totalValue = filtered.reduce((sum, row) => sum + Number(row.total_value_eur || 0), 0);
+    const actionable = filtered.filter((row) => (row.urgency || '').toLowerCase() !== 'overdue');
+    const upcoming = actionable.filter((row) => (row.urgency || '').toLowerCase() === 'upcoming').length;
+    const horizon = actionable.filter((row) => ['horizon', 'distant'].includes((row.urgency || '').toLowerCase())).length;
+    const pipelineValue = actionable.reduce((sum, row) => sum + Number(row.total_value_eur || 0), 0);
     return {
-      renewalWindowsIdentified: filtered.length,
-      activeRenewalWindow: overdue,
-      scheduledWindows: scheduled,
-      estimatedOpportunityValue: totalValue
+      actionableForecasts: actionable.length,
+      upcoming: upcoming,
+      horizon: horizon,
+      pipelineValue: pipelineValue
     };
   }, [filtered]);
 
@@ -500,24 +503,24 @@ export default function Predictions() {
       <PageBody className="space-y-6">
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           <SummaryTile
-            label="Renewal Windows Identified"
-            value={stats.renewalWindowsIdentified.toLocaleString()}
-            hint={summaryScopeHint}
+            label="Actionable Forecasts"
+            value={stats.actionableForecasts.toLocaleString()}
+            hint="Excludes unverified overdue"
           />
           <SummaryTile
-            label="Active Renewal Window"
-            value={stats.activeRenewalWindow.toLocaleString()}
-            hint="Currently overdue"
+            label="Upcoming"
+            value={stats.upcoming.toLocaleString()}
+            hint="Next 60 days"
           />
           <SummaryTile
-            label="Scheduled Windows"
-            value={stats.scheduledWindows.toLocaleString()}
-            hint="Upcoming horizon"
+            label="Horizon"
+            value={stats.horizon.toLocaleString()}
+            hint="60+ days out"
           />
           <SummaryTile
-            label="Estimated Opportunity Value"
-            value={formatCurrency(stats.estimatedOpportunityValue)}
-            hint="Renewal windows"
+            label="Pipeline Value"
+            value={formatCurrency(stats.pipelineValue)}
+            hint="Actionable opportunities"
           />
         </div>
 
