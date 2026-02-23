@@ -307,7 +307,7 @@ export default function Predictions() {
       await loadProfile();
       const { data, error } = await supabase
         .rpc('get_tenant_predictions', { p_tenant_id: activeTenantId })
-        .limit(500);
+        .limit(5000);
 
       if (error) {
         console.warn('get_tenant_predictions RPC unavailable:', error.message);
@@ -316,7 +316,7 @@ export default function Predictions() {
           .select('*')
           .eq('tenant_id', activeTenantId)
           .order('generated_at', { ascending: false })
-          .limit(500);
+          .limit(5000);
         if (fallbackError) throw fallbackError;
         setAllPredictions(fallback || []);
       } else {
