@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import { useTenant } from '@/lib/tenant';
 import { supabase } from '@/lib/supabaseClient';
+import IntelligenceTrajectorySection from '@/components/home/IntelligenceTrajectorySection';
 import { 
     FileText, 
     Clock, 
@@ -17,7 +18,7 @@ import {
     Building2
 } from 'lucide-react';
 import { Page, PageHero, PageTitle, PageDescription, PageBody, Card, CardContent, CardHeader, CardTitle, Button, Badge } from '@/components/ui';
-import { format, formatDistanceToNow, subDays, isAfter, startOfDay, addMonths } from 'date-fns';
+import { format, formatDistanceToNow, subDays, subMonths, isAfter, startOfDay, startOfMonth, addMonths } from 'date-fns';
 
 const CLUSTER_ALIAS_MAP = {
     cluster_digital: 'cluster_it_software',
@@ -69,6 +70,13 @@ export default function Home() {
     const [latestTenders, setLatestTenders] = useState([]);
     const [connectorHealth, setConnectorHealth] = useState([]);
     const [predictionRows, setPredictionRows] = useState([]);
+    const [trajectorySeries12m, setTrajectorySeries12m] = useState([]);
+    const [trajectoryIndicators, setTrajectoryIndicators] = useState({
+        missedRenewalCycles12m: 0,
+        newBuyersDetected90d: 0,
+        incumbentDominanceShift12m: 0
+    });
+    const [trajectoryRange, setTrajectoryRange] = useState('12m');
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState('');
     const { activeTenantId, isLoadingTenants } = useTenant();
@@ -180,6 +188,97 @@ export default function Home() {
         }
 
         return inferBuyerTypeMatch(buyerName, scope.targetBuyerTypes);
+    };
+    const buildMonthlyTrajectorySeries = (totalRows, scopedRows) => {
+        const now = new Date();
+        const points = Array.from({ length: 12 }, (_, index) => {
+            const monthDate = startOfMonth(subMonths(now, 11 - index));
+            const monthKey = format(monthDate, 'yyyy-MM');
+            return {
+                monthKey,
+                monthLabel: format(monthDate, 'MMM'),
+                trackedScope: 0,
+                totalMarket: 0
+            };
+        });
+        const pointByKey = new Map(points.map((point) => [point.monthKey, point]));
+
+        const applyRowsToSeries = (rows, key) => {
+            rows.forEach((row) => {
+                const publicationDate = parseDate(getTenderPublicationDate(row));
+                if (!publicationDate) return;
+                const monthKey = format(startOfMonth(publicationDate), 'yyyy-MM');
+                const bucket = pointByKey.get(monthKey);
+                if (!bucket) return;
+                bucket[key] += 1;
+            });
+        };
+
+        applyRowsToSeries(totalRows, 'totalMarket');
+        applyRowsToSeries(scopedRows, 'trackedScope');
+
+        return points.map(({ monthKey, ...rest }) => rest);
+    };
+    const computeTrajectoryIndicators = (scopedTenders, scopedPredictions) => {
+        const now = new Date();
+        const oneYearAgo = subMonths(now, 12);
+        const sixMonthsAgo = subMonths(now, 6);
+        const ninetyDaysAgo = subDays(now, 90);
+
+        const missedRenewalCycles12m = scopedPredictions.filter((row) => {
+            const predictedDate = parseDate(getPredictionDate(row));
+            if (!predictedDate || predictedDate < oneYearAgo || predictedDate > now) return false;
+            const urgency = String(row?.urgency || '').toLowerCase();
+            const status = String(row?.status || row?.lifecycle_status || '').toLowerCase();
+            const confidence = getPredictionConfidence(row) ?? 0;
+            return urgency === 'overdue' || status === 'miss' || confidence >= 80;
+        }).length;
+
+        const recentBuyers = new Set();
+        const baselineBuyers = new Set();
+        scopedTenders.forEach((tender) => {
+            const publicationDate = parseDate(getTenderPublicationDate(tender));
+            const buyerName = String(tender?.buyer_name || '').trim().toLowerCase();
+            if (!publicationDate || !buyerName) return;
+
+            if (publicationDate >= ninetyDaysAgo) {
+                recentBuyers.add(buyerName);
+                return;
+            }
+
+            if (publicationDate >= oneYearAgo) {
+                baselineBuyers.add(buyerName);
+            }
+        });
+        const newBuyersDetected90d = Array.from(recentBuyers).filter((buyer) => !baselineBuyers.has(buyer)).length;
+
+        const topBuyerShare = (startDate, endDate) => {
+            const counts = new Map();
+            let total = 0;
+
+            scopedTenders.forEach((tender) => {
+                const publicationDate = parseDate(getTenderPublicationDate(tender));
+                if (!publicationDate || publicationDate < startDate || publicationDate >= endDate) return;
+                const buyerName = String(tender?.buyer_name || '').trim().toLowerCase();
+                if (!buyerName) return;
+                counts.set(buyerName, (counts.get(buyerName) || 0) + 1);
+                total += 1;
+            });
+
+            if (!total || counts.size === 0) return 0;
+            const maxCount = Math.max(...counts.values());
+            return (maxCount / total) * 100;
+        };
+
+        const previousTopShare = topBuyerShare(oneYearAgo, sixMonthsAgo);
+        const currentTopShare = topBuyerShare(sixMonthsAgo, now);
+        const incumbentDominanceShift12m = Number((currentTopShare - previousTopShare).toFixed(1));
+
+        return {
+            missedRenewalCycles12m,
+            newBuyersDetected90d,
+            incumbentDominanceShift12m
+        };
     };
 
     const mapRunToSource = (run) => {
@@ -298,6 +397,9 @@ export default function Home() {
                 openTrackedOpportunities: Number(openTrackedOpportunities ?? 0),
                 competitorMovement7d: Number(scopedMovement7d ?? 0)
             });
+
+            setTrajectorySeries12m(buildMonthlyTrajectorySeries(allTenders, scopedTenders));
+            setTrajectoryIndicators(computeTrajectoryIndicators(scopedTenders, scopedPredictions));
             
             // Latest tenders
             setLatestTenders(allTenders.slice(0, 8));
@@ -533,6 +635,13 @@ export default function Home() {
                         to={createPageUrl('Search')}
                     />
                 </div>
+
+                <IntelligenceTrajectorySection
+                    series12m={trajectorySeries12m}
+                    range={trajectoryRange}
+                    onRangeChange={setTrajectoryRange}
+                    indicators={trajectoryIndicators}
+                />
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Latest Tenders */}
