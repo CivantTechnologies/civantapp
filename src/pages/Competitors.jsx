@@ -344,15 +344,18 @@ export default function Competitors() {
 
     return (
         <div className="space-y-6">
-            {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="civant-hero flex min-h-[60vh] flex-col justify-center gap-5 py-16 md:py-20">
+                <h1 className="max-w-4xl text-4xl font-semibold tracking-tight text-slate-100 md:text-5xl">
+                    Competitor intelligence at account level.
+                </h1>
+                <p className="max-w-3xl text-base text-slate-400 md:text-lg">
+                    Track incumbency strength, renewal exposure, and relationship depth before each procurement cycle.
+                </p>
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2"><Users className="h-6 w-6 text-civant-teal" />Competitor Intelligence</h1>
-                    <p className="text-slate-400 mt-1">Track competitors and analyze their public procurement activity</p>
+                    <Button className="bg-civant-teal text-slate-950 hover:bg-civant-teal/90" onClick={() => { setEditingCompetitor(null); resetForm(); setShowForm(true); }}>
+                        <Plus className="h-4 w-4 mr-2" />Add Competitor
+                    </Button>
                 </div>
-                <Button className="bg-civant-teal text-slate-950 hover:bg-civant-teal/90" onClick={() => { setEditingCompetitor(null); resetForm(); setShowForm(true); }}>
-                    <Plus className="h-4 w-4 mr-2" />Add Competitor
-                </Button>
             </div>
 
             {/* Analysis Dashboard */}

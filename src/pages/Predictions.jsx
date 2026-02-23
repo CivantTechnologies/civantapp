@@ -27,7 +27,8 @@ import {
   Page,
   PageBody,
   PageDescription,
-  PageHeader,
+  PageHero,
+  PageHeroActions,
   PageTitle,
 } from '@/components/ui';
 import {
@@ -527,42 +528,38 @@ export default function Predictions() {
 
   return (
     <Page>
-      <PageHeader>
-        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div>
-            <PageTitle>Tender Panorama</PageTitle>
-            <PageDescription>
-              Personalized procurement forecast — contract renewals and publication patterns, filtered to your profile.
-            </PageDescription>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Select value={sourceFilter} onValueChange={setSourceFilter}>
-              <SelectTrigger className="w-[150px] bg-white/[0.02] border-white/[0.08] text-slate-300 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SOURCE_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={countryFilter} onValueChange={setCountryFilter}>
-              <SelectTrigger className="w-[150px] bg-white/[0.02] border-white/[0.08] text-slate-300 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {COUNTRY_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={urgencyFilter} onValueChange={setUrgencyFilter}>
-              <SelectTrigger className="w-[140px] bg-white/[0.02] border-white/[0.08] text-slate-300 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {URGENCY_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      </PageHeader>
+      <PageHero className="md:min-h-[60vh]">
+        <PageTitle className="max-w-4xl">Forecast the next procurement cycle with context.</PageTitle>
+        <PageDescription>
+          Review renewal timing, cycle risk, and buyer momentum to prioritize your next bids.
+        </PageDescription>
+        <PageHeroActions>
+          <Select value={sourceFilter} onValueChange={setSourceFilter}>
+            <SelectTrigger className="w-[150px] bg-white/[0.02] border-white/[0.08] text-slate-300 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SOURCE_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={countryFilter} onValueChange={setCountryFilter}>
+            <SelectTrigger className="w-[150px] bg-white/[0.02] border-white/[0.08] text-slate-300 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {COUNTRY_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={urgencyFilter} onValueChange={setUrgencyFilter}>
+            <SelectTrigger className="w-[140px] bg-white/[0.02] border-white/[0.08] text-slate-300 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {URGENCY_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </PageHeroActions>
+      </PageHero>
 
       <PageBody className="space-y-6">
         {companyProfile && (

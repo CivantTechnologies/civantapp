@@ -393,18 +393,19 @@ function ProfileTabs({ profile, onSave, saving }) {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="civant-hero flex min-h-[60vh] flex-col justify-center gap-5 py-16 md:py-20">
+                <h1 className="max-w-4xl text-4xl font-semibold tracking-tight text-slate-100 md:text-5xl">
+                    {form.company_name || 'Company profile'}
+                </h1>
+                <p className="max-w-3xl text-base text-slate-400 md:text-lg">
+                    Keep company data, targeting preferences, and account settings aligned before the next forecast cycle.
+                </p>
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-                        <Building2 className="h-6 w-6 text-civant-teal" />
-                        {form.company_name || 'Company Profile'}
-                    </h1>
-                    <p className="text-slate-400 mt-1">Manage your company information and Civant preferences</p>
+                    <Button onClick={save} disabled={saving} className="bg-civant-teal text-slate-950 hover:bg-civant-teal/90">
+                        {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                        Save Changes
+                    </Button>
                 </div>
-                <Button onClick={save} disabled={saving} className="bg-civant-teal text-slate-950 hover:bg-civant-teal/90">
-                    {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-                    Save Changes
-                </Button>
             </div>
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -685,9 +686,11 @@ export default function CompanyProfile() {
         <div className="space-y-6 max-w-5xl mx-auto">
             {!profile?.onboarding_completed ? (
                 <>
-                    <div className="text-center space-y-2 pt-4">
-                        <h1 className="text-3xl font-bold text-slate-100">Welcome to Civant</h1>
-                        <p className="text-slate-400 max-w-lg mx-auto">Let's set up your company profile so we can personalize your procurement intelligence.</p>
+                    <div className="civant-hero mx-auto flex min-h-[60vh] max-w-4xl flex-col justify-center gap-5 text-center">
+                        <h1 className="text-4xl font-semibold tracking-tight text-slate-100 md:text-5xl">Set your company baseline.</h1>
+                        <p className="mx-auto max-w-3xl text-base text-slate-400 md:text-lg">
+                            Complete your profile once so forecasting, targeting, and alerting align to your real bidding strategy.
+                        </p>
                     </div>
                     <OnboardingWizard profile={profile} onSave={saveProfile} saving={saving} />
                 </>

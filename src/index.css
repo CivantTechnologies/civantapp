@@ -42,6 +42,11 @@
     --sidebar-accent-foreground: 0 0% 96%;
     --sidebar-border: var(--civant-border);
     --sidebar-ring: var(--civant-teal);
+    --motion-curve-standard: cubic-bezier(0.4, 0, 0.2, 1);
+    --motion-duration-fast: 140ms;
+    --motion-duration-standard: 180ms;
+    --content-inline-padding: clamp(1.5rem, 2vw, 2rem);
+    --hero-block-spacing: clamp(4rem, 10vh, 6rem);
   }
 
   .dark {
@@ -128,5 +133,52 @@
   .civant-select-item[data-highlighted] *,
   .civant-select-item[data-state='checked'] * {
     color: hsl(var(--primary-foreground)) !important;
+  }
+}
+
+@layer components {
+  .civant-topbar {
+    transition: background-color var(--motion-duration-standard) var(--motion-curve-standard);
+  }
+
+  .civant-motion-standard {
+    transition-duration: var(--motion-duration-standard);
+    transition-timing-function: var(--motion-curve-standard);
+  }
+
+  .civant-icon-button {
+    transition:
+      transform var(--motion-duration-fast) var(--motion-curve-standard),
+      filter var(--motion-duration-fast) var(--motion-curve-standard),
+      background-color var(--motion-duration-fast) var(--motion-curve-standard);
+  }
+
+  .civant-icon-button:hover {
+    transform: translateY(-2px);
+    filter: brightness(1.06);
+  }
+
+  .civant-nav-item {
+    transition:
+      color var(--motion-duration-fast) var(--motion-curve-standard),
+      background-color var(--motion-duration-fast) var(--motion-curve-standard),
+      border-color var(--motion-duration-fast) var(--motion-curve-standard),
+      transform var(--motion-duration-fast) var(--motion-curve-standard);
+  }
+
+  .civant-nav-item:hover {
+    transform: translateY(-1px);
+  }
+
+  .civant-hero {
+    padding-block: var(--hero-block-spacing);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .civant-icon-button,
+  .civant-nav-item,
+  .civant-topbar {
+    transition: none !important;
   }
 }
