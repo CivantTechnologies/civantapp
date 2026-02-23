@@ -93,6 +93,122 @@ function matchesLegalEntityContract(contract, legalEntityName) {
   return overlap >= Math.min(2, legalTokens.length);
 }
 
+function computeContractSignals(contracts = []) {
+  const now = new Date();
+  const last12Start = addMonths(now, -12);
+  const prior12Start = addMonths(now, -24);
+  const recent90Start = new Date(now);
+  recent90Start.setDate(recent90Start.getDate() - 90);
+  const prior90Start = new Date(now);
+  prior90Start.setDate(prior90Start.getDate() - 180);
+
+  let valueLast12 = 0;
+  let valuePrior12 = 0;
+  let winsRecent90 = 0;
+  let winsPrior90 = 0;
+
+  contracts.forEach((contract) => {
+    const awardDate = parseDateOrNull(contract?.award_date);
+    if (!awardDate) return;
+
+    const value = Number(contract?.value_eur || 0);
+    if (awardDate >= last12Start) valueLast12 += value;
+    else if (awardDate >= prior12Start && awardDate < last12Start) valuePrior12 += value;
+
+    if (awardDate >= recent90Start) winsRecent90 += 1;
+    else if (awardDate >= prior90Start && awardDate < recent90Start) winsPrior90 += 1;
+  });
+
+  return {
+    contractValueTrendDeclining: valuePrior12 > 0 && valueLast12 < (valuePrior12 * 0.9),
+    momentumPositive: winsRecent90 > (winsPrior90 * 1.1) && winsRecent90 > 0
+  };
+}
+
+function computeBuyerConcentrationTop3Pct(buyers = []) {
+  const values = buyers
+    .map((buyer) => Number(buyer?.total_value || 0))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((a, b) => b - a);
+
+  if (values.length === 0) return 0;
+  const total = values.reduce((sum, value) => sum + value, 0);
+  if (total <= 0) return 0;
+  const top3 = values.slice(0, 3).reduce((sum, value) => sum + value, 0);
+  return (top3 / total) * 100;
+}
+
+function computeLowLockInFromRenewals(renewals = []) {
+  let hasRepeatWinsData = false;
+  let count = 0;
+
+  renewals.forEach((renewal) => {
+    const repeatWins = Number(renewal?.repeat_wins ?? renewal?.incumbent_repeat_wins ?? renewal?.repeat_win_count);
+    if (!Number.isFinite(repeatWins)) return;
+    hasRepeatWinsData = true;
+    if (repeatWins <= 1) count += 1;
+  });
+
+  return { count, hasRepeatWinsData };
+}
+
+function computeLowLockInFromContracts(contracts = []) {
+  const now = new Date();
+  const horizon = addMonths(now, 12);
+  const buyerWinCount = new Map();
+
+  contracts.forEach((contract) => {
+    const buyerName = String(contract?.buyer_name || '').trim();
+    if (!buyerName) return;
+    buyerWinCount.set(buyerName, (buyerWinCount.get(buyerName) || 0) + 1);
+  });
+
+  return contracts.filter((contract) => {
+    const buyerName = String(contract?.buyer_name || '').trim();
+    if (!buyerName) return false;
+    const endDate = parseDateOrNull(contract?.end_date);
+    if (!endDate || endDate < now || endDate > horizon) return false;
+    return (buyerWinCount.get(buyerName) || 0) <= 1;
+  }).length;
+}
+
+function buildStrategicInsights({
+  renewalExposureValue = 0,
+  renewalExposureCount = 0,
+  lowLockInCount = 0,
+  buyerConcentrationTop3Pct = 0,
+  contractValueTrendDeclining = false,
+  momentumPositive = false
+}) {
+  const insights = [];
+
+  if (renewalExposureCount > 0) {
+    insights.push(`${fmtEur(renewalExposureValue)} across ${renewalExposureCount} contract${renewalExposureCount === 1 ? '' : 's'} expiring in next 12 months.`);
+  }
+
+  if (lowLockInCount > 0) {
+    insights.push(`${lowLockInCount} renewal window${lowLockInCount === 1 ? '' : 's'} show low incumbent lock-in - potential displacement opportunity.`);
+  }
+
+  if (buyerConcentrationTop3Pct > 60) {
+    insights.push(`Top 3 buyers represent ${buyerConcentrationTop3Pct.toFixed(1)}% of total contract value - concentration exposure.`);
+  }
+
+  if (contractValueTrendDeclining) {
+    insights.push('Contract value trend declining over last 12 months.');
+  }
+
+  if (momentumPositive) {
+    insights.push('Recent contract momentum increasing.');
+  }
+
+  if (insights.length === 0) {
+    insights.push('No significant exposure or concentration risks detected.');
+  }
+
+  return insights.slice(0, 5);
+}
+
 function buildCompetitorAnalysis(companyName, data) {
   const summary = data?.summary;
   const categories = data?.category_breakdown || [];
@@ -182,6 +298,16 @@ function CompetitorDossier({
     () => groupRenewalRows.reduce((sum, row) => sum + Number(row?.value_eur || 0), 0),
     [groupRenewalRows]
   );
+  const groupLowLockInSummary = useMemo(() => computeLowLockInFromRenewals(groupRenewalRows), [groupRenewalRows]);
+  const groupLowLockInCount = useMemo(
+    () => (groupLowLockInSummary.hasRepeatWinsData ? groupLowLockInSummary.count : computeLowLockInFromContracts(groupContracts)),
+    [groupContracts, groupLowLockInSummary]
+  );
+  const groupBuyerConcentrationTop3Pct = useMemo(
+    () => computeBuyerConcentrationTop3Pct(groupBuyers),
+    [groupBuyers]
+  );
+  const groupContractSignals = useMemo(() => computeContractSignals(groupContracts), [groupContracts]);
 
   const legalScope = useMemo(() => {
     if (!Array.isArray(groupContracts) || groupContracts.length === 0) {
@@ -294,6 +420,9 @@ function CompetitorDossier({
     if (buyerSet.size > 0) strengths.push(`Active across ${buyerSet.size} public bod${buyerSet.size === 1 ? 'y' : 'ies'}`);
     if (renewalContracts.length > 0) strengths.push(`${renewalContracts.length} renewal window${renewalContracts.length === 1 ? '' : 's'} within 12 months`);
     if (categories.length > 1) strengths.push(`Category footprint concentrated in ${categories.length} sectors`);
+    const lowLockInCount = computeLowLockInFromContracts(matchedContracts);
+    const buyerConcentrationTop3Pct = computeBuyerConcentrationTop3Pct(buyers);
+    const contractSignals = computeContractSignals(matchedContracts);
 
     return {
       summary: {
@@ -311,7 +440,11 @@ function CompetitorDossier({
       buyers,
       contracts: matchedContracts,
       renewalExposureCount: renewalContracts.length,
-      renewalExposureValue
+      renewalExposureValue,
+      lowLockInCount,
+      buyerConcentrationTop3Pct,
+      contractValueTrendDeclining: contractSignals.contractValueTrendDeclining,
+      momentumPositive: contractSignals.momentumPositive
     };
   }, [competitor?.company_name, groupContracts]);
 
@@ -331,8 +464,24 @@ function CompetitorDossier({
     buyers: groupBuyers,
     contracts: groupContracts,
     renewalExposureCount: groupRenewalRows.length,
-    renewalExposureValue: groupRenewalExposureValue
-  }), [groupBuyers, groupCategories, groupContracts, groupRenewalExposureValue, groupRenewalRows.length, groupStrengths, summary]);
+    renewalExposureValue: groupRenewalExposureValue,
+    lowLockInCount: groupLowLockInCount,
+    buyerConcentrationTop3Pct: groupBuyerConcentrationTop3Pct,
+    contractValueTrendDeclining: groupContractSignals.contractValueTrendDeclining,
+    momentumPositive: groupContractSignals.momentumPositive
+  }), [
+    groupBuyerConcentrationTop3Pct,
+    groupBuyers,
+    groupCategories,
+    groupContractSignals.contractValueTrendDeclining,
+    groupContractSignals.momentumPositive,
+    groupContracts,
+    groupLowLockInCount,
+    groupRenewalExposureValue,
+    groupRenewalRows.length,
+    groupStrengths,
+    summary
+  ]);
 
   const scoped = scopeMode === 'legal' ? legalScope : groupScope;
   const scopedSummary = scoped.summary;
@@ -340,6 +489,14 @@ function CompetitorDossier({
   const scopedCategories = scoped.categories || [];
   const scopedBuyers = scoped.buyers || [];
   const scopedContracts = scoped.contracts || [];
+  const strategicInsights = buildStrategicInsights({
+    renewalExposureValue: Number(scoped.renewalExposureValue || 0),
+    renewalExposureCount: Number(scoped.renewalExposureCount || 0),
+    lowLockInCount: Number(scoped.lowLockInCount || 0),
+    buyerConcentrationTop3Pct: Number(scoped.buyerConcentrationTop3Pct || 0),
+    contractValueTrendDeclining: Boolean(scoped.contractValueTrendDeclining),
+    momentumPositive: Boolean(scoped.momentumPositive)
+  });
 
   return (
     <div className="space-y-5">
@@ -424,6 +581,18 @@ function CompetitorDossier({
                 <MetricTile label="Renewal Exposure (12M)" value={fmtEur(scoped.renewalExposureValue)} hint={`${scoped.renewalExposureCount || 0} window${scoped.renewalExposureCount === 1 ? '' : 's'}`} />
                 <MetricTile label="Frameworks" value={scopedSummary.has_frameworks || 0} hint={`largest ${fmtEur(scopedSummary.max_contract_value_eur)}`} />
               </div>
+
+              <section className="bg-white/[0.02] px-4 py-4 md:px-5">
+                <h3 className="text-sm font-medium text-slate-200">Strategic Insights</h3>
+                <ul className="mt-3 space-y-2">
+                  {strategicInsights.map((insight, index) => (
+                    <li key={`${insight}-${index}`} className="flex items-start gap-2 text-sm text-slate-300">
+                      <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-slate-500" />
+                      <span>{insight}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
 
               <div className="grid gap-4 lg:grid-cols-2">
                 <Card className="border border-white/[0.05] bg-white/[0.01] shadow-none">
