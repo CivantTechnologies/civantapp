@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { format } from 'date-fns';
+import { differenceInCalendarDays, format, startOfDay } from 'date-fns';
 import { Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { civant } from '@/api/civantClient';
@@ -196,6 +196,28 @@ function sortPredictions(rows) {
   });
 }
 
+function priorityTimeWeight(row) {
+  const dateValue = predictionDate(row);
+  if (!dateValue) return 0.75;
+
+  const predictedDate = new Date(dateValue);
+  if (Number.isNaN(predictedDate.getTime())) return 0.75;
+
+  const daysUntilWindow = differenceInCalendarDays(startOfDay(predictedDate), startOfDay(new Date()));
+  if (daysUntilWindow <= 30) return 1.0;
+  if (daysUntilWindow <= 90) return 0.9;
+  return 0.75;
+}
+
+function strategicWeight(row) {
+  const raw = Number(row?.strategic_weight ?? row?.strategic_priority_weight ?? 1);
+  return Number.isFinite(raw) && raw > 0 ? raw : 1;
+}
+
+function priorityScore(row) {
+  return predictionConfidencePercent(row) * priorityTimeWeight(row) * strategicWeight(row);
+}
+
 function SummaryTile({ label, value, hint }) {
   return (
     <Card className="border border-white/[0.05] bg-white/[0.015] shadow-none">
@@ -321,6 +343,21 @@ export default function Predictions() {
     };
   }, [renewalRows]);
 
+  const priorityRows = useMemo(
+    () => renewalRows
+      .map((row) => ({
+        ...row,
+        priorityScore: priorityScore(row),
+        confidencePercent: predictionConfidencePercent(row)
+      }))
+      .sort((a, b) => {
+        if (b.priorityScore !== a.priorityScore) return b.priorityScore - a.priorityScore;
+        return b.confidencePercent - a.confidencePercent;
+      })
+      .slice(0, 5),
+    [renewalRows]
+  );
+
   const lastDataRefresh = useMemo(() => {
     const timestamps = allPredictions
       .map((row) => row?.last_computed_at || row?.generated_at || null)
@@ -407,6 +444,58 @@ export default function Predictions() {
             hint="Renewal windows"
           />
         </div>
+
+        <section className="space-y-3">
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold text-card-foreground">Top Priority Opportunities</h3>
+            <p className="text-xs text-muted-foreground">Ranked by strategic priority within your tracked scope.</p>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Ranking priority opportunities...
+            </div>
+          ) : null}
+
+          {!loading && priorityRows.length === 0 ? (
+            <div className="space-y-1 py-2 text-sm text-muted-foreground">
+              <p>No priority opportunities identified within your current scope.</p>
+              <p>The forecast engine continues to monitor renewal cycles.</p>
+            </div>
+          ) : null}
+
+          {!loading && priorityRows.length > 0 ? (
+            <div className="divide-y divide-white/[0.06]">
+              {priorityRows.map((row, index) => (
+                <div
+                  key={row.id || row.prediction_id || index}
+                  className="grid grid-cols-1 gap-3 py-3 md:grid-cols-[2.5fr_auto] md:items-center"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-card-foreground">{buyerLabel(row)}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{formatRenewalWindow(row)}</p>
+                    <p className="mt-1 text-sm font-medium text-slate-200 tabular-nums">
+                      {row.confidencePercent}% confidence
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-4 md:justify-end">
+                    <div className="text-right">
+                      <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Priority {index + 1}</p>
+                      <p className="text-sm font-medium text-slate-300 tabular-nums">{row.priorityScore.toFixed(1)}</p>
+                    </div>
+                    <Button variant="ghost" size="sm" asChild>
+                      <Link to={createPageUrl(`search?buyer=${encodeURIComponent(buyerLabel(row))}`)}>
+                        Plan Engagement
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </section>
 
         {!loading ? <ForecastTimeline rows={renewalRows} /> : null}
 
