@@ -15,7 +15,7 @@ import {
     Calendar,
     Building2
 } from 'lucide-react';
-import { Page, PageHeader, PageTitle, PageDescription, PageBody, Card, CardContent, CardHeader, CardTitle, Button, Badge } from '@/components/ui';
+import { Page, PageHero, PageHeroActions, PageTitle, PageDescription, PageBody, Card, CardContent, CardHeader, CardTitle, Button, Badge } from '@/components/ui';
 import { format, formatDistanceToNow, subDays, isAfter, startOfDay } from 'date-fns';
 
 export default function Home() {
@@ -179,36 +179,26 @@ export default function Home() {
     if (!activeTenantId) {
         return (
             <Page className="space-y-8">
-                <PageHeader className="gap-4">
-                    <span className="inline-flex w-fit rounded-full border border-primary/30 bg-primary/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
-                        Civant Intelligence
-                    </span>
-                    <div className="space-y-3">
-                        <PageTitle className="max-w-3xl text-3xl md:text-4xl">Select a tenant to load your dashboard</PageTitle>
-                        <PageDescription className="max-w-2xl">
-                            Choose a tenant from the sidebar. Tenant-scoped data is required to prevent expensive unscoped queries.
-                        </PageDescription>
-                    </div>
-                </PageHeader>
+                <PageHero>
+                    <PageTitle>Select a workspace to continue</PageTitle>
+                    <PageDescription>
+                        Choose a tenant from the workspace switcher to load scoped intelligence and forecasts.
+                    </PageDescription>
+                </PageHero>
             </Page>
         );
     }
     
     return (
         <Page className="space-y-8">
-            <PageHeader className="gap-4">
-                <span className="inline-flex w-fit rounded-full border border-primary/30 bg-primary/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
-                    Civant Intelligence
-                </span>
-                <div className="space-y-3">
-                    <PageTitle className="max-w-3xl text-3xl md:text-4xl">
-                        Identify public procurement shifts before your competitors do
-                    </PageTitle>
-                    <PageDescription className="max-w-2xl">
-                        AI-assisted monitoring for Irish and French tender markets, with alerts and predictive signals from live procurement activity.
-                    </PageDescription>
-                </div>
-                <div className="flex flex-wrap gap-2">
+            <PageHero>
+                <PageTitle className="max-w-4xl">
+                    Track procurement movement early and act with confidence.
+                </PageTitle>
+                <PageDescription>
+                    Monitor live tender activity, surface key shifts, and prioritize where your team should engage next.
+                </PageDescription>
+                <PageHeroActions>
                     <Button asChild variant="primary">
                         <Link to={createPageUrl('Search')}>
                             Explore tenders
@@ -217,11 +207,11 @@ export default function Home() {
                     </Button>
                     <Button asChild variant="secondary">
                         <Link to={createPageUrl('Forecast')}>
-                            View predictions
+                            View forecast
                         </Link>
                     </Button>
-                </div>
-            </PageHeader>
+                </PageHeroActions>
+            </PageHero>
 
             <PageBody>
                 {loadError ? (

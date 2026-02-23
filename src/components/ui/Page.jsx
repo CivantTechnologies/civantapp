@@ -8,7 +8,7 @@ const Page = React.forwardRef(function Page({ className, ...props }, ref) {
   return (
     <section
       ref={ref}
-      className={cn('mx-auto w-full max-w-7xl space-y-6 px-4 py-6 md:px-6 md:py-8', className)}
+      className={cn('mx-auto w-full max-w-7xl space-y-8 px-6 py-8 md:px-8 md:py-10', className)}
       {...props}
     />
   );
@@ -20,10 +20,7 @@ const PageHeader = React.forwardRef(function PageHeader({ className, ...props },
   return (
     <header
       ref={ref}
-      className={cn(
-        'flex flex-col gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5 md:p-6',
-        className
-      )}
+      className={cn('flex flex-col gap-4', className)}
       {...props}
     />
   );
@@ -31,14 +28,41 @@ const PageHeader = React.forwardRef(function PageHeader({ className, ...props },
 PageHeader.displayName = 'PageHeader';
 
 /** @type {import('react').ForwardRefExoticComponent<DivProps & import('react').RefAttributes<HTMLDivElement>>} */
+const PageHero = React.forwardRef(function PageHero({ className, ...props }, ref) {
+  return (
+    <header
+      ref={ref}
+      className={cn(
+        'civant-hero flex min-h-[60vh] flex-col justify-center gap-5 py-16 md:min-h-[65vh] md:py-20',
+        className
+      )}
+      {...props}
+    />
+  );
+});
+PageHero.displayName = 'PageHero';
+
+/** @type {import('react').ForwardRefExoticComponent<DivProps & import('react').RefAttributes<HTMLDivElement>>} */
+const PageHeroActions = React.forwardRef(function PageHeroActions({ className, ...props }, ref) {
+  return (
+    <div
+      ref={ref}
+      className={cn('flex flex-wrap items-center gap-3', className)}
+      {...props}
+    />
+  );
+});
+PageHeroActions.displayName = 'PageHeroActions';
+
+/** @type {import('react').ForwardRefExoticComponent<DivProps & import('react').RefAttributes<HTMLDivElement>>} */
 const PageTitle = React.forwardRef(function PageTitle({ className, ...props }, ref) {
-  return <h1 ref={ref} className={cn('text-2xl font-bold tracking-tight text-card-foreground md:text-3xl', className)} {...props} />;
+  return <h1 ref={ref} className={cn('text-4xl font-semibold tracking-tight text-card-foreground md:text-5xl', className)} {...props} />;
 });
 PageTitle.displayName = 'PageTitle';
 
 /** @type {import('react').ForwardRefExoticComponent<DivProps & import('react').RefAttributes<HTMLDivElement>>} */
 const PageDescription = React.forwardRef(function PageDescription({ className, ...props }, ref) {
-  return <p ref={ref} className={cn('text-sm text-muted-foreground md:text-base', className)} {...props} />;
+  return <p ref={ref} className={cn('max-w-3xl text-base text-muted-foreground md:text-lg', className)} {...props} />;
 });
 PageDescription.displayName = 'PageDescription';
 
@@ -48,4 +72,4 @@ const PageBody = React.forwardRef(function PageBody({ className, ...props }, ref
 });
 PageBody.displayName = 'PageBody';
 
-export { Page, PageHeader, PageTitle, PageDescription, PageBody };
+export { Page, PageHeader, PageHero, PageHeroActions, PageTitle, PageDescription, PageBody };
