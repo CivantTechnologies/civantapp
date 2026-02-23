@@ -8,7 +8,7 @@ const Page = React.forwardRef(function Page({ className, ...props }, ref) {
   return (
     <section
       ref={ref}
-      className={cn('mx-auto w-full max-w-7xl space-y-8 px-6 py-8 md:px-8 md:py-10', className)}
+      className={cn('mx-auto w-full max-w-7xl space-y-8', className)}
       {...props}
     />
   );

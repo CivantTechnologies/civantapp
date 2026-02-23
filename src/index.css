@@ -45,7 +45,9 @@
     --motion-curve-standard: cubic-bezier(0.4, 0, 0.2, 1);
     --motion-duration-fast: 140ms;
     --motion-duration-standard: 180ms;
-    --content-inline-padding: clamp(1.5rem, 2vw, 2rem);
+    --content-inline-padding: clamp(2rem, 2.6vw, 2.5rem);
+    --content-inline-padding-hero: clamp(2.5rem, 3vw, 3rem);
+    --content-block-padding: 2rem;
     --hero-block-spacing: clamp(4rem, 10vh, 6rem);
   }
 
@@ -170,8 +172,32 @@
     transform: translateY(-1px);
   }
 
+  .civant-sidebar-shell {
+    box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.02);
+  }
+
+  .civant-tenant-label {
+    letter-spacing: 0.01em;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .civant-main-shell {
+    padding-left: var(--content-inline-padding);
+    padding-right: var(--content-inline-padding);
+    padding-top: var(--content-block-padding);
+    padding-bottom: var(--content-block-padding);
+  }
+
   .civant-hero {
     padding-block: var(--hero-block-spacing);
+  }
+}
+
+@media (min-width: 1280px) {
+  .civant-main-shell {
+    padding-left: var(--content-inline-padding-hero);
+    padding-right: var(--content-inline-padding-hero);
   }
 }
 

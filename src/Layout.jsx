@@ -80,17 +80,10 @@ export default function Layout({ children, currentPageName }) {
   const isSuperAdmin = profileStatus === 'ready'
     && Array.isArray(roles)
     && roles.includes('super_admin');
-
-  const pageTitle = useMemo(() => {
-    const map = {
-      Home: 'Workspace overview',
-      Forecast: 'Forecast',
-      Competitors: 'Competitors',
-      Company: 'Company',
-      Operations: 'Operations'
-    };
-    return map[currentPageName] || 'Civant';
-  }, [currentPageName]);
+  const selectedTenant = useMemo(
+    () => tenants.find((tenant) => tenant.id === activeTenantId) || null,
+    [tenants, activeTenantId]
+  );
 
   const navItems = useMemo(() => {
     const base = [
@@ -498,37 +491,24 @@ export default function Layout({ children, currentPageName }) {
               {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </Button>
 
-            <Link to="/home" className="flex items-center gap-2.5 text-slate-100">
-              <div className="h-8 w-8 overflow-hidden rounded-lg ring-1 ring-primary/30">
-                <img src="/apple-touch-icon.png" alt="Civant mark" className="h-full w-full object-cover" />
-              </div>
-              <span className="hidden text-sm font-semibold tracking-tight sm:inline">Civant</span>
-            </Link>
-
-            <div className="hidden min-w-0 items-center sm:flex">
-              <label className="sr-only" htmlFor="workspace-switcher">Workspace</label>
-              <div className="relative">
-                <select
-                  id="workspace-switcher"
-                  className="h-9 w-[170px] appearance-none rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 pr-8 text-xs text-slate-200 transition-colors focus:border-primary/40 focus:outline-none"
-                  value={activeTenantId}
-                  onChange={(event) => setActiveTenantId(event.target.value)}
-                  disabled={isLoadingTenants}
-                >
-                  {tenants.map((tenant) => (
-                    <option key={tenant.id} value={tenant.id}>{tenant.name}</option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+            <div className="flex items-center gap-3">
+              <Link to="/home" className="text-slate-100">
+                <div className="h-9 w-9 overflow-hidden rounded-lg ring-1 ring-primary/30">
+                  <img src="/apple-touch-icon.png" alt="Civant mark" className="h-full w-full object-cover" />
+                </div>
+              </Link>
+              <div className="hidden min-w-0 flex-col sm:flex">
+                <Link to="/home" className="text-base font-semibold leading-tight tracking-tight text-slate-100">
+                  Civant
+                </Link>
+                <span className="civant-tenant-label truncate text-[11px] leading-tight text-slate-500">
+                  {selectedTenant?.name || 'Workspace'}
+                </span>
               </div>
             </div>
           </div>
 
-          <div className="hidden flex-1 items-center justify-center lg:flex">
-            <p className="text-sm font-medium text-slate-500">{pageTitle}</p>
-          </div>
-
-          <div className="flex flex-1 items-center justify-end gap-4">
+          <div className="flex items-center justify-end gap-4">
             <div className="flex items-center gap-2">
               <Button
                 type="button"
@@ -647,12 +627,12 @@ export default function Layout({ children, currentPageName }) {
       </header>
 
       <aside className={`
-        fixed left-0 top-14 z-40 h-[calc(100vh-56px)] w-64 border-r border-white/[0.04] bg-background/72 backdrop-blur-md
+        civant-sidebar-shell fixed left-0 top-14 z-40 h-[calc(100vh-56px)] w-60 border-r border-white/[0.02] bg-background/68 backdrop-blur-md
         civant-motion-standard transition-transform lg:translate-x-0
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="flex h-full flex-col overflow-visible">
-          <div className="space-y-4 px-2.5 py-4">
+          <div className="space-y-4 px-2 py-4">
             <div className="space-y-1 sm:hidden">
               <label className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Workspace</label>
               <div className="relative">
@@ -800,8 +780,8 @@ export default function Layout({ children, currentPageName }) {
         />
       ) : null}
 
-      <main className="min-h-screen pt-14 lg:pl-64">
-        <div className="px-6 py-8 lg:px-8">
+      <main className="min-h-screen pt-14 lg:pl-60">
+        <div className="civant-main-shell">
           {children}
         </div>
       </main>
