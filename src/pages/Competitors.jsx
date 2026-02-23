@@ -260,9 +260,9 @@ function buildCompetitorAnalysis(companyName, data) {
 function MetricTile({ label, value, hint }) {
   return (
     <Card className="h-full border border-white/[0.05] bg-white/[0.015] shadow-none">
-      <CardContent className="px-4 py-3.5">
+      <CardContent className="px-3 py-3 min-[900px]:px-4 min-[900px]:py-3.5">
         <p className="text-[11px] uppercase tracking-[0.07em] text-muted-foreground">{label}</p>
-        <p className="mt-1 text-[1.95rem] font-semibold leading-none tracking-tight text-card-foreground tabular-nums">{value}</p>
+        <p className="mt-1 text-[clamp(1.65rem,3.2vw,1.95rem)] font-semibold leading-none tracking-tight text-card-foreground tabular-nums">{value}</p>
         {hint ? <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p> : null}
       </CardContent>
     </Card>
@@ -500,23 +500,25 @@ function CompetitorDossier({
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="space-y-1">
+      <div className="flex flex-wrap items-start justify-between gap-3 md:gap-4">
+        <div className="min-w-0 flex-1 space-y-1">
           <Button variant="ghost" size="sm" className="-ml-2 text-slate-300" onClick={onBack}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Competitors / {competitor.company_name}
           </Button>
-          <h1 className="text-3xl font-semibold tracking-tight text-slate-100">{competitor.company_name}</h1>
+          <h1 className="max-w-[min(100%,32ch)] break-words text-[clamp(2rem,4vw,3rem)] font-semibold leading-[1.06] tracking-tight text-slate-100">
+            {competitor.company_name}
+          </h1>
           {scopeMode === 'legal' ? (
             <p className="text-xs text-muted-foreground">Viewing: Legal Entity Only</p>
           ) : null}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
           <div className="inline-flex items-center rounded-lg bg-white/[0.03] p-1">
             <button
               type="button"
-              className={`rounded-md px-3 py-1.5 text-xs transition-colors ${
+              className={`rounded-md px-2.5 py-1.5 text-xs transition-colors min-[900px]:px-3 ${
                 scopeMode === 'group'
                   ? 'bg-white/[0.08] text-slate-100'
                   : 'text-slate-400 hover:text-slate-200'
@@ -527,7 +529,7 @@ function CompetitorDossier({
             </button>
             <button
               type="button"
-              className={`rounded-md px-3 py-1.5 text-xs transition-colors ${
+              className={`rounded-md px-2.5 py-1.5 text-xs transition-colors min-[900px]:px-3 ${
                 scopeMode === 'legal'
                   ? 'bg-white/[0.08] text-slate-100'
                   : 'text-slate-400 hover:text-slate-200'
@@ -539,7 +541,7 @@ function CompetitorDossier({
           </div>
           {competitors.length > 1 ? (
             <Select value={String(competitor.id)} onValueChange={onSwitch}>
-              <SelectTrigger className="h-9 w-[260px] border-white/[0.08] bg-white/[0.02] text-sm text-slate-300">
+              <SelectTrigger className="h-9 w-full min-w-[180px] min-[600px]:w-[220px] min-[900px]:w-[260px] border-white/[0.08] bg-white/[0.02] text-sm text-slate-300">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -554,7 +556,7 @@ function CompetitorDossier({
         </div>
       </div>
 
-      <section className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-4 md:p-5">
+      <section className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-3.5 min-[900px]:p-5">
         {loading ? (
           <div className="flex min-h-[220px] items-center justify-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -574,7 +576,7 @@ function CompetitorDossier({
             </TabsList>
 
             <TabsContent value="overview" className="mt-4 space-y-4">
-              <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-3">
+              <div className="grid grid-cols-1 gap-3 min-[600px]:grid-cols-2 min-[900px]:grid-cols-3 min-[1200px]:grid-cols-5">
                 <MetricTile label="Contracts" value={scopedSummary.total_awards || 0} hint={`${scopedSummary.years_active || 0} years active`} />
                 <MetricTile label="Total Value" value={fmtEur(scopedSummary.total_value_eur)} hint={`avg ${fmtEur(scopedSummary.avg_contract_value_eur)}`} />
                 <MetricTile label="Public Bodies" value={scopedSummary.distinct_buyers || 0} hint={`${scopedSummary.active_contracts || 0} active`} />
@@ -582,7 +584,7 @@ function CompetitorDossier({
                 <MetricTile label="Frameworks" value={scopedSummary.has_frameworks || 0} hint={`largest ${fmtEur(scopedSummary.max_contract_value_eur)}`} />
               </div>
 
-              <section className="bg-white/[0.02] px-4 py-4 md:px-5">
+              <section className="bg-white/[0.02] px-3.5 py-3.5 min-[900px]:px-5 min-[900px]:py-4">
                 <h3 className="text-sm font-medium text-slate-200">Strategic Insights</h3>
                 <ul className="mt-3 space-y-2">
                   {strategicInsights.map((insight, index) => (
@@ -594,7 +596,7 @@ function CompetitorDossier({
                 </ul>
               </section>
 
-              <div className="grid gap-4 lg:grid-cols-2">
+              <div className="grid gap-4 min-[1100px]:grid-cols-2">
                 <Card className="border border-white/[0.05] bg-white/[0.01] shadow-none">
                   <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-slate-300">Strengths</CardTitle></CardHeader>
                   <CardContent>
@@ -616,12 +618,12 @@ function CompetitorDossier({
                     {scopedCategories.length > 0 ? (
                       <div className="space-y-2">
                         {scopedCategories.map((cat, index) => (
-                          <div key={`${cat.cluster}-${index}`} className="flex items-center justify-between text-sm">
-                            <div className="flex items-center gap-2 text-slate-300">
+                          <div key={`${cat.cluster}-${index}`} className="flex items-center justify-between gap-3 text-sm">
+                            <div className="flex min-w-0 items-center gap-2 text-slate-300">
                               <span className="w-5 text-xs text-muted-foreground">{index + 1}</span>
-                              <span className="font-medium text-slate-100">{fmtCluster(cat.cluster)}</span>
+                              <span className="truncate font-medium text-slate-100">{fmtCluster(cat.cluster)}</span>
                             </div>
-                            <div className="text-right text-xs text-muted-foreground">
+                            <div className="shrink-0 text-right text-xs text-muted-foreground">
                               <p>{cat.award_count || 0} awards</p>
                               <p>{cat.distinct_buyers || 0} buyers · {fmtEur(cat.total_value)}</p>
                             </div>
