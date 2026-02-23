@@ -260,10 +260,10 @@ function buildCompetitorAnalysis(companyName, data) {
 function MetricTile({ label, value, hint }) {
   return (
     <Card className="h-full border border-white/[0.05] bg-white/[0.015] shadow-none">
-      <CardContent className="flex h-full flex-col px-3.5 py-2.5 min-[900px]:px-4 min-[900px]:py-3">
-        <p className="text-[11px] uppercase tracking-[0.05em] leading-4 text-muted-foreground">{label}</p>
-        <p className="mt-2 min-h-[2.05rem] text-[clamp(1.7rem,2.9vw,1.92rem)] font-semibold leading-[1.05] tracking-[-0.01em] text-card-foreground tabular-nums">{value}</p>
-        {hint ? <p className="mt-2 text-xs leading-4 text-muted-foreground">{hint}</p> : null}
+      <CardContent className="flex h-full flex-col items-center justify-center px-3.5 py-4 min-[900px]:px-4 min-[900px]:py-5 text-center">
+        <p className="whitespace-nowrap text-[11px] uppercase tracking-[0.08em] leading-none text-muted-foreground">{label}</p>
+        <p className="mt-2.5 text-[clamp(1.7rem,2.9vw,2.1rem)] font-semibold leading-none tracking-[-0.01em] text-card-foreground tabular-nums">{value}</p>
+        {hint ? <p className="mt-2 text-xs leading-none text-muted-foreground">{hint}</p> : null}
       </CardContent>
     </Card>
   );
