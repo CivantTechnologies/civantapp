@@ -44,9 +44,10 @@ const URGENCY_OPTIONS = [
 ];
 
 const SOURCE_OPTIONS = [
-  { value: 'all', label: 'All Sources' },
-  { value: 'renewal', label: 'Renewal Signals' },
-  { value: 'engine', label: 'Pattern Engine' }
+  { value: 'all', label: 'All Signals' },
+  { value: 'contract_renewal', label: 'Contract Renewal' },
+  { value: 'framework_expiry', label: 'Framework Expiry' },
+  { value: 'repeat_buyer_cycle', label: 'Repeat Buyer Cycle' }
 ];
 
 const CATEGORY_TO_PROFILE_CLUSTER = {
@@ -348,8 +349,7 @@ export default function Predictions() {
 
     if (countryFilter !== 'all') rows = rows.filter((row) => (row.country || row.region) === countryFilter);
     if (urgencyFilter !== 'all') rows = rows.filter((row) => row.urgency === urgencyFilter);
-    if (sourceFilter === 'renewal') rows = rows.filter(isRenewal);
-    else if (sourceFilter === 'engine') rows = rows.filter((row) => !isRenewal(row));
+    if (sourceFilter !== 'all') rows = rows.filter((row) => row.signal_type === sourceFilter);
 
     if (companyProfile && !companyScopeFilteringActive) {
       return [...rows].sort((a, b) => {
@@ -368,19 +368,19 @@ export default function Predictions() {
   );
 
   const stats = useMemo(() => {
-    const overdue = renewalRows.filter((row) => String(row.urgency || '').toLowerCase() === 'overdue').length;
-    const scheduled = renewalRows.filter((row) => String(row.urgency || '').toLowerCase() !== 'overdue').length;
-    const totalValue = renewalRows.reduce((sum, row) => sum + Number(row.total_value_eur || 0), 0);
+    const overdue = filtered.filter((row) => String(row.urgency || '').toLowerCase() === 'overdue').length;
+    const scheduled = filtered.filter((row) => String(row.urgency || '').toLowerCase() !== 'overdue').length;
+    const totalValue = filtered.reduce((sum, row) => sum + Number(row.total_value_eur || 0), 0);
     return {
-      renewalWindowsIdentified: renewalRows.length,
+      renewalWindowsIdentified: filtered.length,
       activeRenewalWindow: overdue,
       scheduledWindows: scheduled,
       estimatedOpportunityValue: totalValue
     };
-  }, [renewalRows]);
+  }, [filtered]);
 
   const priorityRows = useMemo(
-    () => renewalRows
+    () => filtered
       .map((row) => ({
         ...row,
         priorityScore: priorityScore(row),
@@ -395,7 +395,7 @@ export default function Predictions() {
         return b.confidencePercent - a.confidencePercent;
       })
       .slice(0, 5),
-    [renewalRows, companyScopeFilteringActive]
+    [filtered, companyScopeFilteringActive]
   );
 
   const lastDataRefresh = useMemo(() => {
