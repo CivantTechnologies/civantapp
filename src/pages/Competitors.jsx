@@ -580,7 +580,7 @@ function CompetitorDossier({
                 <MetricTile label="Contracts" value={scopedSummary.total_awards || 0} hint={`${scopedSummary.years_active || 0} years active`} />
                 <MetricTile label="Total Value" value={fmtEur(scopedSummary.total_value_eur)} hint={`avg ${fmtEur(scopedSummary.avg_contract_value_eur)}`} />
                 <MetricTile label="Public Bodies" value={scopedSummary.distinct_buyers || 0} hint={`${scopedSummary.active_contracts || 0} active`} />
-                <MetricTile label="Renewal Exposure (12M)" value={fmtEur(scoped.renewalExposureValue)} hint={`${scoped.renewalExposureCount || 0} window${scoped.renewalExposureCount === 1 ? '' : 's'}`} />
+                <MetricTile label="Renewals (12 Months)" value={fmtEur(scoped.renewalExposureValue)} hint={`${scoped.renewalExposureCount || 0} window${scoped.renewalExposureCount === 1 ? '' : 's'}`} />
                 <MetricTile label="Frameworks" value={scopedSummary.has_frameworks || 0} hint={`largest ${fmtEur(scopedSummary.max_contract_value_eur)}`} />
               </div>
 
