@@ -260,10 +260,10 @@ function buildCompetitorAnalysis(companyName, data) {
 function MetricTile({ label, value, hint }) {
   return (
     <Card className="h-full border border-white/[0.05] bg-white/[0.015] shadow-none">
-      <CardContent className="px-3 py-3 min-[900px]:px-4 min-[900px]:py-3.5">
-        <p className="text-[11px] uppercase tracking-[0.07em] text-muted-foreground">{label}</p>
-        <p className="mt-1 text-[clamp(1.65rem,3.2vw,1.95rem)] font-semibold leading-none tracking-tight text-card-foreground tabular-nums">{value}</p>
-        {hint ? <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p> : null}
+      <CardContent className="flex h-full flex-col px-3.5 py-2.5 min-[900px]:px-4 min-[900px]:py-3">
+        <p className="text-[11px] uppercase tracking-[0.05em] leading-4 text-muted-foreground">{label}</p>
+        <p className="mt-2 min-h-[2.05rem] text-[clamp(1.7rem,2.9vw,1.92rem)] font-semibold leading-[1.05] tracking-[-0.01em] text-card-foreground tabular-nums">{value}</p>
+        {hint ? <p className="mt-2 text-xs leading-4 text-muted-foreground">{hint}</p> : null}
       </CardContent>
     </Card>
   );
@@ -506,7 +506,7 @@ function CompetitorDossier({
             <ArrowLeft className="mr-2 h-4 w-4" />
             Competitors / {competitor.company_name}
           </Button>
-          <h1 className="max-w-[min(100%,32ch)] break-words text-[clamp(2rem,4vw,3rem)] font-semibold leading-[1.06] tracking-tight text-slate-100">
+          <h1 className="max-w-full truncate whitespace-nowrap text-[clamp(1.9rem,3.1vw,2.6rem)] font-semibold leading-tight tracking-tight text-slate-100">
             {competitor.company_name}
           </h1>
           {scopeMode === 'legal' ? (
