@@ -19,6 +19,51 @@ import {
 import { Page, PageHero, PageTitle, PageDescription, PageBody, Card, CardContent, CardHeader, CardTitle, Button, Badge } from '@/components/ui';
 import { format, formatDistanceToNow, subDays, isAfter, startOfDay, addMonths } from 'date-fns';
 
+const CLUSTER_ALIAS_MAP = {
+    cluster_digital: 'cluster_it_software',
+    digital: 'cluster_it_software',
+    it: 'cluster_it_software',
+    software: 'cluster_it_software',
+    telecommunications: 'cluster_it_software',
+    telecoms: 'cluster_it_software',
+    cluster_professional_services: 'cluster_consulting',
+    'professional services': 'cluster_consulting',
+    consulting: 'cluster_consulting',
+    construction: 'cluster_construction',
+    cluster_facilities: 'cluster_facilities_maintenance',
+    maintenance: 'cluster_facilities_maintenance',
+    cluster_health: 'cluster_health_medical',
+    healthcare: 'cluster_health_medical',
+    medical: 'cluster_health_medical',
+    cluster_education: 'cluster_education_training',
+    education: 'cluster_education_training',
+    transport: 'cluster_transport',
+    food: 'cluster_food_catering',
+    hospitality: 'cluster_food_catering',
+    energy: 'cluster_energy_environment',
+    environmental: 'cluster_energy_environment',
+    cluster_environment: 'cluster_energy_environment',
+    cluster_communications: 'cluster_communications_media',
+    culture: 'cluster_communications_media',
+    financial: 'cluster_financial_legal',
+    legal: 'cluster_financial_legal',
+    cluster_finance: 'cluster_financial_legal',
+    cluster_legal: 'cluster_financial_legal',
+    security: 'cluster_defence_security',
+    cluster_defence: 'cluster_defence_security',
+    cluster_research: 'cluster_research'
+};
+
+const BUYER_TYPE_PATTERNS = {
+    education: /(university|college|school|universit[eé]|[eé]cole|education)/i,
+    health: /(health|hospital|sant[eé]|h[oô]pital|hse|clinic)/i,
+    local_authority: /(council|city|county|commune|ville|municipal|municipality|mairie)/i,
+    central_government: /(ministry|minist[eè]re|minister|department|government|agency)/i,
+    transport: /(transport|rail|railway|road|airport|port|infrastructure)/i,
+    defence: /(defence|defense|military|police|gendarmerie|security)/i,
+    utilities: /(water|electric|electricity|gas|telecom|utility|energy)/i
+};
+
 export default function Home() {
     const [stats, setStats] = useState(null);
     const [latestTenders, setLatestTenders] = useState([]);
@@ -63,6 +108,79 @@ export default function Home() {
             ?? row?.confidence_score
             ?? row?.forecast_score
         );
+    const toArray = (value) => {
+        if (!value) return [];
+        if (Array.isArray(value)) {
+            return value.map((item) => String(item || '').trim()).filter(Boolean);
+        }
+        if (typeof value === 'string') {
+            return value
+                .split(',')
+                .map((item) => item.trim())
+                .filter(Boolean);
+        }
+        return [];
+    };
+    const normalizeCluster = (value) => {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        const lower = raw.toLowerCase();
+        return CLUSTER_ALIAS_MAP[lower] || lower;
+    };
+    const inferBuyerTypeMatch = (buyerName, selectedBuyerTypes) => {
+        if (!selectedBuyerTypes.length) return true;
+        const name = String(buyerName || '').trim();
+        if (!name) return false;
+        return selectedBuyerTypes.some((buyerType) => {
+            if (buyerType === 'other') return true;
+            const pattern = BUYER_TYPE_PATTERNS[buyerType];
+            return pattern ? pattern.test(name) : false;
+        });
+    };
+    const collectTrackedBuyerNames = (profile) => {
+        const keys = [
+            'tracked_buyers',
+            'target_buyers',
+            'priority_buyers',
+            'watch_buyers',
+            'key_buyers',
+            'tracked_buyer_names'
+        ];
+        const values = keys.flatMap((key) => toArray(profile?.[key]));
+        return Array.from(new Set(values.map((value) => value.toLowerCase())));
+    };
+    const getTenderClusterCandidates = (tender) => {
+        const raw = [
+            tender?.cpv_cluster,
+            tender?.cpv_cluster_id,
+            tender?.category,
+            tender?.cpv_family,
+            tender?.sector,
+            tender?.cpv_cluster_label
+        ];
+        return raw
+            .map((value) => normalizeCluster(value))
+            .filter(Boolean);
+    };
+    const matchesScope = ({ country, clusters, buyerName }, scope) => {
+        const normalizedCountry = String(country || '').trim().toUpperCase();
+        if (scope.targetCountries.size && (!normalizedCountry || !scope.targetCountries.has(normalizedCountry))) {
+            return false;
+        }
+
+        if (scope.targetClusters.size) {
+            const hasClusterMatch = clusters.some((cluster) => scope.targetClusters.has(cluster));
+            if (!hasClusterMatch) return false;
+        }
+
+        if (scope.trackedBuyerNames.length) {
+            const normalizedBuyerName = String(buyerName || '').toLowerCase();
+            if (!normalizedBuyerName) return false;
+            return scope.trackedBuyerNames.some((tracked) => normalizedBuyerName.includes(tracked));
+        }
+
+        return inferBuyerTypeMatch(buyerName, scope.targetBuyerTypes);
+    };
 
     const mapRunToSource = (run) => {
         const candidates = [
@@ -93,65 +211,97 @@ export default function Home() {
     const loadDashboardData = async () => {
         try {
             setLoadError('');
-            // Load a small slice for "Latest tenders" UI.
-            const allTenders = await civant.entities.TendersCurrent.list('-published_at', 250);
+            const [allTenders, profileRows] = await Promise.all([
+                civant.entities.TendersCurrent.list('-published_at', 1000),
+                civant.entities.company_profiles.filter(
+                    { tenant_id: activeTenantId },
+                    '-updated_at',
+                    1,
+                    'target_cpv_clusters,target_countries,target_buyer_types,tracked_buyers,target_buyers,priority_buyers,watch_buyers,key_buyers,tracked_buyer_names'
+                )
+            ]);
+            const profileScope = Array.isArray(profileRows) && profileRows.length > 0 ? profileRows[0] : null;
 
-            // Fast, tenant-scoped aggregates from the API (avoids pulling large lists for stats).
-            // If the DB helper function isn't deployed yet, fall back to slice-based estimates.
-            let dashboardStats = null;
+            let predictions = [];
             try {
-                const statsPayload = await civant.functions.invoke('getDashboardStats', {});
-                dashboardStats = statsPayload?.stats || null;
+                const { data, error } = await supabase
+                    .rpc('get_tenant_predictions', { p_tenant_id: activeTenantId })
+                    .limit(500);
+                if (error) throw error;
+                predictions = Array.isArray(data) ? data : [];
             } catch (error) {
-                console.warn('getDashboardStats unavailable, falling back to client estimates:', error);
-                setLoadError('Live dashboard aggregates are temporarily unavailable; showing sample-based estimates.');
+                console.warn('get_tenant_predictions unavailable for scoped stats:', error);
             }
             
             const now = new Date();
             const last24h = subDays(now, 1);
             const next7days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+            const targetCountries = new Set(toArray(profileScope?.target_countries).map((country) => String(country).toUpperCase()));
+            const targetClusters = new Set(toArray(profileScope?.target_cpv_clusters).map((cluster) => normalizeCluster(cluster)).filter(Boolean));
+            const targetBuyerTypes = toArray(profileScope?.target_buyer_types).map((buyerType) => String(buyerType).toLowerCase());
+            const trackedBuyerNames = collectTrackedBuyerNames(profileScope);
+            const scope = {
+                targetCountries,
+                targetClusters,
+                targetBuyerTypes,
+                trackedBuyerNames
+            };
 
-            const fallbackNew24h = allTenders.filter(t =>
-                getTenderFirstSeen(t) && isAfter(new Date(getTenderFirstSeen(t)), last24h)
+            const scopedTenders = allTenders.filter((tender) => matchesScope({
+                country: tender?.country,
+                clusters: getTenderClusterCandidates(tender),
+                buyerName: tender?.buyer_name
+            }, scope));
+
+            const scopedPredictions = predictions.filter((row) => {
+                const clusters = [
+                    row?.cpv_cluster_id,
+                    row?.category,
+                    row?.cpv_cluster_label,
+                    row?.cpv_family
+                ]
+                    .map((cluster) => normalizeCluster(cluster))
+                    .filter(Boolean);
+
+                return matchesScope({
+                    country: row?.region || row?.country,
+                    clusters,
+                    buyerName: row?.buyer_name || row?.buyer_display_name
+                }, scope);
+            });
+
+            const newRelevantTenders24h = scopedTenders.filter((tender) =>
+                getTenderFirstSeen(tender) && isAfter(new Date(getTenderFirstSeen(tender)), last24h)
             ).length;
-            const fallbackDeadlines7d = allTenders.filter(t => {
-                if (!t.deadline_date) return false;
-                const deadline = new Date(t.deadline_date);
-                return deadline >= now && deadline <= next7days;
+            const expiringContracts7d = scopedTenders.filter((tender) => {
+                if (!tender.deadline_date) return false;
+                const deadline = new Date(tender.deadline_date);
+                return !Number.isNaN(deadline.getTime()) && deadline >= now && deadline <= next7days;
             }).length;
-            const fallbackOpenTendersNow = allTenders.filter(t => {
-                if (!t.deadline_date) return false;
-                const deadline = new Date(t.deadline_date);
+            const openTrackedOpportunities = scopedTenders.filter((tender) => {
+                if (!tender.deadline_date) return false;
+                const deadline = new Date(tender.deadline_date);
                 return !Number.isNaN(deadline.getTime()) && deadline >= startOfDay(now);
             }).length;
-
-            const fallbackCompetitorMovement7d = allTenders.filter(t =>
-                getTenderFirstSeen(t) && isAfter(new Date(getTenderFirstSeen(t)), subDays(now, 7))
+            const highConfidenceSignals = scopedPredictions.filter((row) => {
+                const confidence = getPredictionConfidence(row);
+                return confidence !== null && confidence >= 75;
+            }).length;
+            const scopedMovement7d = scopedTenders.filter((tender) =>
+                getTenderFirstSeen(tender) && isAfter(new Date(getTenderFirstSeen(tender)), subDays(now, 7))
             ).length;
 
             setStats({
-                newTenders24h: Number(dashboardStats?.new_tenders_24h ?? fallbackNew24h ?? 0),
-                deadlinesIn7Days: Number(dashboardStats?.deadlines_in_7_days ?? fallbackDeadlines7d ?? 0),
-                alertsTriggered: Number(dashboardStats?.alerts_triggered_24h ?? 0),
-                openTendersNow: Number(dashboardStats?.open_tenders_now ?? fallbackOpenTendersNow ?? 0),
-                competitorMovement7d: Number(dashboardStats?.competitor_movement_7d ?? fallbackCompetitorMovement7d ?? 0)
+                newRelevantTenders24h: Number(newRelevantTenders24h ?? 0),
+                expiringContracts7d: Number(expiringContracts7d ?? 0),
+                highConfidenceSignals: Number(highConfidenceSignals ?? 0),
+                openTrackedOpportunities: Number(openTrackedOpportunities ?? 0),
+                competitorMovement7d: Number(scopedMovement7d ?? 0)
             });
             
             // Latest tenders
             setLatestTenders(allTenders.slice(0, 8));
-
-            // Highest-confidence signal source (existing forecast engine data).
-            let predictions = [];
-            try {
-                const { data, error } = await supabase
-                    .rpc('get_tenant_predictions', { p_tenant_id: activeTenantId })
-                    .limit(250);
-                if (error) throw error;
-                predictions = Array.isArray(data) ? data : [];
-            } catch (error) {
-                console.warn('get_tenant_predictions unavailable for briefing:', error);
-            }
-            setPredictionRows(predictions);
+            setPredictionRows(scopedPredictions);
             
             // Connector health - get latest run per source
             const runs = await civant.entities.ConnectorRuns.list('-started_at', 50);
@@ -238,22 +388,22 @@ export default function Home() {
         };
     }, [latestTenders, predictionRows, stats]);
     
-    const StatCard = ({ title, value, icon: Icon, color, subtext, to }) => (
+    const StatCard = ({ title, value, icon: Icon, color, subtext = null, to }) => (
         <Link
             to={to}
             className="group block rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             aria-label={`Open ${title}`}
         >
-            <Card className="h-full cursor-pointer transition-all duration-150 group-hover:border-primary/40 group-hover:bg-card/95">
-                <CardContent className="p-6">
+            <Card className="h-full cursor-pointer border border-white/[0.06] bg-white/[0.015] shadow-none transition-colors duration-150 group-hover:border-white/[0.12] group-hover:bg-white/[0.03]">
+                <CardContent className="p-5">
                     <div className="flex items-start justify-between">
                         <div>
-                            <p className="text-sm font-medium text-muted-foreground">{title}</p>
-                            <p className={`text-3xl font-bold mt-2 ${color}`}>{value}</p>
-                            {subtext && <p className="text-xs text-muted-foreground mt-1">{subtext}</p>}
+                            <p className="text-sm font-medium text-slate-300">{title}</p>
+                            <p className={`mt-2 text-4xl font-semibold tracking-tight ${color}`}>{value}</p>
+                            {subtext ? <p className="mt-1 text-xs text-muted-foreground/80">{subtext}</p> : null}
                         </div>
-                        <div className="p-3 rounded-xl bg-primary/15 border border-primary/25 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:-translate-y-0.5">
-                            <Icon className={`h-5 w-5 ${color}`} />
+                        <div className="rounded-lg border border-primary/20 bg-primary/10 p-2.5 transition-transform duration-150 group-hover:-translate-y-px">
+                            <Icon className={`h-4 w-4 ${color}`} />
                         </div>
                     </div>
                 </CardContent>
@@ -355,35 +505,31 @@ export default function Home() {
                 ) : null}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <StatCard 
-                        title="New Tenders (24h)" 
-                        value={stats?.newTenders24h || 0}
+                        title="New Relevant Tenders (24h)" 
+                        value={stats?.newRelevantTenders24h || 0}
                         icon={FileText}
                         color="text-primary"
-                        subtext="Just published"
                         to={createPageUrl('Search?lastTendered=1')}
                     />
                     <StatCard 
-                        title="Deadlines (7 days)" 
-                        value={stats?.deadlinesIn7Days || 0}
+                        title="Expiring Contracts (7 days)" 
+                        value={stats?.expiringContracts7d || 0}
                         icon={Clock}
                         color="text-card-foreground"
-                        subtext="Closing soon"
                         to={createPageUrl('Search?deadlineWithin=7')}
                     />
                     <StatCard 
-                        title="Alerts Triggered" 
-                        value={stats?.alertsTriggered || 0}
+                        title="High-Confidence Signals" 
+                        value={stats?.highConfidenceSignals || 0}
                         icon={Bell}
                         color="text-primary"
-                        subtext="Last 24 hours"
-                        to={createPageUrl('Alerts?view=triggered&period=24h')}
+                        to={createPageUrl('Forecast')}
                     />
                     <StatCard 
-                        title="Open Tenders" 
-                        value={stats?.openTendersNow || 0}
+                        title="Open Opportunities (Tracked Scope)" 
+                        value={stats?.openTrackedOpportunities || 0}
                         icon={TrendingUp}
                         color="text-card-foreground"
-                        subtext="Currently open"
                         to={createPageUrl('Search')}
                     />
                 </div>
