@@ -59,6 +59,40 @@ function resolveRenewalDate(renewal) {
   return null;
 }
 
+function normalizeEntityName(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function entityTokens(value) {
+  const stop = new Set(['ltd', 'limited', 'sa', 'sarl', 'llc', 'gmbh', 'inc', 'spa', 'sl', 'bv', 'plc', 'sas', 'the']);
+  return normalizeEntityName(value)
+    .split(' ')
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3 && !stop.has(token));
+}
+
+function matchesLegalEntityContract(contract, legalEntityName) {
+  const supplier = String(contract?.supplier_raw || contract?.supplier_name_raw || contract?.supplier_name || '').trim();
+  if (!supplier) return false;
+
+  const normalizedSupplier = normalizeEntityName(supplier);
+  const normalizedLegal = normalizeEntityName(legalEntityName);
+  if (!normalizedSupplier || !normalizedLegal) return false;
+  if (normalizedSupplier.includes(normalizedLegal) || normalizedLegal.includes(normalizedSupplier)) return true;
+
+  const supplierTokens = new Set(entityTokens(supplier));
+  const legalTokens = entityTokens(legalEntityName);
+  if (supplierTokens.size === 0 || legalTokens.length === 0) return false;
+
+  const overlap = legalTokens.filter((token) => supplierTokens.has(token)).length;
+  return overlap >= Math.min(2, legalTokens.length);
+}
+
 function buildCompetitorAnalysis(companyName, data) {
   const summary = data?.summary;
   const categories = data?.category_breakdown || [];
@@ -130,12 +164,182 @@ function CompetitorDossier({
   onDelete
 }) {
   const summary = analysis?.summary;
-  const strengths = analysis?.analysis?.strengths || [];
-  const categories = [...(analysis?.category_breakdown || [])]
+  const [scopeMode, setScopeMode] = useState('group');
+
+  useEffect(() => {
+    setScopeMode('group');
+  }, [competitor?.id]);
+
+  const groupStrengths = analysis?.analysis?.strengths || [];
+  const groupCategories = [...(analysis?.category_breakdown || [])]
     .sort((a, b) => Number(b.award_count || 0) - Number(a.award_count || 0))
     .slice(0, 5);
-  const buyers = analysis?.buyer_relationships || [];
-  const contracts = analysis?.recent_contracts || [];
+  const groupBuyers = analysis?.buyer_relationships || [];
+  const groupContracts = analysis?.recent_contracts || [];
+  const groupRenewalRows = analysis?.renewal_opportunities || [];
+
+  const groupRenewalExposureValue = useMemo(
+    () => groupRenewalRows.reduce((sum, row) => sum + Number(row?.value_eur || 0), 0),
+    [groupRenewalRows]
+  );
+
+  const legalScope = useMemo(() => {
+    if (!Array.isArray(groupContracts) || groupContracts.length === 0) {
+      return {
+        summary: {
+          total_awards: 0,
+          total_value_eur: 0,
+          avg_contract_value_eur: 0,
+          distinct_buyers: 0,
+          active_contracts: 0,
+          has_frameworks: 0,
+          max_contract_value_eur: 0,
+          years_active: 0
+        },
+        strengths: [],
+        categories: [],
+        buyers: [],
+        contracts: [],
+        renewalExposureCount: 0,
+        renewalExposureValue: 0
+      };
+    }
+
+    const hasSupplierRaw = groupContracts.some((contract) => String(contract?.supplier_raw || '').trim().length > 0);
+    const matchedContracts = hasSupplierRaw
+      ? groupContracts.filter((contract) => matchesLegalEntityContract(contract, competitor?.company_name || ''))
+      : groupContracts;
+
+    const now = new Date();
+    const horizon = addMonths(now, 12);
+    const totalValue = matchedContracts.reduce((sum, contract) => sum + Number(contract?.value_eur || 0), 0);
+    const maxValue = matchedContracts.reduce((max, contract) => Math.max(max, Number(contract?.value_eur || 0)), 0);
+    const buyerSet = new Set(matchedContracts.map((contract) => String(contract?.buyer_name || '').trim()).filter(Boolean));
+    const activeContracts = matchedContracts.filter((contract) => {
+      const endDate = parseDateOrNull(contract?.end_date);
+      return endDate ? endDate > now : false;
+    }).length;
+    const frameworkCount = matchedContracts.filter((contract) => Boolean(contract?.framework_flag)).length;
+
+    const awardDates = matchedContracts
+      .map((contract) => parseDateOrNull(contract?.award_date))
+      .filter(Boolean);
+    const yearsActive = awardDates.length > 0
+      ? Math.max(1, Math.max(...awardDates.map((date) => date.getFullYear())) - Math.min(...awardDates.map((date) => date.getFullYear())) + 1)
+      : 0;
+
+    const renewalContracts = matchedContracts.filter((contract) => {
+      const endDate = parseDateOrNull(contract?.end_date);
+      return endDate ? endDate >= now && endDate <= horizon : false;
+    });
+    const renewalExposureValue = renewalContracts.reduce((sum, contract) => sum + Number(contract?.value_eur || 0), 0);
+
+    const categoryMap = new Map();
+    matchedContracts.forEach((contract) => {
+      const cluster = contract?.cpv_cluster || 'Unknown';
+      const existing = categoryMap.get(cluster) || {
+        cluster,
+        award_count: 0,
+        total_value: 0,
+        distinctBuyerSet: new Set(),
+        active_contracts: 0
+      };
+      existing.award_count += 1;
+      existing.total_value += Number(contract?.value_eur || 0);
+      const buyer = String(contract?.buyer_name || '').trim();
+      if (buyer) existing.distinctBuyerSet.add(buyer);
+      const endDate = parseDateOrNull(contract?.end_date);
+      if (endDate && endDate > now) existing.active_contracts += 1;
+      categoryMap.set(cluster, existing);
+    });
+
+    const categories = [...categoryMap.values()]
+      .map((entry) => ({
+        cluster: entry.cluster,
+        award_count: entry.award_count,
+        total_value: entry.total_value,
+        distinct_buyers: entry.distinctBuyerSet.size,
+        active_contracts: entry.active_contracts
+      }))
+      .sort((a, b) => Number(b.total_value || 0) - Number(a.total_value || 0))
+      .slice(0, 5);
+
+    const buyerMap = new Map();
+    matchedContracts.forEach((contract) => {
+      const buyerName = String(contract?.buyer_name || '').trim();
+      if (!buyerName) return;
+      const existing = buyerMap.get(buyerName) || {
+        buyer_name: buyerName,
+        award_count: 0,
+        total_value: 0,
+        active_contracts: 0
+      };
+      existing.award_count += 1;
+      existing.total_value += Number(contract?.value_eur || 0);
+      const endDate = parseDateOrNull(contract?.end_date);
+      if (endDate && endDate > now) existing.active_contracts += 1;
+      buyerMap.set(buyerName, existing);
+    });
+
+    const buyers = [...buyerMap.values()]
+      .map((buyer) => ({
+        ...buyer,
+        relationship_strength: buyer.award_count >= 5 ? 'strong' : buyer.award_count >= 3 ? 'moderate' : 'emerging'
+      }))
+      .sort((a, b) => Number(b.total_value || 0) - Number(a.total_value || 0));
+
+    const strengths = [];
+    if (matchedContracts.length > 0) strengths.push(`${matchedContracts.length} contracts attributed to this legal entity`);
+    if (frameworkCount > 0) strengths.push(`${frameworkCount} framework agreement${frameworkCount === 1 ? '' : 's'} in force`);
+    if (buyerSet.size > 0) strengths.push(`Active across ${buyerSet.size} public bod${buyerSet.size === 1 ? 'y' : 'ies'}`);
+    if (renewalContracts.length > 0) strengths.push(`${renewalContracts.length} renewal window${renewalContracts.length === 1 ? '' : 's'} within 12 months`);
+    if (categories.length > 1) strengths.push(`Category footprint concentrated in ${categories.length} sectors`);
+
+    return {
+      summary: {
+        total_awards: matchedContracts.length,
+        total_value_eur: totalValue,
+        avg_contract_value_eur: matchedContracts.length > 0 ? totalValue / matchedContracts.length : 0,
+        distinct_buyers: buyerSet.size,
+        active_contracts: activeContracts,
+        has_frameworks: frameworkCount,
+        max_contract_value_eur: maxValue,
+        years_active: yearsActive
+      },
+      strengths,
+      categories,
+      buyers,
+      contracts: matchedContracts,
+      renewalExposureCount: renewalContracts.length,
+      renewalExposureValue
+    };
+  }, [competitor?.company_name, groupContracts]);
+
+  const groupScope = useMemo(() => ({
+    summary: summary || {
+      total_awards: 0,
+      total_value_eur: 0,
+      avg_contract_value_eur: 0,
+      distinct_buyers: 0,
+      active_contracts: 0,
+      has_frameworks: 0,
+      max_contract_value_eur: 0,
+      years_active: 0
+    },
+    strengths: groupStrengths,
+    categories: groupCategories,
+    buyers: groupBuyers,
+    contracts: groupContracts,
+    renewalExposureCount: groupRenewalRows.length,
+    renewalExposureValue: groupRenewalExposureValue
+  }), [groupBuyers, groupCategories, groupContracts, groupRenewalExposureValue, groupRenewalRows.length, groupStrengths, summary]);
+
+  const scoped = scopeMode === 'legal' ? legalScope : groupScope;
+  const scopedSummary = scoped.summary;
+  const scopedStrengths = scoped.strengths || [];
+  const scopedCategories = scoped.categories || [];
+  const scopedBuyers = scoped.buyers || [];
+  const scopedContracts = scoped.contracts || [];
 
   return (
     <div className="space-y-5">
@@ -146,9 +350,36 @@ function CompetitorDossier({
             Competitors / {competitor.company_name}
           </Button>
           <h1 className="text-3xl font-semibold tracking-tight text-slate-100">{competitor.company_name}</h1>
+          {scopeMode === 'legal' ? (
+            <p className="text-xs text-muted-foreground">Viewing: Legal Entity Only</p>
+          ) : null}
         </div>
 
         <div className="flex items-center gap-2">
+          <div className="inline-flex items-center rounded-lg bg-white/[0.03] p-1">
+            <button
+              type="button"
+              className={`rounded-md px-3 py-1.5 text-xs transition-colors ${
+                scopeMode === 'group'
+                  ? 'bg-white/[0.08] text-slate-100'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              onClick={() => setScopeMode('group')}
+            >
+              Group View
+            </button>
+            <button
+              type="button"
+              className={`rounded-md px-3 py-1.5 text-xs transition-colors ${
+                scopeMode === 'legal'
+                  ? 'bg-white/[0.08] text-slate-100'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              onClick={() => setScopeMode('legal')}
+            >
+              Legal Entity
+            </button>
+          </div>
           {competitors.length > 1 ? (
             <Select value={String(competitor.id)} onValueChange={onSwitch}>
               <SelectTrigger className="h-9 w-[260px] border-white/[0.08] bg-white/[0.02] text-sm text-slate-300">
@@ -172,7 +403,7 @@ function CompetitorDossier({
             <Loader2 className="h-4 w-4 animate-spin" />
             Building competitor dossier...
           </div>
-        ) : !summary ? (
+        ) : !scopedSummary ? (
           <div className="space-y-1 py-8 text-center text-sm text-muted-foreground">
             <p>No dossier data available for this competitor yet.</p>
             <p>Try another competitor or refresh after new awards are indexed.</p>
@@ -186,20 +417,21 @@ function CompetitorDossier({
             </TabsList>
 
             <TabsContent value="overview" className="mt-4 space-y-4">
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <MetricTile label="Contracts" value={summary.total_awards || 0} hint={`${summary.years_active || 0} years active`} />
-                <MetricTile label="Total Value" value={fmtEur(summary.total_value_eur)} hint={`avg ${fmtEur(summary.avg_contract_value_eur)}`} />
-                <MetricTile label="Public Bodies" value={summary.distinct_buyers || 0} hint={`${summary.active_contracts || 0} active`} />
-                <MetricTile label="Frameworks" value={summary.has_frameworks || 0} hint={`largest ${fmtEur(summary.max_contract_value_eur)}`} />
+              <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+                <MetricTile label="Contracts" value={scopedSummary.total_awards || 0} hint={`${scopedSummary.years_active || 0} years active`} />
+                <MetricTile label="Total Value" value={fmtEur(scopedSummary.total_value_eur)} hint={`avg ${fmtEur(scopedSummary.avg_contract_value_eur)}`} />
+                <MetricTile label="Public Bodies" value={scopedSummary.distinct_buyers || 0} hint={`${scopedSummary.active_contracts || 0} active`} />
+                <MetricTile label="Renewal Exposure (12M)" value={fmtEur(scoped.renewalExposureValue)} hint={`${scoped.renewalExposureCount || 0} window${scoped.renewalExposureCount === 1 ? '' : 's'}`} />
+                <MetricTile label="Frameworks" value={scopedSummary.has_frameworks || 0} hint={`largest ${fmtEur(scopedSummary.max_contract_value_eur)}`} />
               </div>
 
               <div className="grid gap-4 lg:grid-cols-2">
                 <Card className="border border-white/[0.05] bg-white/[0.01] shadow-none">
                   <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-slate-300">Strengths</CardTitle></CardHeader>
                   <CardContent>
-                    {strengths.length > 0 ? (
+                    {scopedStrengths.length > 0 ? (
                       <ul className="space-y-2 text-sm text-slate-300">
-                        {strengths.slice(0, 5).map((item, index) => (
+                        {scopedStrengths.slice(0, 5).map((item, index) => (
                           <li key={`${item}-${index}`} className="flex items-start gap-2"><span className="mt-1 text-civant-teal">•</span><span>{item}</span></li>
                         ))}
                       </ul>
@@ -212,9 +444,9 @@ function CompetitorDossier({
                 <Card className="border border-white/[0.05] bg-white/[0.01] shadow-none">
                   <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-slate-300">Preferred Categories / Where They Win</CardTitle></CardHeader>
                   <CardContent>
-                    {categories.length > 0 ? (
+                    {scopedCategories.length > 0 ? (
                       <div className="space-y-2">
-                        {categories.map((cat, index) => (
+                        {scopedCategories.map((cat, index) => (
                           <div key={`${cat.cluster}-${index}`} className="flex items-center justify-between text-sm">
                             <div className="flex items-center gap-2 text-slate-300">
                               <span className="w-5 text-xs text-muted-foreground">{index + 1}</span>
@@ -238,7 +470,7 @@ function CompetitorDossier({
             <TabsContent value="accounts" className="mt-4">
               <Card className="border border-white/[0.05] bg-white/[0.01] shadow-none">
                 <CardContent className="pt-4">
-                  {buyers.length > 0 ? (
+                  {scopedBuyers.length > 0 ? (
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
@@ -250,7 +482,7 @@ function CompetitorDossier({
                           </tr>
                         </thead>
                         <tbody>
-                          {buyers.map((buyer, index) => (
+                          {scopedBuyers.map((buyer, index) => (
                             <tr key={`${buyer.buyer_name}-${index}`} className="border-b border-white/[0.04]">
                               <td className="py-3 pr-4 font-medium text-slate-100">{buyer.buyer_name}</td>
                               <td className="px-4 py-3 text-right text-slate-300">{buyer.award_count || 0}</td>
@@ -272,7 +504,7 @@ function CompetitorDossier({
               <Card className="border border-white/[0.05] bg-white/[0.01] shadow-none">
                 <CardHeader className="pb-3"><CardTitle className="text-sm font-medium text-slate-300">Recent Contracts</CardTitle></CardHeader>
                 <CardContent>
-                  {contracts.length > 0 ? (
+                  {scopedContracts.length > 0 ? (
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
@@ -285,7 +517,7 @@ function CompetitorDossier({
                           </tr>
                         </thead>
                         <tbody>
-                          {contracts.map((contract, index) => (
+                          {scopedContracts.map((contract, index) => (
                             <tr key={`${contract.buyer_name}-${index}`} className="border-b border-white/[0.04]">
                               <td className="py-3 pr-4 font-medium text-slate-100">{contract.buyer_name}</td>
                               <td className="px-4 py-3 text-right text-slate-300">{fmtEur(contract.value_eur)}</td>
