@@ -22,7 +22,7 @@ export default function HomePlatformFooter({
 }) {
   return (
     <footer className="mt-6 border-t border-white/[0.04] bg-white/[0.01] px-4 py-3">
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-muted-foreground/80">
+      <div className="mx-auto flex w-full flex-wrap items-center justify-center gap-x-5 gap-y-1 text-center text-[11px] text-muted-foreground/80">
         <span>{version}</span>
         <span>Last data refresh: {formatRefreshLabel(lastDataRefresh)}</span>
         <Link to={supportTo} className="transition-colors hover:text-slate-200">Support</Link>
