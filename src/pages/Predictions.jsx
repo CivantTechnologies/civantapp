@@ -599,10 +599,10 @@ export default function Predictions() {
           </Card>
         ) : null}
 
-        {!loading && renewalRows.length > 0 ? (
+        {!loading && filtered.length > 0 ? (
           <section className="space-y-3 rounded-2xl bg-white/[0.015] px-4 py-4">
             <h3 className="text-base font-semibold text-card-foreground">Forecast List</h3>
-            <div className="sticky top-0 z-10 hidden border-b border-white/[0.08] bg-slate-950/95 backdrop-blur-sm py-2.5 md:grid md:grid-cols-[2fr_1.4fr_1fr_1.6fr_auto] md:gap-4">
+            <div className="sticky top-0 z-10 hidden border-b border-white/[0.06] pb-2.5 pt-1 md:grid md:grid-cols-[2fr_1.4fr_1fr_1.6fr_auto] md:items-center md:gap-4">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Buyer</p>
               <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Window</p>
               <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Confidence</p>
