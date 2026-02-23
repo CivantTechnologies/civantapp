@@ -198,17 +198,12 @@ export default function Home() {
         const topTender = latestTenders[0] || null;
 
         const predictionDate = topPrediction ? parseDate(getPredictionDate(topPrediction)) : null;
-        const publicationDate = topTender ? parseDate(getTenderPublicationDate(topTender)) : null;
         const fromWindow = parseDate(topPrediction?.predicted_window_start);
-        const toWindow = parseDate(topPrediction?.predicted_window_end);
-
-        const timeframe = fromWindow && toWindow
-            ? `${format(fromWindow, 'MMM yyyy')} - ${format(toWindow, 'MMM yyyy')}`
-            : predictionDate
-                ? `Window ${format(predictionDate, 'MMM yyyy')}`
-                : publicationDate
-                    ? `Published ${format(publicationDate, 'MMM d, yyyy')}`
-                    : 'Window pending';
+        const signalDate = fromWindow || predictionDate;
+        const opensInDays = signalDate
+            ? Math.max(0, Math.ceil((signalDate.getTime() - now.getTime()) / 86400000))
+            : null;
+        const opensLabel = opensInDays === null ? 'Open date pending' : `Opens in ${opensInDays} days`;
 
         const region = topPrediction?.region || topPrediction?.country || topTender?.country || 'Multi-region';
         const sector = topPrediction?.category
@@ -220,13 +215,8 @@ export default function Home() {
         const buyer = topPrediction?.buyer_name
             || topPrediction?.buyer_display_name
             || topTender?.buyer_name
-            || '';
-
-        const title = topPrediction?.signal_title
-            || topPrediction?.title
-            || (buyer ? `${buyer} procurement cycle watch` : null)
-            || topTender?.title
-            || 'No high-confidence signal available';
+            || 'Unknown buyer';
+        const hasKnownBuyer = buyer !== 'Unknown buyer';
 
         const upcomingRenewals = predictionTimeline.filter((entry) => {
             if (!entry.predictedAt) return false;
@@ -235,12 +225,13 @@ export default function Home() {
         const highConfidenceSignals = rankedPredictions.filter((entry) => Number(entry.confidence) >= 75).length;
 
         return {
-            title,
-            timeframe,
+            eventTitle: 'Renewal window approaching',
+            buyer,
+            hasKnownBuyer,
+            opensLabel,
             confidence: topPredictionConfidence ?? 0,
             region,
             sector,
-            buyer,
             upcomingRenewals,
             highConfidenceSignals,
             competitorMovement7d: Number(stats?.competitorMovement7d ?? 0)
@@ -306,46 +297,49 @@ export default function Home() {
     
     return (
         <Page className="space-y-8">
-            <section className="bg-black/12">
-                <div className="grid grid-cols-1 gap-10 px-12 py-14 md:py-16 lg:grid-cols-[minmax(0,1.95fr)_minmax(0,1fr)] lg:items-end">
-                    <div className="space-y-5">
-                        <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Intelligence Briefing</p>
-                        <h1 className="max-w-4xl text-3xl font-semibold tracking-tight text-card-foreground md:text-5xl">
-                            {briefing.title}
+            <section className="bg-white/[0.03]">
+                <div className="grid grid-cols-1 gap-8 px-12 py-14 md:py-16 lg:grid-cols-[minmax(0,1.55fr)_minmax(18rem,0.85fr)] lg:items-end">
+                    <div className="max-w-[700px] space-y-4">
+                        <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Intelligence Briefing</p>
+                        <h1 className="text-3xl font-semibold tracking-tight text-card-foreground md:text-4xl">
+                            {briefing.eventTitle}
                         </h1>
-                        <p className="text-sm text-muted-foreground md:text-base">
-                            {briefing.timeframe} · Confidence {briefing.confidence}% · {briefing.region} · {briefing.sector}
+                        <p className="text-xl font-medium text-card-foreground md:text-2xl">
+                            {briefing.buyer}
                         </p>
-                        <div className="flex flex-wrap items-center gap-3 pt-1">
+                        <p className="text-sm text-muted-foreground">
+                            {briefing.opensLabel} · Confidence {briefing.confidence}% · {briefing.region} · {briefing.sector}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-3 pt-2">
                             <Button asChild variant="primary">
                                 <Link to={createPageUrl('Forecast')}>
                                     View Forecast
                                 </Link>
                             </Button>
-                            <Button asChild variant="ghost" className="text-muted-foreground hover:text-card-foreground">
-                                <Link to={createPageUrl(briefing.buyer ? `Search?buyer=${encodeURIComponent(briefing.buyer)}` : 'Search')}>
+                            <Button asChild variant="ghost" className="text-slate-300 hover:bg-white/[0.05] hover:text-slate-100">
+                                <Link to={createPageUrl(briefing.hasKnownBuyer ? `Search?buyer=${encodeURIComponent(briefing.buyer)}` : 'Search')}>
                                     View Buyer
                                 </Link>
                             </Button>
                         </div>
                     </div>
 
-                    <div className="space-y-6">
+                    <div className="space-y-4 lg:pl-1">
                         <div>
-                            <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Upcoming renewals (6 months)</p>
-                            <p className="mt-1 text-3xl font-semibold tracking-tight text-card-foreground">
+                            <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Upcoming renewals (6 months)</p>
+                            <p className="mt-1 text-4xl font-semibold tracking-tight text-card-foreground">
                                 {briefing.upcomingRenewals.toLocaleString()}
                             </p>
                         </div>
                         <div>
-                            <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">High confidence signals</p>
-                            <p className="mt-1 text-3xl font-semibold tracking-tight text-card-foreground">
+                            <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">High confidence signals</p>
+                            <p className="mt-1 text-4xl font-semibold tracking-tight text-card-foreground">
                                 {briefing.highConfidenceSignals.toLocaleString()}
                             </p>
                         </div>
                         <div>
-                            <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Competitor movement (7 days)</p>
-                            <p className="mt-1 text-3xl font-semibold tracking-tight text-card-foreground">
+                            <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Competitor movement (7 days)</p>
+                            <p className="mt-1 text-4xl font-semibold tracking-tight text-card-foreground">
                                 {briefing.competitorMovement7d.toLocaleString()}
                             </p>
                         </div>
