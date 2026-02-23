@@ -18,7 +18,8 @@ import {
   LogOut,
   Plus,
   Loader2,
-  ChevronDown
+  ChevronDown,
+  Check
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,6 +34,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 
@@ -74,7 +80,6 @@ export default function Layout({ children, currentPageName }) {
   const isSuperAdmin = profileStatus === 'ready'
     && Array.isArray(roles)
     && roles.includes('super_admin');
-  const roleLabel = Array.isArray(roles) && roles.length ? roles.join(', ') : (profileStatus === 'ready' ? 'user' : 'Checking permissions...');
 
   const pageTitle = useMemo(() => {
     const map = {
@@ -260,6 +265,18 @@ export default function Layout({ children, currentPageName }) {
     () => commandGroups.flatMap((group) => group.items),
     [commandGroups]
   );
+  const tenantCount = Array.isArray(tenants) ? tenants.length : 0;
+  const canSwitchWorkspace = tenantCount > 1;
+  const userMetadata = currentUser?.user_metadata || {};
+  const userDisplayName = String(
+    userMetadata.full_name
+    || userMetadata.name
+    || currentUser?.email?.split('@')?.[0]
+    || 'User'
+  );
+  const userEmail = String(currentUser?.email || '');
+  const userAvatarUrl = userMetadata.avatar_url || userMetadata.picture || userMetadata.photo_url || '';
+  const avatarInitial = String(userDisplayName || userEmail || 'U').trim().charAt(0).toUpperCase() || 'U';
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -559,14 +576,69 @@ export default function Layout({ children, currentPageName }) {
               <Bell className="h-5 w-5" />
             </Button>
 
-            <button
-              type="button"
-              className="civant-icon-button flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.03] text-sm font-medium text-primary"
-              onClick={() => navigate('/company')}
-              aria-label="Open company"
-            >
-              {currentUser?.email?.charAt(0)?.toUpperCase() || 'U'}
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="civant-icon-button flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-white/[0.08] bg-white/[0.03] text-sm font-medium text-slate-200"
+                  aria-label="Open account menu"
+                >
+                  {userAvatarUrl ? (
+                    <img src={userAvatarUrl} alt={userDisplayName} className="h-full w-full object-cover" />
+                  ) : (
+                    avatarInitial
+                  )}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="w-[300px] rounded-2xl border-white/[0.08] bg-slate-950/95 p-1.5 shadow-xl backdrop-blur-xl duration-150 ease-out"
+              >
+                <DropdownMenuLabel className="px-3 py-2.5">
+                  <p className="truncate text-sm font-medium text-slate-100">{userDisplayName}</p>
+                  <p className="truncate pt-0.5 text-xs font-normal text-slate-500">{userEmail || 'Signed in'}</p>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-white/[0.06]" />
+
+                {canSwitchWorkspace ? (
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger className="rounded-lg px-3 py-2 text-sm text-slate-300 focus:bg-white/[0.05] focus:text-slate-100 data-[state=open]:bg-white/[0.05] data-[state=open]:text-slate-100">
+                      Switch workspace
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-56 rounded-xl border-white/[0.08] bg-slate-950/95 p-1.5 shadow-xl">
+                      {tenants.map((tenant) => {
+                        const isSelected = tenant.id === activeTenantId;
+                        return (
+                          <DropdownMenuItem
+                            key={tenant.id}
+                            className="rounded-lg px-3 py-2 text-sm text-slate-300 focus:bg-white/[0.05] focus:text-slate-100"
+                            onClick={() => setActiveTenantId(tenant.id)}
+                          >
+                            <span className="truncate">{tenant.name}</span>
+                            {isSelected ? <Check className="ml-auto h-4 w-4 text-primary/80" /> : null}
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                ) : null}
+
+                <DropdownMenuItem
+                  className="rounded-lg px-3 py-2 text-sm text-slate-300 focus:bg-white/[0.05] focus:text-slate-100"
+                  onClick={() => navigate('/company')}
+                >
+                  Profile / Account
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="bg-white/[0.06]" />
+                <DropdownMenuItem
+                  className="rounded-lg px-3 py-2 text-sm text-slate-300 focus:bg-white/[0.05] focus:text-slate-100"
+                  onClick={logout}
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
         {tenantError ? (
@@ -575,12 +647,12 @@ export default function Layout({ children, currentPageName }) {
       </header>
 
       <aside className={`
-        fixed left-0 top-14 z-40 h-[calc(100vh-56px)] w-72 border-r border-white/[0.06] bg-background/92 backdrop-blur-md
+        fixed left-0 top-14 z-40 h-[calc(100vh-56px)] w-64 border-r border-white/[0.04] bg-background/72 backdrop-blur-md
         civant-motion-standard transition-transform lg:translate-x-0
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="flex h-full flex-col overflow-visible">
-          <div className="space-y-4 px-3 py-4">
+          <div className="space-y-4 px-2.5 py-4">
             <div className="space-y-1 sm:hidden">
               <label className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Workspace</label>
               <div className="relative">
@@ -627,11 +699,11 @@ export default function Layout({ children, currentPageName }) {
                       className={`
                         civant-nav-item flex items-center gap-3 rounded-xl border px-3 py-2 text-sm font-medium transition-all duration-150
                         ${isActive
-                          ? 'border-primary/25 bg-primary/10 text-primary'
-                          : 'border-transparent text-slate-400 hover:border-white/[0.08] hover:bg-white/[0.02] hover:text-slate-200'}
+                          ? 'border-primary/20 bg-primary/8 text-slate-100'
+                          : 'border-transparent text-slate-500 hover:border-white/[0.05] hover:bg-white/[0.02] hover:text-slate-300'}
                       `}
                     >
-                      <Icon className={`h-5 w-5 ${isActive ? 'text-primary' : ''}`} />
+                      <Icon className={`h-5 w-5 ${isActive ? 'text-primary/80' : 'text-slate-500'}`} />
                       {item.name}
                       {hasDrawer ? <ChevronDown className="ml-auto h-3.5 w-3.5 text-slate-500" /> : null}
                       {isActive && !hasDrawer ? (
@@ -642,7 +714,7 @@ export default function Layout({ children, currentPageName }) {
                     {hasDrawer ? (
                       <div
                         className={`
-                          absolute left-full top-0 z-50 ml-2 w-64 rounded-2xl border border-white/[0.08] bg-slate-950/95 p-4 shadow-2xl backdrop-blur-md
+                          absolute left-full top-0 z-50 ml-2 w-64 rounded-2xl border border-white/[0.06] bg-slate-950/88 p-4 shadow-xl backdrop-blur-md
                           civant-motion-standard transition-all
                           ${drawerOpen ? 'pointer-events-auto translate-y-0 opacity-100' : 'pointer-events-none translate-y-1.5 opacity-0'}
                         `}
@@ -681,59 +753,43 @@ export default function Layout({ children, currentPageName }) {
             </nav>
           </div>
 
-          <div className="shrink-0 border-t border-white/[0.06] p-4 space-y-3">
-            {canCreateTenant ? (
-              <Button
-                type="button"
-                variant="ghost"
-                className="w-full justify-start text-slate-400 hover:text-slate-200"
-                onClick={() => setShowCreateTenant((v) => !v)}
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                New workspace
-              </Button>
-            ) : null}
-
-            {showCreateTenant ? (
-              <form className="space-y-2 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3" onSubmit={onCreateTenant}>
-                <Input
-                  placeholder="Workspace name"
-                  value={tenantNameInput}
-                  onChange={(event) => setTenantNameInput(event.target.value)}
-                  disabled={tenantActionLoading}
-                />
-                <Input
-                  placeholder="Optional workspace id"
-                  value={tenantIdInput}
-                  onChange={(event) => setTenantIdInput(event.target.value)}
-                  disabled={tenantActionLoading}
-                />
-                {tenantActionError ? <p className="text-xs text-destructive">{tenantActionError}</p> : null}
-                <div className="flex gap-2">
-                  <Button type="submit" size="sm" disabled={tenantActionLoading}>{tenantActionLoading ? 'Creating...' : 'Create'}</Button>
-                  <Button type="button" variant="secondary" size="sm" onClick={() => setShowCreateTenant(false)} disabled={tenantActionLoading}>Cancel</Button>
-                </div>
-              </form>
-            ) : null}
-
-            {currentUser ? (
-              <>
-                <div className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-sm font-medium text-primary">
-                    {currentUser.email?.charAt(0)?.toUpperCase() || 'U'}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-200">{currentUser.email || 'User'}</p>
-                    <p className="truncate text-[11px] text-slate-500">{roleLabel}</p>
-                  </div>
-                </div>
-                <Button type="button" variant="ghost" className="w-full justify-start text-slate-400 hover:text-slate-200" onClick={logout}>
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Sign out
+          {canCreateTenant || showCreateTenant ? (
+            <div className="shrink-0 border-t border-white/[0.05] p-4 space-y-3">
+              {canCreateTenant ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full justify-start text-slate-500 hover:text-slate-300"
+                  onClick={() => setShowCreateTenant((v) => !v)}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  New workspace
                 </Button>
-              </>
-            ) : null}
-          </div>
+              ) : null}
+
+              {showCreateTenant ? (
+                <form className="space-y-2 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3" onSubmit={onCreateTenant}>
+                  <Input
+                    placeholder="Workspace name"
+                    value={tenantNameInput}
+                    onChange={(event) => setTenantNameInput(event.target.value)}
+                    disabled={tenantActionLoading}
+                  />
+                  <Input
+                    placeholder="Optional workspace id"
+                    value={tenantIdInput}
+                    onChange={(event) => setTenantIdInput(event.target.value)}
+                    disabled={tenantActionLoading}
+                  />
+                  {tenantActionError ? <p className="text-xs text-destructive">{tenantActionError}</p> : null}
+                  <div className="flex gap-2">
+                    <Button type="submit" size="sm" disabled={tenantActionLoading}>{tenantActionLoading ? 'Creating...' : 'Create'}</Button>
+                    <Button type="button" variant="secondary" size="sm" onClick={() => setShowCreateTenant(false)} disabled={tenantActionLoading}>Cancel</Button>
+                  </div>
+                </form>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </aside>
 
@@ -744,7 +800,7 @@ export default function Layout({ children, currentPageName }) {
         />
       ) : null}
 
-      <main className="min-h-screen pt-14 lg:pl-72">
+      <main className="min-h-screen pt-14 lg:pl-64">
         <div className="px-6 py-8 lg:px-8">
           {children}
         </div>
