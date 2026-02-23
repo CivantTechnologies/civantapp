@@ -259,11 +259,11 @@ function buildCompetitorAnalysis(companyName, data) {
 
 function MetricTile({ label, value, hint }) {
   return (
-    <Card className="border border-white/[0.05] bg-white/[0.015] shadow-none">
-      <CardContent className="px-4 py-4">
-        <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
-        <p className="mt-1 text-2xl font-semibold tracking-tight text-card-foreground tabular-nums">{value}</p>
-        {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
+    <Card className="h-full border border-white/[0.05] bg-white/[0.015] shadow-none">
+      <CardContent className="px-4 py-3.5">
+        <p className="text-[11px] uppercase tracking-[0.07em] text-muted-foreground">{label}</p>
+        <p className="mt-1 text-[1.95rem] font-semibold leading-none tracking-tight text-card-foreground tabular-nums">{value}</p>
+        {hint ? <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p> : null}
       </CardContent>
     </Card>
   );
@@ -574,7 +574,7 @@ function CompetitorDossier({
             </TabsList>
 
             <TabsContent value="overview" className="mt-4 space-y-4">
-              <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-3">
                 <MetricTile label="Contracts" value={scopedSummary.total_awards || 0} hint={`${scopedSummary.years_active || 0} years active`} />
                 <MetricTile label="Total Value" value={fmtEur(scopedSummary.total_value_eur)} hint={`avg ${fmtEur(scopedSummary.avg_contract_value_eur)}`} />
                 <MetricTile label="Public Bodies" value={scopedSummary.distinct_buyers || 0} hint={`${scopedSummary.active_contracts || 0} active`} />
