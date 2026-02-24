@@ -277,6 +277,9 @@ function CompetitorDossier({
   onBack,
   onSwitch,
   onEdit,
+  researchCompetitor,
+  agentBrief,
+  agentLoading,
   onDelete
 }) {
   const summary = analysis?.summary;
@@ -1353,6 +1356,9 @@ export default function Competitors() {
           onSwitch={(value) => navigate(createPageUrl(`competitors/${value}`))}
           onEdit={handleEdit}
           onDelete={handleDelete}
+          researchCompetitor={researchCompetitor}
+          agentBrief={agentBrief}
+          agentLoading={agentLoading}
         />
       ) : (
         <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none">
