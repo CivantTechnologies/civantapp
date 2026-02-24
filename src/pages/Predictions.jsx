@@ -279,6 +279,8 @@ export default function Predictions() {
   ));
   const [loading, setLoading] = useState(true);
   const [validationStats, setValidationStats] = useState(null);
+  const [priorityPage, setPriorityPage] = useState(1);
+  const PRIORITY_PAGE_SIZE = 20;
   const persistedScopeFilterEnabled = companyProfile?.company_scope_filter_enabled !== false;
   const companyScopeFilteringActive = persistedScopeFilterEnabled && !scopeFilterTemporarilyDisabled;
 
@@ -328,7 +330,8 @@ export default function Predictions() {
     } catch (error) {
       console.error('Failed to load predictions:', error);
       setAllPredictions([]);
-      // Fetch validation accuracy stats
+    } finally {
+      // Fetch validation accuracy stats (independent of predictions success/failure)
       try {
         const { data: vStats, error: vErr } = await supabase
           .rpc('get_prediction_validation_stats', { p_tenant_id: activeTenantId });
@@ -336,7 +339,6 @@ export default function Predictions() {
       } catch (e) {
         console.warn('Validation stats unavailable:', e);
       }
-    } finally {
       setLoading(false);
     }
   }, [activeTenantId, loadProfile]);
@@ -585,7 +587,7 @@ export default function Predictions() {
         })() : null}
 
 
-        <section className="space-y-3">
+        <section className="space-y-3 pt-4">
           <div className="space-y-1">
             <h3 className="text-base font-semibold text-card-foreground">Top Priority Opportunities</h3>
             <p className="text-xs text-muted-foreground">{prioritySectionHint}</p>
@@ -607,7 +609,7 @@ export default function Predictions() {
 
           {!loading && priorityRows.length > 0 ? (
             <div className="divide-y divide-white/[0.06]">
-              {priorityRows.map((row, index) => (
+              {priorityRows.slice(0, priorityPage * PRIORITY_PAGE_SIZE).map((row, index) => (
                 <div
                   key={row.id || row.prediction_id || index}
                   className="grid grid-cols-1 gap-3 py-3 md:grid-cols-[2.5fr_auto] md:items-center"
@@ -638,7 +640,22 @@ export default function Predictions() {
               ))}
             </div>
           ) : null}
-        </section>
+                  {priorityRows.length > PRIORITY_PAGE_SIZE ? (
+            <div className="flex items-center justify-between pt-3 border-t border-white/[0.06]">
+              <p className="text-xs text-muted-foreground">
+                Showing {Math.min(priorityPage * PRIORITY_PAGE_SIZE, priorityRows.length)} of {priorityRows.length} priority opportunities
+              </p>
+              <div className="flex items-center gap-2">
+                {priorityPage > 1 ? (
+                  <button type="button" onClick={() => setPriorityPage((p) => p - 1)} className="px-3 py-1 text-xs text-cyan-300 hover:text-cyan-200 border border-white/[0.08] rounded-md hover:bg-white/[0.04]">Previous</button>
+                ) : null}
+                {priorityPage * PRIORITY_PAGE_SIZE < priorityRows.length ? (
+                  <button type="button" onClick={() => setPriorityPage((p) => p + 1)} className="px-3 py-1 text-xs text-cyan-300 hover:text-cyan-200 border border-white/[0.08] rounded-md hover:bg-white/[0.04]">Show More</button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+</section>
 
         {!loading ? <ForecastTimeline rows={renewalRows} /> : null}
 
