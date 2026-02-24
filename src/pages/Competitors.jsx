@@ -135,7 +135,82 @@ function computeBuyerConcentrationTop3Pct(buyers = []) {
   const total = values.reduce((sum, value) => sum + value, 0);
   if (total <= 0) return 0;
   const top3 = values.slice(0, 3).reduce((sum, value) => sum + value, 0);
-  return (top3 / total) * 100;
+  const researchCompetitor = async () => {
+    if (agentLoading) return;
+    setAgentLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const competitorStats = {
+        total_contracts: scopedSummary?.total_awards || 0,
+        total_value_eur: scopedSummary?.total_value_eur || 0,
+        active_contracts: scopedSummary?.active_contracts || 0,
+        distinct_buyers: scopedSummary?.distinct_buyers || 0,
+        years_active: scopedSummary?.years_active || 0,
+        frameworks: scopedSummary?.has_frameworks || 0,
+        renewals_12m_value: scoped?.renewalExposureValue || 0,
+        renewals_12m_count: scoped?.renewalExposureCount || 0,
+        preferred_categories: (scopedCategories || []).slice(0, 5).map(c => c.label || c.cluster_label || fmtCluster(c.cluster_id)),
+        top_buyers: (scopedBuyers || []).slice(0, 5).map(b => b.buyer_name || b.name),
+        strengths: (scopedStrengths || []).slice(0, 3),
+      };
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL || 'https://ossoggqkqifdkihybbew.supabase.co'}/functions/v1/research-buyer`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({
+            buyer_name: selected?.name || selected?.supplier_name,
+            country: selected?.country || 'IE',
+            context: 'competitor',
+            stats: competitorStats,
+            tenant_id: activeTenantId,
+          }),
+        }
+      );
+      const data = await res.json();
+      if (data.brief) setAgentBrief(data.brief);
+    } catch (err) {
+      console.error('Civant Agent error:', err);
+      setAgentBrief({ summary: 'Research unavailable. Please try again.', _error: true });
+    } finally {
+      setAgentLoading(false);
+    }
+  };
+
+  // Load cached brief when competitor changes
+  React.useEffect(() => {
+    if (!selected?.name) return;
+    setAgentBrief(null);
+    const loadCached = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL || 'https://ossoggqkqifdkihybbew.supabase.co'}/functions/v1/research-buyer`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            },
+            body: JSON.stringify({
+              buyer_name: selected?.name || selected?.supplier_name,
+              country: selected?.country || 'IE',
+              context: 'competitor',
+              tenant_id: activeTenantId,
+            }),
+          }
+        );
+        const data = await res.json();
+        if (data.source === 'cache' && data.brief) setAgentBrief(data.brief);
+      } catch (_) {}
+    };
+    loadCached();
+  }, [selected?.name]);
+
+    return (top3 / total) * 100;
 }
 
 function computeLowLockInFromRenewals(renewals = []) {
@@ -594,6 +669,74 @@ function CompetitorDossier({
                     </li>
                   ))}
                 </ul>
+              </section>
+
+              <section className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] px-5 py-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium text-emerald-400/90">Civant Agent's Brief</h3>
+                  <button
+                    type="button"
+                    onClick={researchCompetitor}
+                    disabled={agentLoading}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/[0.08] px-3 py-1.5 text-[11px] font-medium text-emerald-400 hover:bg-emerald-500/[0.15] hover:text-emerald-300 disabled:opacity-50 transition-colors"
+                  >
+                    {agentLoading ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none"><path d="M8 1l1.5 4.5L14 7l-4.5 1.5L8 13l-1.5-4.5L2 7l4.5-1.5L8 1z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" fill="currentColor" fillOpacity="0.15"/><path d="M13 1l.5 1.5L15 3l-1.5.5L13 5l-.5-1.5L11 3l1.5-.5L13 1z" stroke="currentColor" strokeWidth="0.8" strokeLinejoin="round" fill="currentColor" fillOpacity="0.2"/></svg>
+                    )}
+                    {agentBrief ? 'Refresh Analysis' : 'Analyze Competitor'}
+                  </button>
+                </div>
+                {agentBrief ? (
+                  <div className="space-y-3">
+                    <p className="text-sm text-slate-200 leading-relaxed">{agentBrief.summary}</p>
+                    {agentBrief.organizational_context?.trajectory || agentBrief.organizational_context?.threat_level ? (
+                      <div className="flex items-center gap-4">
+                        {agentBrief.organizational_context?.trajectory ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Trajectory</span>
+                            <span className={`text-xs font-medium ${agentBrief.organizational_context.trajectory === 'growing' ? 'text-red-400' : agentBrief.organizational_context.trajectory === 'declining' ? 'text-emerald-400' : 'text-slate-300'}`}>
+                              {agentBrief.organizational_context.trajectory === 'growing' ? '\u2191 Growing' : agentBrief.organizational_context.trajectory === 'declining' ? '\u2193 Declining' : '\u2192 Stable'}
+                            </span>
+                          </div>
+                        ) : null}
+                        {agentBrief.organizational_context?.threat_level ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Threat</span>
+                            <span className={`text-xs font-medium ${agentBrief.organizational_context.threat_level === 'high' ? 'text-red-400' : agentBrief.organizational_context.threat_level === 'low' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                              {agentBrief.organizational_context.threat_level.charAt(0).toUpperCase() + agentBrief.organizational_context.threat_level.slice(1)}
+                            </span>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {agentBrief.risk_factors?.length > 0 ? (
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Vulnerabilities</p>
+                        <ul className="space-y-1">
+                          {agentBrief.risk_factors.slice(0, 3).map((v, i) => (
+                            <li key={i} className="flex items-start gap-2 text-xs text-slate-300">
+                              <span className="mt-1 h-1 w-1 rounded-full bg-emerald-400/60 shrink-0" />
+                              <span>{v}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                    {agentBrief.procurement_intent?.notes ? (
+                      <div className="pt-1 border-t border-emerald-500/10">
+                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Recommendation</p>
+                        <p className="text-xs text-slate-300">{agentBrief.procurement_intent.notes}</p>
+                      </div>
+                    ) : null}
+                    <p className="text-[10px] text-muted-foreground/50">
+                      {agentBrief.researched_at ? `Last updated: ${new Date(agentBrief.researched_at).toLocaleDateString()}` : ''}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Click "Analyze Competitor" to get AI-powered competitive intelligence including market trajectory, recent activity, and vulnerabilities.</p>
+                )}
               </section>
 
               <div className="grid gap-4 min-[1100px]:grid-cols-2">
