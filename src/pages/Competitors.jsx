@@ -162,8 +162,8 @@ function computeBuyerConcentrationTop3Pct(buyers = []) {
             'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           },
           body: JSON.stringify({
-            buyer_name: selected?.name || selected?.supplier_name,
-            country: selected?.country || 'IE',
+            buyer_name: selectedCompetitor?.name || selectedCompetitor?.supplier_name,
+            country: selectedCompetitor?.country || 'IE',
             context: 'competitor',
             stats: competitorStats,
             tenant_id: activeTenantId,
@@ -182,7 +182,7 @@ function computeBuyerConcentrationTop3Pct(buyers = []) {
 
   // Load cached brief when competitor changes
   React.useEffect(() => {
-    if (!selected?.name) return;
+    if (!selectedCompetitor?.name) return;
     setAgentBrief(null);
     const loadCached = async () => {
       try {
@@ -196,8 +196,8 @@ function computeBuyerConcentrationTop3Pct(buyers = []) {
               'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
             },
             body: JSON.stringify({
-              buyer_name: selected?.name || selected?.supplier_name,
-              country: selected?.country || 'IE',
+              buyer_name: selectedCompetitor?.name || selectedCompetitor?.supplier_name,
+              country: selectedCompetitor?.country || 'IE',
               context: 'competitor',
               tenant_id: activeTenantId,
             }),
@@ -208,7 +208,7 @@ function computeBuyerConcentrationTop3Pct(buyers = []) {
       } catch (_) {}
     };
     loadCached();
-  }, [selected?.name]);
+  }, [selectedCompetitor?.name]);
 
     return (top3 / total) * 100;
 }
