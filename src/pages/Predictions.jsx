@@ -279,7 +279,7 @@ export default function Predictions() {
   const [agentBriefs, setAgentBriefs] = useState({});
   const [agentLoading, setAgentLoading] = useState({});
   const [priorityPage, setPriorityPage] = useState(1);
-  const PRIORITY_PAGE_SIZE = 20;
+  const PRIORITY_PAGE_SIZE = 10;
   const persistedScopeFilterEnabled = companyProfile?.company_scope_filter_enabled !== false;
   const companyScopeFilteringActive = persistedScopeFilterEnabled && !scopeFilterTemporarilyDisabled;
 
@@ -700,23 +700,23 @@ export default function Predictions() {
                 </React.Fragment>
               ))}
             </div>
-          ) : null}
-                  {priorityRows.length > PRIORITY_PAGE_SIZE ? (
-            <div className="flex items-center justify-between pt-3 border-t border-white/[0.06]">
-              <p className="text-xs text-muted-foreground">
-                Page {priorityPage} of {Math.ceil(priorityRows.length / PRIORITY_PAGE_SIZE)} ({priorityRows.length} total)
-              </p>
-              <div className="flex items-center gap-2">
-                {priorityPage > 1 ? (
-                  <button type="button" onClick={() => setPriorityPage((p) => p - 1)} className="px-3 py-1 text-xs text-cyan-300 hover:text-cyan-200 border border-white/[0.08] rounded-md hover:bg-white/[0.04]">Previous</button>
-                ) : null}
-                {priorityPage < Math.ceil(priorityRows.length / PRIORITY_PAGE_SIZE) ? (
-                  <button type="button" onClick={() => setPriorityPage((p) => p + 1)} className="px-3 py-1 text-xs text-cyan-300 hover:text-cyan-200 border border-white/[0.08] rounded-md hover:bg-white/[0.04]">Next</button>
-                ) : null}
+            {priorityRows.length > PRIORITY_PAGE_SIZE ? (
+              <div className="flex items-center justify-between pt-3 border-t border-white/[0.06]">
+                <p className="text-xs text-muted-foreground">
+                  Page {priorityPage} of {Math.ceil(priorityRows.length / PRIORITY_PAGE_SIZE)} ({priorityRows.length} total)
+                </p>
+                <div className="flex items-center gap-2">
+                  {priorityPage > 1 ? (
+                    <button type="button" onClick={() => setPriorityPage((p) => p - 1)} className="px-3 py-1 text-xs text-cyan-300 hover:text-cyan-200 border border-white/[0.08] rounded-md hover:bg-white/[0.04]">Previous</button>
+                  ) : null}
+                  {priorityPage < Math.ceil(priorityRows.length / PRIORITY_PAGE_SIZE) ? (
+                    <button type="button" onClick={() => setPriorityPage((p) => p + 1)} className="px-3 py-1 text-xs text-cyan-300 hover:text-cyan-200 border border-white/[0.08] rounded-md hover:bg-white/[0.04]">Next</button>
+                  ) : null}
+                </div>
               </div>
-            </div>
+            ) : null}
           ) : null}
-</section>
+        </section>
 
         {!loading ? <ForecastTimeline rows={filtered} /> : null}
 
