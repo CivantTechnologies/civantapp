@@ -830,8 +830,7 @@ export default function Predictions() {
                 return pages;
               };
               return (
-                <div className="flex items-center justify-between pt-3 border-t border-white/[0.06]">
-                  <p className="text-xs text-muted-foreground">{filtered.length} forecasts</p>
+                <div className="flex flex-col items-center gap-2 pt-3 border-t border-white/[0.06]">
                   <div className="flex items-center gap-1">
                     {forecastPage > 1 ? (<button type="button" onClick={() => setForecastPage((p) => p - 1)} className="px-2 py-1 text-xs text-cyan-300 hover:text-cyan-200 hover:bg-white/[0.04] rounded">&lsaquo;</button>) : null}
                     {getPageNumbers().map((p, i) => p === '...' ? (
@@ -841,6 +840,7 @@ export default function Predictions() {
                     ))}
                     {forecastPage < totalPages ? (<button type="button" onClick={() => setForecastPage((p) => p + 1)} className="px-2 py-1 text-xs text-cyan-300 hover:text-cyan-200 hover:bg-white/[0.04] rounded">&rsaquo;</button>) : null}
                   </div>
+                  <p className="text-xs text-muted-foreground">{filtered.length} forecasts</p>
                 </div>
               );
             })() : null}
