@@ -638,7 +638,7 @@ export default function Predictions() {
 
           {!loading && priorityRows.length > 0 ? (
             <div className="divide-y divide-white/[0.06]">
-              {priorityRows.slice(0, priorityPage * PRIORITY_PAGE_SIZE).map((row, index) => (
+              {priorityRows.slice((priorityPage - 1) * PRIORITY_PAGE_SIZE, priorityPage * PRIORITY_PAGE_SIZE).map((row, index) => (
                 <React.Fragment key={row.id || row.prediction_id || index}>
                 <div
                   className="grid grid-cols-1 gap-3 py-3 md:grid-cols-[2.5fr_auto] md:items-center"
@@ -668,7 +668,7 @@ export default function Predictions() {
                       {agentLoading[row.id || row.prediction_id] ? (
                         <Loader2 className="h-3 w-3 animate-spin" />
                       ) : (
-                        <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5"/><path d="M8 4v4l2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                        <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none"><path d="M8 1l1.5 4.5L14 7l-4.5 1.5L8 13l-1.5-4.5L2 7l4.5-1.5L8 1z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" fill="currentColor" fillOpacity="0.15"/><path d="M13 1l.5 1.5L15 3l-1.5.5L13 5l-.5-1.5L11 3l1.5-.5L13 1z" stroke="currentColor" strokeWidth="0.8" strokeLinejoin="round" fill="currentColor" fillOpacity="0.2"/></svg>
                       )}
                       Civant Agent
                     </button>
@@ -680,7 +680,7 @@ export default function Predictions() {
                   </div>
                 </div>
                 {agentBriefs[row.id || row.prediction_id] ? (
-                  <div className="col-span-full -mt-1 mb-1 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] px-4 py-3 space-y-2">
+                  <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] px-4 py-3 -mt-1 mb-2 space-y-2">
                     <div className="flex items-center justify-between">
                       <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/80">Civant Agent Intelligence Brief</p>
                       <button type="button" onClick={() => setAgentBriefs((prev) => { const next = { ...prev }; delete next[row.id || row.prediction_id]; return next; })} className="text-[10px] text-muted-foreground hover:text-slate-300">&times; Close</button>
@@ -704,14 +704,14 @@ export default function Predictions() {
                   {priorityRows.length > PRIORITY_PAGE_SIZE ? (
             <div className="flex items-center justify-between pt-3 border-t border-white/[0.06]">
               <p className="text-xs text-muted-foreground">
-                Showing {Math.min(priorityPage * PRIORITY_PAGE_SIZE, priorityRows.length)} of {priorityRows.length} priority opportunities
+                Page {priorityPage} of {Math.ceil(priorityRows.length / PRIORITY_PAGE_SIZE)} ({priorityRows.length} total)
               </p>
               <div className="flex items-center gap-2">
                 {priorityPage > 1 ? (
                   <button type="button" onClick={() => setPriorityPage((p) => p - 1)} className="px-3 py-1 text-xs text-cyan-300 hover:text-cyan-200 border border-white/[0.08] rounded-md hover:bg-white/[0.04]">Previous</button>
                 ) : null}
-                {priorityPage * PRIORITY_PAGE_SIZE < priorityRows.length ? (
-                  <button type="button" onClick={() => setPriorityPage((p) => p + 1)} className="px-3 py-1 text-xs text-cyan-300 hover:text-cyan-200 border border-white/[0.08] rounded-md hover:bg-white/[0.04]">Show More</button>
+                {priorityPage < Math.ceil(priorityRows.length / PRIORITY_PAGE_SIZE) ? (
+                  <button type="button" onClick={() => setPriorityPage((p) => p + 1)} className="px-3 py-1 text-xs text-cyan-300 hover:text-cyan-200 border border-white/[0.08] rounded-md hover:bg-white/[0.04]">Next</button>
                 ) : null}
               </div>
             </div>
@@ -772,7 +772,7 @@ export default function Predictions() {
                       {agentLoading[row.id || row.prediction_id] ? (
                         <Loader2 className="h-3 w-3 animate-spin" />
                       ) : (
-                        <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5"/><path d="M8 4v4l2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                        <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none"><path d="M8 1l1.5 4.5L14 7l-4.5 1.5L8 13l-1.5-4.5L2 7l4.5-1.5L8 1z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" fill="currentColor" fillOpacity="0.15"/><path d="M13 1l.5 1.5L15 3l-1.5.5L13 5l-.5-1.5L11 3l1.5-.5L13 1z" stroke="currentColor" strokeWidth="0.8" strokeLinejoin="round" fill="currentColor" fillOpacity="0.2"/></svg>
                       )}
                       Civant Agent
                     </button>
