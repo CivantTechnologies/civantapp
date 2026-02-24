@@ -126,9 +126,6 @@ function normaliseCategory(category) {
   return CATEGORY_TO_PROFILE_CLUSTER[key] || null;
 }
 
-function isRenewal(row) {
-  return !!row.signal_type;
-}
 
 function predictionDate(row) {
   return row?.predicted_window_start || row?.predicted_tender_date || row?.contract_end_date || null;
@@ -375,10 +372,6 @@ export default function Predictions() {
     return sortPredictions(rows);
   }, [allPredictions, companyProfile, companyScopeFilteringActive, countryFilter, urgencyFilter, sourceFilter]);
 
-  const renewalRows = useMemo(
-    () => sortPredictions(filtered.filter(isRenewal)),
-    [filtered]
-  );
 
   const stats = useMemo(() => {
     const actionable = filtered.filter((row) => (row.urgency || '').toLowerCase() !== 'overdue');
@@ -657,7 +650,7 @@ export default function Predictions() {
           ) : null}
 </section>
 
-        {!loading ? <ForecastTimeline rows={renewalRows} /> : null}
+        {!loading ? <ForecastTimeline rows={filtered} /> : null}
 
         {loading ? (
           <Card className="border border-white/[0.06] bg-white/[0.015] shadow-none">
@@ -668,7 +661,7 @@ export default function Predictions() {
           </Card>
         ) : null}
 
-        {!loading && renewalRows.length === 0 ? (
+        {!loading && filtered.length === 0 ? (
           <Card className="border border-white/[0.06] bg-white/[0.015] shadow-none">
             <CardContent className="space-y-2 py-12 text-center">
               <p className="text-sm text-slate-300">Forecast engine active.</p>
