@@ -276,6 +276,8 @@ export default function Predictions() {
   ));
   const [loading, setLoading] = useState(true);
   const [validationStats, setValidationStats] = useState(null);
+  const [agentBriefs, setAgentBriefs] = useState({});
+  const [agentLoading, setAgentLoading] = useState({});
   const [priorityPage, setPriorityPage] = useState(1);
   const PRIORITY_PAGE_SIZE = 20;
   const persistedScopeFilterEnabled = companyProfile?.company_scope_filter_enabled !== false;
@@ -285,7 +287,41 @@ export default function Predictions() {
     setScopeFilterTemporarilyDisabledState(isCompanyScopeFilterTemporarilyDisabled(activeTenantId));
   }, [activeTenantId]);
 
-  const loadProfile = useCallback(async () => {
+  const researchBuyer = async (row) => {
+    const rowId = row.id || row.prediction_id;
+    if (agentLoading[rowId]) return;
+    setAgentLoading((prev) => ({ ...prev, [rowId]: true }));
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL || 'https://ossoggqkqifdkihybbew.supabase.co'}/functions/v1/research-buyer`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({
+            buyer_name: row.buyer_name || row.buyer_display_name,
+            country: row.country || row.region,
+            category: row.category || row.cpv_cluster_label || row.cpv_cluster_id,
+            tenant_id: activeTenantId,
+          }),
+        }
+      );
+      const data = await res.json();
+      if (data.brief) {
+        setAgentBriefs((prev) => ({ ...prev, [rowId]: data.brief }));
+      }
+    } catch (err) {
+      console.error('Civant Agent error:', err);
+      setAgentBriefs((prev) => ({ ...prev, [rowId]: { summary: 'Research unavailable. Please try again.', _error: true } }));
+    } finally {
+      setAgentLoading((prev) => ({ ...prev, [rowId]: false }));
+    }
+  };
+
+    const loadProfile = useCallback(async () => {
     if (!activeTenantId) return null;
     try {
       const rows = await civant.entities.company_profiles.filter(
@@ -693,14 +729,52 @@ export default function Predictions() {
                   <div className="text-sm text-slate-300">{formatRenewalWindow(row)}</div>
                   <div className="text-sm font-medium text-slate-200">{predictionConfidencePercent(row)}%</div>
                   <div className="truncate text-xs text-muted-foreground">{cycleReference(row)}</div>
-                  <div className="md:justify-self-end">
+                  <div className="flex items-center gap-1 md:justify-self-end">
+                    <button
+                      type="button"
+                      onClick={() => researchBuyer(row)}
+                      disabled={agentLoading[row.id || row.prediction_id]}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/[0.08] px-2.5 py-1 text-[11px] font-medium text-emerald-400 hover:bg-emerald-500/[0.15] hover:text-emerald-300 disabled:opacity-50 transition-colors"
+                    >
+                      {agentLoading[row.id || row.prediction_id] ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5"/><path d="M8 4v4l2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                      )}
+                      Civant Agent
+                    </button>
                     <Button variant="ghost" size="sm" asChild>
                       <Link to={createPageUrl(`search?buyer=${encodeURIComponent(buyerLabel(row))}`)}>
-                        View Forecast
+                        View
                       </Link>
                     </Button>
                   </div>
                 </div>
+                {agentBriefs[row.id || row.prediction_id] ? (
+                  <div className="col-span-full -mt-2 mb-2 ml-0 md:ml-4 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] px-4 py-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/80">Civant Agent Intelligence Brief</p>
+                      <button type="button" onClick={() => setAgentBriefs((prev) => { const next = { ...prev }; delete next[row.id || row.prediction_id]; return next; })} className="text-[10px] text-muted-foreground hover:text-slate-300">&times; Close</button>
+                    </div>
+                    <p className="text-sm text-slate-200 leading-relaxed">{agentBriefs[row.id || row.prediction_id]?.summary}</p>
+                    {agentBriefs[row.id || row.prediction_id]?.opportunity_score ? (
+                      <div className="flex items-center gap-3 pt-1">
+                        <span className="text-[10px] text-muted-foreground">Opportunity Score</span>
+                        <span className="text-sm font-semibold text-emerald-400">{agentBriefs[row.id || row.prediction_id].opportunity_score}/100</span>
+                        {agentBriefs[row.id || row.prediction_id]?.procurement_intent?.confidence ? (
+                          <span className="text-[10px] text-muted-foreground">Intent: {agentBriefs[row.id || row.prediction_id].procurement_intent.confidence}</span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {agentBriefs[row.id || row.prediction_id]?.sources?.length > 0 ? (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {agentBriefs[row.id || row.prediction_id].sources.slice(0, 3).map((s, si) => (
+                          <a key={si} href={s.url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-cyan-300/70 hover:text-cyan-300 underline truncate max-w-[200px]">{s.title || s.url}</a>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               ))}
             </div>
           </section>
