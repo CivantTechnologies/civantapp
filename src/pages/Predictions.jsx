@@ -636,7 +636,7 @@ export default function Predictions() {
             </div>
           ) : null}
 
-          {!loading && priorityRows.length > 0 ? (
+          {!loading && priorityRows.length > 0 ? (<>
             <div className="divide-y divide-white/[0.06]">
               {priorityRows.slice((priorityPage - 1) * PRIORITY_PAGE_SIZE, priorityPage * PRIORITY_PAGE_SIZE).map((row, index) => (
                 <React.Fragment key={row.id || row.prediction_id || index}>
@@ -715,6 +715,7 @@ export default function Predictions() {
                 </div>
               </div>
             ) : null}
+          </>
           ) : null}
         </section>
 
