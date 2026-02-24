@@ -653,20 +653,16 @@ export default function Predictions() {
                   className="grid grid-cols-1 gap-3 py-3 md:grid-cols-[2fr_1fr_0.8fr_0.6fr_auto] md:items-center md:gap-4"
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-card-foreground">{buyerLabel(row)}</p>
+                    <p className="truncate text-sm font-medium text-card-foreground">{buyerLabel(row)}</p>
                     {!companyScopeFilteringActive && row._scopeMatch ? (
-                      <p className="mt-0.5 text-[11px] text-cyan-300/90">Scope match</p>
+                      <p className="text-[11px] text-cyan-300/90">Scope match</p>
                     ) : null}
-                    <p className="mt-0.5 text-xs text-muted-foreground">{formatRenewalWindow(row)}</p>
-                    <p className="mt-1 text-sm font-medium text-slate-200 tabular-nums">
-                      {row.confidencePercent}% confidence
-                    </p>
+                    <p className="text-xs text-muted-foreground">{row.country || row.region || "u2014"}</p>
                   </div>
-
-                  <div className="flex items-center justify-between gap-4 md:justify-end">
-                    <div className="text-right">
-                      <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Priority {index + 1}</p>
-                      <p className="text-sm font-medium text-slate-300 tabular-nums">{row.priorityScore.toFixed(1)}</p>
+                  <div className="text-sm text-slate-300">{formatRenewalWindow(row)}</div>
+                  <div className="text-sm font-medium text-slate-200">{row.confidencePercent}%</div>
+                  <div className="text-sm text-right font-medium text-slate-300 tabular-nums">{row.priorityScore.toFixed(1)}</div>
+                  <div className="flex items-center gap-1 md:justify-self-end">
                     </div>
                     <button
                       type="button"
