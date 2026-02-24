@@ -280,6 +280,8 @@ export default function Predictions() {
   const [agentLoading, setAgentLoading] = useState({});
   const [priorityPage, setPriorityPage] = useState(1);
   const PRIORITY_PAGE_SIZE = 10;
+  const [forecastPage, setForecastPage] = useState(1);
+  const FORECAST_PAGE_SIZE = 25;
   const persistedScopeFilterEnabled = companyProfile?.company_scope_filter_enabled !== false;
   const companyScopeFilteringActive = persistedScopeFilterEnabled && !scopeFilterTemporarilyDisabled;
 
@@ -750,7 +752,7 @@ export default function Predictions() {
               <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:justify-self-end">Action</p>
             </div>
             <div className="divide-y divide-white/[0.06]">
-              {filtered.map((row, index) => (
+              {filtered.slice((forecastPage - 1) * FORECAST_PAGE_SIZE, forecastPage * FORECAST_PAGE_SIZE).map((row, index) => (
                 <React.Fragment key={row.id || row.prediction_id || index}>
                 <div className="grid grid-cols-1 gap-3 py-4 md:grid-cols-[2fr_1.4fr_1fr_1.6fr_auto] md:items-center md:gap-4">
                   <div className="min-w-0">
