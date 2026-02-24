@@ -618,8 +618,8 @@ export default function Predictions() {
         })() : null}
 
 
-        <section className="space-y-3 pt-4">
-          <div className="space-y-1">
+        <section className="space-y-4 rounded-2xl border border-white/[0.06] bg-white/[0.015] px-5 py-5">
+          <div className="space-y-1 pb-1">
             <h3 className="text-base font-semibold text-card-foreground">Top Priority Opportunities</h3>
             <p className="text-xs text-muted-foreground">{prioritySectionHint}</p>
           </div>
