@@ -639,6 +639,13 @@ export default function Predictions() {
           ) : null}
 
           {!loading && priorityRows.length > 0 ? (<>
+            <div className="hidden border-b border-white/[0.06] pb-2.5 pt-1 md:grid md:grid-cols-[2fr_1fr_0.8fr_0.6fr_auto] md:items-center md:gap-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Buyer</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Window</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Confidence</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 text-right">Priority</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:justify-self-end">Action</p>
+            </div>
             <div className="divide-y divide-white/[0.06]">
               {priorityRows.slice((priorityPage - 1) * PRIORITY_PAGE_SIZE, priorityPage * PRIORITY_PAGE_SIZE).map((row, index) => (
                 <React.Fragment key={row.id || row.prediction_id || index}>
