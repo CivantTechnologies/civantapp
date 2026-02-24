@@ -650,7 +650,7 @@ export default function Predictions() {
               {priorityRows.slice((priorityPage - 1) * PRIORITY_PAGE_SIZE, priorityPage * PRIORITY_PAGE_SIZE).map((row, index) => (
                 <React.Fragment key={row.id || row.prediction_id || index}>
                 <div
-                  className="grid grid-cols-1 gap-3 py-3 md:grid-cols-[2.5fr_auto] md:items-center"
+                  className="grid grid-cols-1 gap-3 py-3 md:grid-cols-[2fr_1fr_0.8fr_0.6fr_auto] md:items-center md:gap-4"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-card-foreground">{buyerLabel(row)}</p>
