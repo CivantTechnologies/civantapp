@@ -278,6 +278,7 @@ export default function Predictions() {
     isCompanyScopeFilterTemporarilyDisabled(activeTenantId)
   ));
   const [loading, setLoading] = useState(true);
+  const [validationStats, setValidationStats] = useState(null);
   const persistedScopeFilterEnabled = companyProfile?.company_scope_filter_enabled !== false;
   const companyScopeFilteringActive = persistedScopeFilterEnabled && !scopeFilterTemporarilyDisabled;
 
@@ -327,6 +328,14 @@ export default function Predictions() {
     } catch (error) {
       console.error('Failed to load predictions:', error);
       setAllPredictions([]);
+      // Fetch validation accuracy stats
+      try {
+        const { data: vStats, error: vErr } = await supabase
+          .rpc('get_prediction_validation_stats', { p_tenant_id: activeTenantId });
+        if (!vErr && vStats) setValidationStats(vStats);
+      } catch (e) {
+        console.warn('Validation stats unavailable:', e);
+      }
     } finally {
       setLoading(false);
     }
@@ -522,6 +531,40 @@ export default function Predictions() {
             hint="Actionable opportunities"
           />
         </div>
+        {validationStats ? (
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <h3 className="text-sm font-semibold text-card-foreground">Prediction Accuracy</h3>
+                <p className="text-[11px] text-muted-foreground">
+                  {validationStats.confirmed?.toLocaleString()} of {(validationStats.confirmed + validationStats.unmatched + validationStats.expired)?.toLocaleString()} resolved predictions confirmed by published tenders
+                </p>
+              </div>
+              <div className="text-right">
+                <span className="text-2xl font-bold text-emerald-400">{validationStats.accuracy_resolved}%</span>
+                <p className="text-[10px] text-muted-foreground">overall accuracy</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              {validationStats.accuracy_by_urgency?.map((u) => (
+                <div key={u.urgency} className="rounded-lg bg-white/[0.03] px-3 py-2">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{u.urgency}</p>
+                  <p className="text-lg font-semibold text-card-foreground">{u.hit_rate}%</p>
+                  <p className="text-[10px] text-muted-foreground">{u.confirmed?.toLocaleString()} / {u.total?.toLocaleString()}</p>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {validationStats.accuracy_by_country?.map((c) => (
+                <div key={c.country} className="flex items-center justify-between rounded-lg bg-white/[0.03] px-3 py-2">
+                  <span className="text-xs text-muted-foreground">{c.country === 'ES' ? '🇪🇸 Spain' : c.country === 'FR' ? '🇫🇷 France' : c.country === 'IE' ? '🇮🇪 Ireland' : c.country}</span>
+                  <span className="text-sm font-semibold text-card-foreground">{c.accuracy}%</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-[10px] text-muted-foreground/60">Median prediction accuracy: ±{validationStats.median_delta_days} days from actual publication. {validationStats.pending?.toLocaleString()} predictions pending future validation.</p>
+          </div>
+        ) : null}
 
         <section className="space-y-3">
           <div className="space-y-1">
