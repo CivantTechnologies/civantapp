@@ -880,7 +880,7 @@ export default function Competitors() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}` },
           body: JSON.stringify({
-            buyer_name: selectedCompetitor?.name || selectedCompetitor?.supplier_name,
+            buyer_name: selectedCompetitor?.company_name || selectedCompetitor?.name,
             country: selectedCompetitor?.country || 'IE',
             context: 'competitor',
             tenant_id: activeTenantId,
@@ -898,7 +898,7 @@ export default function Competitors() {
   };
 
   useEffect(() => {
-    if (!selectedCompetitor?.name) return;
+    if (!selectedCompetitor?.company_name) return;
     setAgentBrief(null);
     const loadCached = async () => {
       try {
@@ -909,7 +909,7 @@ export default function Competitors() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}` },
             body: JSON.stringify({
-              buyer_name: selectedCompetitor?.name || selectedCompetitor?.supplier_name,
+              buyer_name: selectedCompetitor?.company_name || selectedCompetitor?.name,
               country: selectedCompetitor?.country || 'IE',
               context: 'competitor',
               tenant_id: activeTenantId,
@@ -921,7 +921,7 @@ export default function Competitors() {
       } catch (_) {}
     };
     loadCached();
-  }, [selectedCompetitor?.name]);
+  }, [selectedCompetitor?.company_name]);
 
   const analyzeCompetitor = useCallback(async (competitor) => {
     if (!competitor || !activeTenantId) return null;
