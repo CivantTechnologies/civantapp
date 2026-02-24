@@ -639,8 +639,8 @@ export default function Predictions() {
           {!loading && priorityRows.length > 0 ? (
             <div className="divide-y divide-white/[0.06]">
               {priorityRows.slice(0, priorityPage * PRIORITY_PAGE_SIZE).map((row, index) => (
+                <React.Fragment key={row.id || row.prediction_id || index}>
                 <div
-                  key={row.id || row.prediction_id || index}
                   className="grid grid-cols-1 gap-3 py-3 md:grid-cols-[2.5fr_auto] md:items-center"
                 >
                   <div className="min-w-0">
@@ -749,7 +749,8 @@ export default function Predictions() {
             </div>
             <div className="divide-y divide-white/[0.06]">
               {filtered.map((row, index) => (
-                <div key={row.id || row.prediction_id || index} className="grid grid-cols-1 gap-3 py-4 md:grid-cols-[2fr_1.4fr_1fr_1.6fr_auto] md:items-center md:gap-4">
+                <React.Fragment key={row.id || row.prediction_id || index}>
+                <div className="grid grid-cols-1 gap-3 py-4 md:grid-cols-[2fr_1.4fr_1fr_1.6fr_auto] md:items-center md:gap-4">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-card-foreground">{buyerLabel(row)}</p>
                     {!companyScopeFilteringActive && row._scopeMatch ? (
@@ -806,6 +807,7 @@ export default function Predictions() {
                     ) : null}
                   </div>
                 ) : null}
+                </React.Fragment>
               ))}
             </div>
           </section>
