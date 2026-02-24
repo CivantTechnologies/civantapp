@@ -663,7 +663,6 @@ export default function Predictions() {
                   <div className="text-sm font-medium text-slate-200">{row.confidencePercent}%</div>
                   <div className="text-sm text-right font-medium text-slate-300 tabular-nums">{row.priorityScore.toFixed(1)}</div>
                   <div className="flex items-center gap-1 md:justify-self-end">
-                    </div>
                     <button
                       type="button"
                       onClick={() => researchBuyer(row)}
