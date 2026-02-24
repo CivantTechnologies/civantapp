@@ -135,81 +135,6 @@ function computeBuyerConcentrationTop3Pct(buyers = []) {
   const total = values.reduce((sum, value) => sum + value, 0);
   if (total <= 0) return 0;
   const top3 = values.slice(0, 3).reduce((sum, value) => sum + value, 0);
-  const researchCompetitor = async () => {
-    if (agentLoading) return;
-    setAgentLoading(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const competitorStats = {
-        total_contracts: scopedSummary?.total_awards || 0,
-        total_value_eur: scopedSummary?.total_value_eur || 0,
-        active_contracts: scopedSummary?.active_contracts || 0,
-        distinct_buyers: scopedSummary?.distinct_buyers || 0,
-        years_active: scopedSummary?.years_active || 0,
-        frameworks: scopedSummary?.has_frameworks || 0,
-        renewals_12m_value: scoped?.renewalExposureValue || 0,
-        renewals_12m_count: scoped?.renewalExposureCount || 0,
-        preferred_categories: (scopedCategories || []).slice(0, 5).map(c => c.label || c.cluster_label || fmtCluster(c.cluster_id)),
-        top_buyers: (scopedBuyers || []).slice(0, 5).map(b => b.buyer_name || b.name),
-        strengths: (scopedStrengths || []).slice(0, 3),
-      };
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL || 'https://ossoggqkqifdkihybbew.supabase.co'}/functions/v1/research-buyer`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          },
-          body: JSON.stringify({
-            buyer_name: selectedCompetitor?.name || selectedCompetitor?.supplier_name,
-            country: selectedCompetitor?.country || 'IE',
-            context: 'competitor',
-            stats: competitorStats,
-            tenant_id: activeTenantId,
-          }),
-        }
-      );
-      const data = await res.json();
-      if (data.brief) setAgentBrief(data.brief);
-    } catch (err) {
-      console.error('Civant Agent error:', err);
-      setAgentBrief({ summary: 'Research unavailable. Please try again.', _error: true });
-    } finally {
-      setAgentLoading(false);
-    }
-  };
-
-  // Load cached brief when competitor changes
-  React.useEffect(() => {
-    if (!selectedCompetitor?.name) return;
-    setAgentBrief(null);
-    const loadCached = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const res = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL || 'https://ossoggqkqifdkihybbew.supabase.co'}/functions/v1/research-buyer`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-            },
-            body: JSON.stringify({
-              buyer_name: selectedCompetitor?.name || selectedCompetitor?.supplier_name,
-              country: selectedCompetitor?.country || 'IE',
-              context: 'competitor',
-              tenant_id: activeTenantId,
-            }),
-          }
-        );
-        const data = await res.json();
-        if (data.source === 'cache' && data.brief) setAgentBrief(data.brief);
-      } catch (_) {}
-    };
-    loadCached();
-  }, [selectedCompetitor?.name]);
-
     return (top3 / total) * 100;
 }
 
@@ -875,6 +800,8 @@ export default function Competitors() {
   const [analyzingId, setAnalyzingId] = useState(null);
   const [snapshotLoading, setSnapshotLoading] = useState(false);
   const [analysisByCompetitorId, setAnalysisByCompetitorId] = useState({});
+  const [agentBrief, setAgentBrief] = useState(null);
+  const [agentLoading, setAgentLoading] = useState(false);
   const prefetchingPortfolioRef = useRef(false);
 
   const [formData, setFormData] = useState({
@@ -938,6 +865,60 @@ export default function Competitors() {
     () => competitors.find((c) => String(c.id) === String(competitorId || '')) || null,
     [competitorId, competitors]
   );
+
+  const researchCompetitor = async () => {
+    if (agentLoading) return;
+    setAgentLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL || 'https://ossoggqkqifdkihybbew.supabase.co'}/functions/v1/research-buyer`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}` },
+          body: JSON.stringify({
+            buyer_name: selectedCompetitor?.name || selectedCompetitor?.supplier_name,
+            country: selectedCompetitor?.country || 'IE',
+            context: 'competitor',
+            tenant_id: activeTenantId,
+          }),
+        }
+      );
+      const data = await res.json();
+      if (data.brief) setAgentBrief(data.brief);
+    } catch (err) {
+      console.error('Civant Agent error:', err);
+      setAgentBrief({ summary: 'Research unavailable. Please try again.', _error: true });
+    } finally {
+      setAgentLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedCompetitor?.name) return;
+    setAgentBrief(null);
+    const loadCached = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL || 'https://ossoggqkqifdkihybbew.supabase.co'}/functions/v1/research-buyer`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}` },
+            body: JSON.stringify({
+              buyer_name: selectedCompetitor?.name || selectedCompetitor?.supplier_name,
+              country: selectedCompetitor?.country || 'IE',
+              context: 'competitor',
+              tenant_id: activeTenantId,
+            }),
+          }
+        );
+        const data = await res.json();
+        if (data.source === 'cache' && data.brief) setAgentBrief(data.brief);
+      } catch (_) {}
+    };
+    loadCached();
+  }, [selectedCompetitor?.name]);
 
   const analyzeCompetitor = useCallback(async (competitor) => {
     if (!competitor || !activeTenantId) return null;
