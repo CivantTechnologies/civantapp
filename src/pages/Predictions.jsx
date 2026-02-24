@@ -639,18 +639,15 @@ export default function Predictions() {
           ) : null}
 
           {!loading && priorityRows.length > 0 ? (<>
-            <div className="hidden border-b border-white/[0.06] pb-2.5 pt-1 md:grid md:grid-cols-[2fr_1fr_0.8fr_0.6fr_auto] md:items-center md:gap-4">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Buyer</p>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Window</p>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Confidence</p>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 text-right">Priority</p>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:justify-self-end">Action</p>
+            <div className="hidden border-b border-white/[0.06] pb-2 pt-1 md:grid md:grid-cols-[1fr_auto] md:items-center md:gap-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Opportunity</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Actions</p>
             </div>
             <div className="divide-y divide-white/[0.06]">
               {priorityRows.slice((priorityPage - 1) * PRIORITY_PAGE_SIZE, priorityPage * PRIORITY_PAGE_SIZE).map((row, index) => (
                 <React.Fragment key={row.id || row.prediction_id || index}>
                 <div
-                  className="grid grid-cols-1 gap-3 py-3 md:grid-cols-[2fr_1fr_0.8fr_0.6fr_auto] md:items-center md:gap-4"
+                  className="grid grid-cols-1 gap-3 py-3.5 md:grid-cols-[1fr_auto] md:items-center md:gap-4"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-card-foreground">{buyerLabel(row)}</p>
@@ -676,9 +673,9 @@ export default function Predictions() {
                       )}
                       Civant Agent
                     </button>
-                    <Button variant="ghost" size="sm" asChild>
+                    <Button variant="ghost" size="sm" className="text-xs" asChild>
                       <Link to={createPageUrl(`search?buyer=${encodeURIComponent(buyerLabel(row))}`)}>
-                        Plan Engagement
+                        Details
                       </Link>
                     </Button>
                   </div>
@@ -746,28 +743,32 @@ export default function Predictions() {
         {!loading && filtered.length > 0 ? (
           <section className="space-y-3 rounded-2xl bg-white/[0.015] px-4 py-4">
             <h3 className="text-base font-semibold text-card-foreground">Forecast List</h3>
-            <div className="sticky top-0 z-10 hidden border-b border-white/[0.06] pb-2.5 pt-1 md:grid md:grid-cols-[2fr_1.4fr_1fr_1.6fr_auto] md:items-center md:gap-4">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Buyer</p>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Window</p>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Confidence</p>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Signal</p>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:justify-self-end">Action</p>
+            <div className="sticky top-0 z-10 hidden border-b border-white/[0.06] pb-2 pt-1 md:grid md:grid-cols-[1fr_auto] md:items-center md:gap-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Forecast</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Actions</p>
             </div>
             <div className="divide-y divide-white/[0.06]">
               {filtered.slice((forecastPage - 1) * FORECAST_PAGE_SIZE, forecastPage * FORECAST_PAGE_SIZE).map((row, index) => (
                 <React.Fragment key={row.id || row.prediction_id || index}>
-                <div className="grid grid-cols-1 gap-3 py-4 md:grid-cols-[2fr_1.4fr_1fr_1.6fr_auto] md:items-center md:gap-4">
+                <div className="grid grid-cols-1 gap-3 py-3.5 md:grid-cols-[1fr_auto] md:items-center md:gap-4">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-card-foreground">{buyerLabel(row)}</p>
-                    {!companyScopeFilteringActive && row._scopeMatch ? (
-                      <p className="text-[11px] text-cyan-300/90">Scope match</p>
-                    ) : null}
-                    <p className="text-xs text-muted-foreground">{row.country || row.region || '—'}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-medium text-card-foreground">{buyerLabel(row)}</p>
+                      {!companyScopeFilteringActive && row._scopeMatch ? (
+                        <span className="shrink-0 rounded bg-cyan-500/10 px-1.5 py-0.5 text-[10px] text-cyan-300">Match</span>
+                      ) : null}
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                      <span>{row.country || row.region || '—'}</span>
+                      <span className="text-white/[0.15]">·</span>
+                      <span>{formatRenewalWindow(row)}</span>
+                      <span className="text-white/[0.15]">·</span>
+                      <span className="text-slate-300">{predictionConfidencePercent(row)}%</span>
+                      <span className="text-white/[0.15]">·</span>
+                      <span className="truncate max-w-[200px]">{cycleReference(row)}</span>
+                    </div>
                   </div>
-                  <div className="text-sm text-slate-300">{formatRenewalWindow(row)}</div>
-                  <div className="text-sm font-medium text-slate-200">{predictionConfidencePercent(row)}%</div>
-                  <div className="truncate text-xs text-muted-foreground">{cycleReference(row)}</div>
-                  <div className="flex items-center gap-1 md:justify-self-end">
+                  <div className="flex items-center gap-2 md:justify-self-end">
                     <button
                       type="button"
                       onClick={() => researchBuyer(row)}
