@@ -67,6 +67,17 @@ export default function Home() {
     const [stats, setStats] = useState(null);
     const [latestTenders, setLatestTenders] = useState([]);
     const [predictionRows, setPredictionRows] = useState([]);
+    const [allTendersRaw, setAllTendersRaw] = useState([]);
+    const [allPredictionsRaw, setAllPredictionsRaw] = useState([]);
+    const [unscopedStats, setUnscopedStats] = useState(null);
+    const [unscopedLatestTenders, setUnscopedLatestTenders] = useState([]);
+    const [unscopedPredictionRows, setUnscopedPredictionRows] = useState([]);
+    const [unscopedTrajectorySeries12m, setUnscopedTrajectorySeries12m] = useState([]);
+    const [unscopedTrajectoryIndicators, setUnscopedTrajectoryIndicators] = useState({
+        missedRenewalCycles12m: 0,
+        newBuyersDetected90d: 0,
+        incumbentDominanceShift12m: 0
+    });
     const [lastDataUpdateAt, setLastDataUpdateAt] = useState(null);
     const [trajectorySeries12m, setTrajectorySeries12m] = useState([]);
     const [trajectoryIndicators, setTrajectoryIndicators] = useState({
@@ -390,6 +401,43 @@ export default function Home() {
             // Recent relevant activity is scoped and intentionally compact.
             setLatestTenders(scopedTenders.slice(0, 5));
             setPredictionRows(scopedPredictions);
+
+            // Store unscoped data for when scope filter is temporarily cleared
+            setAllTendersRaw(allTenders);
+            setAllPredictionsRaw(predictions);
+
+            const unscopedNew24h = allTenders.filter((t) =>
+                getTenderFirstSeen(t) && isAfter(new Date(getTenderFirstSeen(t)), last24h)
+            ).length;
+            const unscopedExpiring7d = allTenders.filter((t) => {
+                if (!t.deadline_date) return false;
+                const deadline = new Date(t.deadline_date);
+                return !Number.isNaN(deadline.getTime()) && deadline >= now && deadline <= next7days;
+            }).length;
+            const unscopedOpen = allTenders.filter((t) => {
+                if (!t.deadline_date) return false;
+                const deadline = new Date(t.deadline_date);
+                return !Number.isNaN(deadline.getTime()) && deadline >= startOfDay(now);
+            }).length;
+            const unscopedHighConf = predictions.filter((row) => {
+                const conf = getPredictionConfidence(row);
+                return conf !== null && conf >= 75;
+            }).length;
+            const unscopedMovement = allTenders.filter((t) =>
+                getTenderFirstSeen(t) && isAfter(new Date(getTenderFirstSeen(t)), subDays(now, 7))
+            ).length;
+
+            setUnscopedStats({
+                newRelevantTenders24h: unscopedNew24h,
+                expiringContracts7d: unscopedExpiring7d,
+                highConfidenceSignals: unscopedHighConf,
+                openTrackedOpportunities: unscopedOpen,
+                competitorMovement7d: unscopedMovement
+            });
+            setUnscopedTrajectorySeries12m(buildMonthlyTrajectorySeries(allTenders, allTenders));
+            setUnscopedTrajectoryIndicators(computeTrajectoryIndicators(allTenders, predictions));
+            setUnscopedLatestTenders(allTenders.slice(0, 5));
+            setUnscopedPredictionRows(predictions);
             
             try {
                 const [latestRun] = await civant.entities.ConnectorRuns.list('-started_at', 1);
@@ -407,11 +455,18 @@ export default function Home() {
         }
     };
 
+    // Active data: switch between scoped and unscoped based on toggle
+    const activeStats = scopeTemporarilyDisabled ? unscopedStats : stats;
+    const activeLatestTenders = scopeTemporarilyDisabled ? unscopedLatestTenders : latestTenders;
+    const activePredictionRows = scopeTemporarilyDisabled ? unscopedPredictionRows : predictionRows;
+    const activeTrajectorySeries = scopeTemporarilyDisabled ? unscopedTrajectorySeries12m : trajectorySeries12m;
+    const activeTrajectoryIndicators = scopeTemporarilyDisabled ? unscopedTrajectoryIndicators : trajectoryIndicators;
+
     const briefing = useMemo(() => {
         const now = new Date();
         const horizon = addMonths(now, 6);
 
-        const predictionTimeline = predictionRows
+        const predictionTimeline = activePredictionRows
             .map((row) => ({
                 row,
                 confidence: getPredictionConfidence(row),
@@ -424,7 +479,7 @@ export default function Home() {
 
         const topPrediction = rankedPredictions[0]?.row || null;
         const topPredictionConfidence = rankedPredictions[0]?.confidence ?? null;
-        const topTender = latestTenders[0] || null;
+        const topTender = activeLatestTenders[0] || null;
 
         const predictionDate = topPrediction ? parseDate(getPredictionDate(topPrediction)) : null;
         const fromWindow = parseDate(topPrediction?.predicted_window_start);
@@ -465,7 +520,7 @@ export default function Home() {
             highConfidenceSignals,
             competitorMovement7d: Number(stats?.competitorMovement7d ?? 0)
         };
-    }, [latestTenders, predictionRows, stats]);
+    }, [activeLatestTenders, activePredictionRows, activeStats]);
     
     const StatCard = ({ title, value, icon: Icon, color, subtext = null, to }) => (
         <Link
@@ -593,28 +648,28 @@ export default function Home() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <StatCard 
                         title="New Relevant Tenders (24h)" 
-                        value={stats?.newRelevantTenders24h || 0}
+                        value={activeStats?.newRelevantTenders24h || 0}
                         icon={FileText}
                         color="text-primary"
                         to={createPageUrl('Search?lastTendered=1')}
                     />
                     <StatCard 
                         title="Expiring Contracts (7 days)" 
-                        value={stats?.expiringContracts7d || 0}
+                        value={activeStats?.expiringContracts7d || 0}
                         icon={Clock}
                         color="text-card-foreground"
                         to={createPageUrl('Search?deadlineWithin=7')}
                     />
                     <StatCard 
                         title="High-Confidence Signals" 
-                        value={stats?.highConfidenceSignals || 0}
+                        value={activeStats?.highConfidenceSignals || 0}
                         icon={Bell}
                         color="text-primary"
                         to={createPageUrl('Forecast')}
                     />
                     <StatCard 
                         title="Open Opportunities (Tracked Scope)" 
-                        value={stats?.openTrackedOpportunities || 0}
+                        value={activeStats?.openTrackedOpportunities || 0}
                         icon={TrendingUp}
                         color="text-card-foreground"
                         to={createPageUrl('Search')}
@@ -625,7 +680,7 @@ export default function Home() {
                     series12m={trajectorySeries12m}
                     range={trajectoryRange}
                     onRangeChange={setTrajectoryRange}
-                    indicators={trajectoryIndicators}
+                    indicators={activeTrajectoryIndicators}
                 />
 
                 <Card className="border border-white/[0.06] bg-white/[0.015] shadow-none">
@@ -641,7 +696,7 @@ export default function Home() {
                     </CardHeader>
                     <CardContent className="p-0">
                         <div className="divide-y divide-white/[0.06]">
-                            {latestTenders.length === 0 ? (
+                            {activeLatestTenders.length === 0 ? (
                                 <div className="px-6 py-8 text-sm text-muted-foreground">
                                     No relevant activity yet. We will surface updates as tracked signals arrive.
                                 </div>
