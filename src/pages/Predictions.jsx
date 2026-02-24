@@ -619,7 +619,7 @@ export default function Predictions() {
 
 
         <section className="space-y-4 rounded-2xl border border-white/[0.06] bg-white/[0.015] px-5 py-5">
-          <div className="space-y-1 pb-1">
+          <div className="space-y-1 pb-3 border-b border-white/[0.06]">
             <h3 className="text-base font-semibold text-card-foreground">Top Priority Opportunities</h3>
             <p className="text-xs text-muted-foreground">{prioritySectionHint}</p>
           </div>
@@ -741,7 +741,7 @@ export default function Predictions() {
 
         {!loading && filtered.length > 0 ? (
           <section className="space-y-3 rounded-2xl bg-white/[0.015] px-4 py-4">
-            <h3 className="text-base font-semibold text-card-foreground">Forecast List</h3>
+            <h3 className="text-base font-semibold text-card-foreground pb-3 border-b border-white/[0.06]">Forecast List</h3>
 
             <div className="divide-y divide-white/[0.06]">
               {filtered.slice((forecastPage - 1) * FORECAST_PAGE_SIZE, forecastPage * FORECAST_PAGE_SIZE).map((row, index) => (
