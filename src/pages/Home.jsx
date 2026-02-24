@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Page, PageHero, PageTitle, PageDescription, PageBody, Card, CardContent, CardHeader, CardTitle, Button } from '@/components/ui';
 import { format, formatDistanceToNow, subDays, subMonths, isAfter, startOfDay, startOfMonth, addMonths } from 'date-fns';
+import { isCompanyScopeFilterTemporarilyDisabled, setCompanyScopeFilterTemporarilyDisabled } from '@/lib/companyScopeSession';
 
 const CLUSTER_ALIAS_MAP = {
     cluster_digital: 'cluster_it_software',
@@ -78,6 +79,17 @@ export default function Home() {
     const [profileScope, setProfileScope] = useState(null);
     const [loadError, setLoadError] = useState('');
     const { activeTenantId, isLoadingTenants } = useTenant();
+    const [scopeTemporarilyDisabled, setScopeTemporarilyDisabled] = useState(() =>
+        isCompanyScopeFilterTemporarilyDisabled(activeTenantId)
+    );
+    const clearScopeTemporarily = () => {
+        setCompanyScopeFilterTemporarilyDisabled(activeTenantId, true);
+        setScopeTemporarilyDisabled(true);
+    };
+    const restoreScopeFilter = () => {
+        setCompanyScopeFilterTemporarilyDisabled(activeTenantId, false);
+        setScopeTemporarilyDisabled(false);
+    };
     
     useEffect(() => {
         if (isLoadingTenants) return;
@@ -554,17 +566,23 @@ export default function Home() {
                 </div>
             </section>
 
-            {profileScope ? (
+            {profileScope && !scopeTemporarilyDisabled ? (
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-12 text-xs text-muted-foreground">
                     <span>Filtered by Company Scope</span>
                     <Link to={createPageUrl('Company?tab=personalization')} className="text-cyan-300 hover:underline">Edit scope</Link>
+                    <button type="button" onClick={clearScopeTemporarily} className="text-cyan-300 hover:underline">Clear temporarily</button>
                 </div>
-            ) : (
+            ) : profileScope && scopeTemporarilyDisabled ? (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-12 text-xs text-muted-foreground">
+                    <span>Company scope filter temporarily cleared for this session.</span>
+                    <button type="button" onClick={restoreScopeFilter} className="text-cyan-300 hover:underline">Turn back on</button>
+                </div>
+            ) : !profileScope ? (
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-12 text-xs text-muted-foreground">
                     <span>No company scope configured.</span>
                     <Link to={createPageUrl('Company?tab=personalization')} className="text-cyan-300 hover:underline">Set up scope</Link>
                 </div>
-            )}
+            ) : null}
 
             <PageBody>
                 {loadError ? (
