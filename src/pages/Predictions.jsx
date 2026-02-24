@@ -279,9 +279,9 @@ export default function Predictions() {
   const [agentBriefs, setAgentBriefs] = useState({});
   const [agentLoading, setAgentLoading] = useState({});
   const [priorityPage, setPriorityPage] = useState(1);
-  const PRIORITY_PAGE_SIZE = 10;
+  const PRIORITY_PAGE_SIZE = 5;
   const [forecastPage, setForecastPage] = useState(1);
-  const FORECAST_PAGE_SIZE = 25;
+  const FORECAST_PAGE_SIZE = 10;
   const persistedScopeFilterEnabled = companyProfile?.company_scope_filter_enabled !== false;
   const companyScopeFilteringActive = persistedScopeFilterEnabled && !scopeFilterTemporarilyDisabled;
 
@@ -684,7 +684,7 @@ export default function Predictions() {
                 {agentBriefs[row.id || row.prediction_id] ? (
                   <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] px-4 py-3 -mt-1 mb-2 space-y-2">
                     <div className="flex items-center justify-between">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/80">Civant Agent Intelligence Brief</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/80">Civant Agent's Brief</p>
                       <button type="button" onClick={() => setAgentBriefs((prev) => { const next = { ...prev }; delete next[row.id || row.prediction_id]; return next; })} className="text-[10px] text-muted-foreground hover:text-slate-300">&times; Close</button>
                     </div>
                     <p className="text-sm text-slate-200 leading-relaxed">{agentBriefs[row.id || row.prediction_id]?.summary}</p>
@@ -789,7 +789,7 @@ export default function Predictions() {
                 {agentBriefs[row.id || row.prediction_id] ? (
                   <div className="col-span-full -mt-2 mb-2 ml-0 md:ml-4 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] px-4 py-3 space-y-2">
                     <div className="flex items-center justify-between">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/80">Civant Agent Intelligence Brief</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/80">Civant Agent's Brief</p>
                       <button type="button" onClick={() => setAgentBriefs((prev) => { const next = { ...prev }; delete next[row.id || row.prediction_id]; return next; })} className="text-[10px] text-muted-foreground hover:text-slate-300">&times; Close</button>
                     </div>
                     <p className="text-sm text-slate-200 leading-relaxed">{agentBriefs[row.id || row.prediction_id]?.summary}</p>
@@ -814,15 +814,36 @@ export default function Predictions() {
                 </React.Fragment>
               ))}
             </div>
-            {filtered.length > FORECAST_PAGE_SIZE ? (
-              <div className="flex items-center justify-between pt-3 border-t border-white/[0.06]">
-                <p className="text-xs text-muted-foreground">Page {forecastPage} of {Math.ceil(filtered.length / FORECAST_PAGE_SIZE)} ({filtered.length} forecasts)</p>
-                <div className="flex items-center gap-2">
-                  {forecastPage > 1 ? (<button type="button" onClick={() => setForecastPage((p) => p - 1)} className="px-3 py-1 text-xs text-cyan-300 hover:text-cyan-200 border border-white/[0.08] rounded-md hover:bg-white/[0.04]">Previous</button>) : null}
-                  {forecastPage < Math.ceil(filtered.length / FORECAST_PAGE_SIZE) ? (<button type="button" onClick={() => setForecastPage((p) => p + 1)} className="px-3 py-1 text-xs text-cyan-300 hover:text-cyan-200 border border-white/[0.08] rounded-md hover:bg-white/[0.04]">Next</button>) : null}
+            {filtered.length > FORECAST_PAGE_SIZE ? (() => {
+              const totalPages = Math.ceil(filtered.length / FORECAST_PAGE_SIZE);
+              const getPageNumbers = () => {
+                const pages = [];
+                if (totalPages <= 7) {
+                  for (let i = 1; i <= totalPages; i++) pages.push(i);
+                } else {
+                  pages.push(1);
+                  if (forecastPage > 3) pages.push('...');
+                  for (let i = Math.max(2, forecastPage - 1); i <= Math.min(totalPages - 1, forecastPage + 1); i++) pages.push(i);
+                  if (forecastPage < totalPages - 2) pages.push('...');
+                  pages.push(totalPages);
+                }
+                return pages;
+              };
+              return (
+                <div className="flex items-center justify-between pt-3 border-t border-white/[0.06]">
+                  <p className="text-xs text-muted-foreground">{filtered.length} forecasts</p>
+                  <div className="flex items-center gap-1">
+                    {forecastPage > 1 ? (<button type="button" onClick={() => setForecastPage((p) => p - 1)} className="px-2 py-1 text-xs text-cyan-300 hover:text-cyan-200 hover:bg-white/[0.04] rounded">&lsaquo;</button>) : null}
+                    {getPageNumbers().map((p, i) => p === '...' ? (
+                      <span key={`ellipsis-${i}`} className="px-1 text-xs text-muted-foreground">&hellip;</span>
+                    ) : (
+                      <button key={p} type="button" onClick={() => setForecastPage(p)} className={`px-2.5 py-1 text-xs rounded ${p === forecastPage ? 'bg-cyan-500/20 text-cyan-300 font-medium' : 'text-muted-foreground hover:text-cyan-200 hover:bg-white/[0.04]'}`}>{p}</button>
+                    ))}
+                    {forecastPage < totalPages ? (<button type="button" onClick={() => setForecastPage((p) => p + 1)} className="px-2 py-1 text-xs text-cyan-300 hover:text-cyan-200 hover:bg-white/[0.04] rounded">&rsaquo;</button>) : null}
+                  </div>
                 </div>
-              </div>
-            ) : null}
+              );
+            })() : null}
           </section>
         ) : null}
 
