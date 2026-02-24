@@ -648,7 +648,7 @@ export default function Home() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <StatCard 
                         title={scopeTemporarilyDisabled ? "All New Tenders (24h)" : "New Relevant Tenders (24h)"} 
-                        value={activeStats?.newRelevantTenders24h || 0}
+                        value={activeStats?.newRelevantTenders24h >= 1000 ? '1,000+' : (activeStats?.newRelevantTenders24h || 0)}
                         icon={FileText}
                         color="text-primary"
                         to={createPageUrl('Search?lastTendered=1')}
