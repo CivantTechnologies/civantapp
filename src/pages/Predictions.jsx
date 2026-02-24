@@ -438,7 +438,7 @@ export default function Predictions() {
     : 'No high-confidence renewal windows detected in the current market set.';
 
   return (
-    <Page className="space-y-6">
+    <Page className="space-y-8">
       <div className="space-y-1">
         <PageTitle>Forecast</PageTitle>
         <p className="text-sm text-muted-foreground">{scopeContextLabel}</p>
