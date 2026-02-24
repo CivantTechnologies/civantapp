@@ -322,7 +322,7 @@ export default function Home() {
             try {
                 const { data, error } = await supabase
                     .rpc('get_tenant_predictions', { p_tenant_id: activeTenantId })
-                    .limit(500);
+                    .limit(20000);
                 if (error) throw error;
                 predictions = Array.isArray(data) ? data : [];
             } catch (error) {
@@ -647,7 +647,7 @@ export default function Home() {
                 ) : null}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <StatCard 
-                        title="New Relevant Tenders (24h)" 
+                        title={scopeTemporarilyDisabled ? "All New Tenders (24h)" : "New Relevant Tenders (24h)"} 
                         value={activeStats?.newRelevantTenders24h || 0}
                         icon={FileText}
                         color="text-primary"
@@ -668,7 +668,7 @@ export default function Home() {
                         to={createPageUrl('Forecast')}
                     />
                     <StatCard 
-                        title="Open Opportunities (Tracked Scope)" 
+                        title={scopeTemporarilyDisabled ? "Open Opportunities (All)" : "Open Opportunities (Tracked Scope)"} 
                         value={activeStats?.openTrackedOpportunities || 0}
                         icon={TrendingUp}
                         color="text-card-foreground"
@@ -677,7 +677,7 @@ export default function Home() {
                 </div>
 
                 <IntelligenceTrajectorySection
-                    series12m={trajectorySeries12m}
+                    series12m={activeTrajectorySeries}
                     range={trajectoryRange}
                     onRangeChange={setTrajectoryRange}
                     indicators={activeTrajectoryIndicators}
