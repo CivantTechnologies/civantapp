@@ -492,7 +492,6 @@ export default function Predictions() {
             ))}
           </SelectContent>
         </Select>
-        </div>
       </div>
       {companyProfile && !persistedScopeFilterEnabled ? (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
