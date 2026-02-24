@@ -814,6 +814,15 @@ export default function Predictions() {
                 </React.Fragment>
               ))}
             </div>
+            {filtered.length > FORECAST_PAGE_SIZE ? (
+              <div className="flex items-center justify-between pt-3 border-t border-white/[0.06]">
+                <p className="text-xs text-muted-foreground">Page {forecastPage} of {Math.ceil(filtered.length / FORECAST_PAGE_SIZE)} ({filtered.length} forecasts)</p>
+                <div className="flex items-center gap-2">
+                  {forecastPage > 1 ? (<button type="button" onClick={() => setForecastPage((p) => p - 1)} className="px-3 py-1 text-xs text-cyan-300 hover:text-cyan-200 border border-white/[0.08] rounded-md hover:bg-white/[0.04]">Previous</button>) : null}
+                  {forecastPage < Math.ceil(filtered.length / FORECAST_PAGE_SIZE) ? (<button type="button" onClick={() => setForecastPage((p) => p + 1)} className="px-3 py-1 text-xs text-cyan-300 hover:text-cyan-200 border border-white/[0.08] rounded-md hover:bg-white/[0.04]">Next</button>) : null}
+                </div>
+              </div>
+            ) : null}
           </section>
         ) : null}
 
