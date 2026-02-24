@@ -697,6 +697,7 @@ export default function Predictions() {
                     ) : null}
                   </div>
                 ) : null}
+                </React.Fragment>
               ))}
             </div>
           ) : null}
