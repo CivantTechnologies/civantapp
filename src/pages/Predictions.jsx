@@ -688,7 +688,7 @@ export default function Predictions() {
                       <button type="button" onClick={() => setAgentBriefs((prev) => { const next = { ...prev }; delete next[row.id || row.prediction_id]; return next; })} className="text-[10px] text-muted-foreground hover:text-slate-300">&times; Close</button>
                     </div>
                     <p className="text-sm text-slate-200 leading-relaxed">{agentBriefs[row.id || row.prediction_id]?.summary}</p>
-                    {agentBriefs[row.id || row.prediction_id]?.opportunity_score ? (
+                    {agentBriefs[row.id || row.prediction_id]?.opportunity_score && agentBriefs[row.id || row.prediction_id]?.opportunity_score !== 50 ? (
                       <div className="flex items-center gap-3 pt-1">
                         <span className="text-[10px] text-muted-foreground">Opportunity Score</span>
                         <span className="text-sm font-semibold text-emerald-400">{agentBriefs[row.id || row.prediction_id].opportunity_score}/100</span>
@@ -793,7 +793,7 @@ export default function Predictions() {
                       <button type="button" onClick={() => setAgentBriefs((prev) => { const next = { ...prev }; delete next[row.id || row.prediction_id]; return next; })} className="text-[10px] text-muted-foreground hover:text-slate-300">&times; Close</button>
                     </div>
                     <p className="text-sm text-slate-200 leading-relaxed">{agentBriefs[row.id || row.prediction_id]?.summary}</p>
-                    {agentBriefs[row.id || row.prediction_id]?.opportunity_score ? (
+                    {agentBriefs[row.id || row.prediction_id]?.opportunity_score && agentBriefs[row.id || row.prediction_id]?.opportunity_score !== 50 ? (
                       <div className="flex items-center gap-3 pt-1">
                         <span className="text-[10px] text-muted-foreground">Opportunity Score</span>
                         <span className="text-sm font-semibold text-emerald-400">{agentBriefs[row.id || row.prediction_id].opportunity_score}/100</span>
