@@ -444,6 +444,22 @@ export default function Predictions() {
         <p className="text-sm text-muted-foreground">{scopeContextLabel}</p>
       </div>
 
+
+      {companyProfile && companyScopeFilteringActive ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span>Filtered by Company Scope</span>
+          <Link to={createPageUrl('Company?tab=personalization')} className="text-cyan-300 hover:underline">Edit scope</Link>
+          <button type="button" onClick={clearScopeFilterTemporarily} className="text-cyan-300 hover:underline">Clear temporarily</button>
+        </div>
+      ) : null}
+
+      {companyProfile && persistedScopeFilterEnabled && scopeFilterTemporarilyDisabled ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span>Company scope filter temporarily cleared for this session.</span>
+          <button type="button" onClick={restoreScopeFilter} className="text-cyan-300 hover:underline">Turn back on</button>
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-3 rounded-xl bg-white/[0.01] px-1 py-1.5">
         <p className="px-2 text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Scope</p>
         <Select value={sourceFilter} onValueChange={setSourceFilter}>
@@ -477,22 +493,6 @@ export default function Predictions() {
           </SelectContent>
         </Select>
       </div>
-
-      {companyProfile && companyScopeFilteringActive ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          <span>Filtered by Company Scope</span>
-          <Link to={createPageUrl('Company?tab=personalization')} className="text-cyan-300 hover:underline">Edit scope</Link>
-          <button type="button" onClick={clearScopeFilterTemporarily} className="text-cyan-300 hover:underline">Clear temporarily</button>
-        </div>
-      ) : null}
-
-      {companyProfile && persistedScopeFilterEnabled && scopeFilterTemporarilyDisabled ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          <span>Company scope filter temporarily cleared for this session.</span>
-          <button type="button" onClick={restoreScopeFilter} className="text-cyan-300 hover:underline">Turn back on</button>
-        </div>
-      ) : null}
-
       {companyProfile && !persistedScopeFilterEnabled ? (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <span>Full market view active. Company scope is used to prioritize and highlight.</span>

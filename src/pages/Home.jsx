@@ -75,6 +75,7 @@ export default function Home() {
     });
     const [trajectoryRange, setTrajectoryRange] = useState('12m');
     const [loading, setLoading] = useState(true);
+    const [profileScope, setProfileScope] = useState(null);
     const [loadError, setLoadError] = useState('');
     const { activeTenantId, isLoadingTenants } = useTenant();
     
@@ -290,7 +291,9 @@ export default function Home() {
                     'target_cpv_clusters,target_countries,target_buyer_types,tracked_buyers,target_buyers,priority_buyers,watch_buyers,key_buyers,tracked_buyer_names'
                 )
             ]);
-            const profileScope = Array.isArray(profileRows) && profileRows.length > 0 ? profileRows[0] : null;
+            const profileScopeData = Array.isArray(profileRows) && profileRows.length > 0 ? profileRows[0] : null;
+            setProfileScope(profileScopeData);
+            const profileScope = profileScopeData;
 
             let predictions = [];
             try {
@@ -550,6 +553,18 @@ export default function Home() {
                     </div>
                 </div>
             </section>
+
+            {profileScope ? (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-12 text-xs text-muted-foreground">
+                    <span>Filtered by Company Scope</span>
+                    <Link to={createPageUrl('Company?tab=personalization')} className="text-cyan-300 hover:underline">Edit scope</Link>
+                </div>
+            ) : (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-12 text-xs text-muted-foreground">
+                    <span>No company scope configured.</span>
+                    <Link to={createPageUrl('Company?tab=personalization')} className="text-cyan-300 hover:underline">Set up scope</Link>
+                </div>
+            )}
 
             <PageBody>
                 {loadError ? (
