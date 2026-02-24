@@ -659,6 +659,19 @@ export default function Predictions() {
                       <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Priority {index + 1}</p>
                       <p className="text-sm font-medium text-slate-300 tabular-nums">{row.priorityScore.toFixed(1)}</p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => researchBuyer(row)}
+                      disabled={agentLoading[row.id || row.prediction_id]}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/[0.08] px-2.5 py-1 text-[11px] font-medium text-emerald-400 hover:bg-emerald-500/[0.15] hover:text-emerald-300 disabled:opacity-50 transition-colors"
+                    >
+                      {agentLoading[row.id || row.prediction_id] ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5"/><path d="M8 4v4l2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                      )}
+                      Civant Agent
+                    </button>
                     <Button variant="ghost" size="sm" asChild>
                       <Link to={createPageUrl(`search?buyer=${encodeURIComponent(buyerLabel(row))}`)}>
                         Plan Engagement
@@ -666,6 +679,24 @@ export default function Predictions() {
                     </Button>
                   </div>
                 </div>
+                {agentBriefs[row.id || row.prediction_id] ? (
+                  <div className="col-span-full -mt-1 mb-1 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] px-4 py-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400/80">Civant Agent Intelligence Brief</p>
+                      <button type="button" onClick={() => setAgentBriefs((prev) => { const next = { ...prev }; delete next[row.id || row.prediction_id]; return next; })} className="text-[10px] text-muted-foreground hover:text-slate-300">&times; Close</button>
+                    </div>
+                    <p className="text-sm text-slate-200 leading-relaxed">{agentBriefs[row.id || row.prediction_id]?.summary}</p>
+                    {agentBriefs[row.id || row.prediction_id]?.opportunity_score ? (
+                      <div className="flex items-center gap-3 pt-1">
+                        <span className="text-[10px] text-muted-foreground">Opportunity Score</span>
+                        <span className="text-sm font-semibold text-emerald-400">{agentBriefs[row.id || row.prediction_id].opportunity_score}/100</span>
+                        {agentBriefs[row.id || row.prediction_id]?.procurement_intent?.confidence ? (
+                          <span className="text-[10px] text-muted-foreground">Intent: {agentBriefs[row.id || row.prediction_id].procurement_intent.confidence}</span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               ))}
             </div>
           ) : null}
