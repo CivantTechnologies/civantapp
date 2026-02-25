@@ -1,0 +1,2 @@
+[functions.research-buyer]
+verify_jwt = false

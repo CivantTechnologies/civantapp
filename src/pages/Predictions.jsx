@@ -686,15 +686,23 @@ export default function Predictions() {
                       <button type="button" onClick={() => setAgentBriefs((prev) => { const next = { ...prev }; delete next[row.id || row.prediction_id]; return next; })} className="text-[10px] text-muted-foreground hover:text-slate-300">&times; Close</button>
                     </div>
                     <p className="text-sm text-slate-200 leading-relaxed">{agentBriefs[row.id || row.prediction_id]?.summary}</p>
-                    {agentBriefs[row.id || row.prediction_id]?.opportunity_score && agentBriefs[row.id || row.prediction_id]?.opportunity_score !== 50 ? (
-                      <div className="flex items-center gap-3 pt-1">
-                        <span className="text-[10px] text-muted-foreground">Opportunity Score</span>
-                        <span className="text-sm font-semibold text-emerald-400">{agentBriefs[row.id || row.prediction_id].opportunity_score}/100</span>
-                        {agentBriefs[row.id || row.prediction_id]?.procurement_intent?.confidence ? (
-                          <span className="text-[10px] text-muted-foreground">Intent: {agentBriefs[row.id || row.prediction_id].procurement_intent.confidence}</span>
-                        ) : null}
-                      </div>
-                    ) : null}
+                    {(() => {
+                      const b = agentBriefs[row.id || row.prediction_id];
+                      const score = b?.opportunity_score;
+                      const intent = b?.intent_confidence;
+                      const scoreColor = score >= 70 ? 'text-emerald-400' : score >= 40 ? 'text-amber-400' : 'text-red-400';
+                      const intentColor = intent === 'high' ? 'text-emerald-400' : intent === 'medium' ? 'text-amber-400' : 'text-red-400';
+                      return (score || intent) ? (
+                        <div className="space-y-1 pt-1">
+                          <div className="flex items-center gap-3">
+                            {score ? <><span className="text-[10px] text-muted-foreground">Opportunity</span><span className={`text-sm font-semibold ${scoreColor}`}>{score}/100</span></> : null}
+                            {intent ? <><span className="text-[10px] text-muted-foreground">Intent</span><span className={`text-[10px] font-medium ${intentColor}`}>{intent}</span></> : null}
+                          </div>
+                          {b?.opportunity_reasoning ? <p className="text-[10px] text-slate-400 leading-snug">{b.opportunity_reasoning}</p> : null}
+                          {b?.timing_insight ? <p className="text-[10px] text-cyan-400/70 leading-snug">⏱ {b.timing_insight}</p> : null}
+                        </div>
+                      ) : null;
+                    })()}
                   </div>
                 ) : null}
                 </React.Fragment>
@@ -792,15 +800,23 @@ export default function Predictions() {
                       <button type="button" onClick={() => setAgentBriefs((prev) => { const next = { ...prev }; delete next[row.id || row.prediction_id]; return next; })} className="text-[10px] text-muted-foreground hover:text-slate-300">&times; Close</button>
                     </div>
                     <p className="text-sm text-slate-200 leading-relaxed">{agentBriefs[row.id || row.prediction_id]?.summary}</p>
-                    {agentBriefs[row.id || row.prediction_id]?.opportunity_score && agentBriefs[row.id || row.prediction_id]?.opportunity_score !== 50 ? (
-                      <div className="flex items-center gap-3 pt-1">
-                        <span className="text-[10px] text-muted-foreground">Opportunity Score</span>
-                        <span className="text-sm font-semibold text-emerald-400">{agentBriefs[row.id || row.prediction_id].opportunity_score}/100</span>
-                        {agentBriefs[row.id || row.prediction_id]?.procurement_intent?.confidence ? (
-                          <span className="text-[10px] text-muted-foreground">Intent: {agentBriefs[row.id || row.prediction_id].procurement_intent.confidence}</span>
-                        ) : null}
-                      </div>
-                    ) : null}
+                    {(() => {
+                      const b = agentBriefs[row.id || row.prediction_id];
+                      const score = b?.opportunity_score;
+                      const intent = b?.intent_confidence;
+                      const scoreColor = score >= 70 ? 'text-emerald-400' : score >= 40 ? 'text-amber-400' : 'text-red-400';
+                      const intentColor = intent === 'high' ? 'text-emerald-400' : intent === 'medium' ? 'text-amber-400' : 'text-red-400';
+                      return (score || intent) ? (
+                        <div className="space-y-1 pt-1">
+                          <div className="flex items-center gap-3">
+                            {score ? <><span className="text-[10px] text-muted-foreground">Opportunity</span><span className={`text-sm font-semibold ${scoreColor}`}>{score}/100</span></> : null}
+                            {intent ? <><span className="text-[10px] text-muted-foreground">Intent</span><span className={`text-[10px] font-medium ${intentColor}`}>{intent}</span></> : null}
+                          </div>
+                          {b?.opportunity_reasoning ? <p className="text-[10px] text-slate-400 leading-snug">{b.opportunity_reasoning}</p> : null}
+                          {b?.timing_insight ? <p className="text-[10px] text-cyan-400/70 leading-snug">⏱ {b.timing_insight}</p> : null}
+                        </div>
+                      ) : null;
+                    })()}
                     {agentBriefs[row.id || row.prediction_id]?.sources?.length > 0 ? (
                       <div className="flex flex-wrap gap-2 pt-1">
                         {agentBriefs[row.id || row.prediction_id].sources.slice(0, 3).map((s, si) => (

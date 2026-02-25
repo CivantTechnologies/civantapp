@@ -30,3 +30,11 @@ dist-ssr
 *.sw?
 boamp-status.json
 *.bak.*
+
+# Dev artifacts
+.playwright-cli/
+output/
+tmp/
+done
+echo
+sed
