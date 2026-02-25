@@ -116,11 +116,7 @@ CRITICAL: Return ONLY the raw JSON object. No markdown, no explanation, no pream
 
 // --- Robust JSON extraction ---
 
-let _lastExtractError = "";
-
 function extractJson(rawText: string): any {
-  _lastExtractError = "";
-
   // Step 1: Strip all HTML/XML tags (cite tags from web search)
   const cleaned = rawText.replace(/<[^>]+>/g, "");
 
@@ -172,7 +168,6 @@ function extractJson(rawText: string): any {
       return p;
     }
   } catch (e) {
-    _lastExtractError = String(e);
     console.error("extractJson: parse failed:", String(e).slice(0, 300));
   }
 
@@ -325,24 +320,6 @@ serve(async (req) => {
     const result = await response.json();
     const textBlocks = result.content?.filter((b: any) => b.type === "text") || [];
     const rawText = textBlocks.map((b: any) => b.text).join("\n");
-
-    // TEMP DEBUG: if tenant_id starts with "rawdebug", return diagnostics
-    if (tenant_id.startsWith("rawdebug")) {
-      const debugBrief = extractJson(rawText);
-      return new Response(JSON.stringify({
-        raw_text_length: rawText.length,
-        has_cite: rawText.includes("<cite"),
-        parsed_keys: Object.keys(debugBrief),
-        opportunity_score: debugBrief?.opportunity_score ?? "MISSING",
-        intent_confidence: debugBrief?.intent_confidence ?? "MISSING",
-        timing_insight: debugBrief?.timing_insight ?? "MISSING",
-        opportunity_reasoning: debugBrief?.opportunity_reasoning ?? "MISSING",
-        summary_start: (debugBrief?.summary || "").slice(0, 200),
-        has_procurement_patterns: !!debugBrief?.procurement_patterns,
-        has_incumbent_landscape: !!debugBrief?.incumbent_landscape,
-        parse_error: _lastExtractError || "none",
-      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
 
     const brief = extractJson(rawText);
 
