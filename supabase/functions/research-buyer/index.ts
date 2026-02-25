@@ -28,7 +28,6 @@ function buildPrompts(context: string, buyer_name: string, country: string, cate
     return { system, user };
   }
 
-  // Default: forecast context — now with canonical data
   const hasHistory = awardHistory?.stats?.total_contracts > 0;
 
   const system = `You are Civant Agent, a procurement intelligence analyst with access to both historical contract award data and web research. Your job is to produce an actionable intelligence brief for a company deciding whether to pursue a predicted procurement opportunity.
@@ -37,37 +36,26 @@ You have TWO information sources:
 1. CANONICAL DATA: Real contract award history from official procurement portals (provided below). This is factual and verified. Analyze it for: renewal cycles, spend trends, incumbent suppliers, typical contract durations, category patterns, and budget trajectory.
 2. WEB RESEARCH: Use your web search to find CURRENT intelligence: recent news, leadership changes, budget announcements, organizational restructuring, upcoming projects, and policy shifts.
 
-COMBINE both sources into a single coherent brief. Lead with data-backed insights (patterns from the award history), then layer on web intelligence. If the award history shows clear patterns (e.g. "renews IT services every 3 years at ~€200k"), state them explicitly.
+COMBINE both sources into a single coherent brief. Lead with data-backed insights (patterns from the award history), then layer on web intelligence. If the award history shows clear patterns (e.g. "renews IT services every 3 years at ~200k"), state them explicitly.
 
 ${hasHistory ? "" : "NOTE: No historical award data was found for this buyer. Rely on web research alone but note the data gap."}
 
-Respond ONLY in JSON with this structure:
-{
-  "summary": "3-4 sentence executive summary combining data patterns and current intelligence. Lead with the most actionable insight.",
-  "procurement_patterns": {
-    "renewal_cycle": "description of renewal frequency if detectable, e.g. 'Renews IT contracts every 2-3 years'",
-    "spend_trend": "increasing|stable|decreasing|insufficient_data",
-    "typical_value_range": "e.g. '€50k-€200k' or null if unknown",
-    "preferred_categories": ["top procurement categories from data"],
-    "notes": "other notable patterns"
-  },
-  "incumbent_landscape": {
-    "known_suppliers": ["suppliers from data + any found via web"],
-    "dominant_supplier": "name of most frequent/highest-value supplier or null",
-    "contract_notes": "relevant incumbent history and displacement opportunities"
-  },
-  "organizational_context": {
-    "type": "municipality|health_authority|university|ministry|agency|school|other",
-    "leadership": "key decision maker if found via web",
-    "recent_changes": "organizational changes from web research",
-    "size_indicator": "small|medium|large based on spend data and org type"
-  },
-  "risk_factors": ["identified risks combining data gaps and web findings"],
-  "timing_insight": "When is the best time to engage based on renewal patterns and current signals",
-  "sources": [{"url": "url", "title": "title", "relevance": "why relevant"}]
-}
+Respond ONLY in JSON. Use this EXACT structure (do NOT add extra keys, do NOT nest differently):
+{"summary":"3-4 sentence executive summary","procurement_patterns":{"renewal_cycle":"description","spend_trend":"increasing|stable|decreasing|insufficient_data","typical_value_range":"e.g. 50k-200k","preferred_categories":["categories"],"notes":"other patterns"},"incumbent_landscape":{"known_suppliers":["suppliers"],"dominant_supplier":"name or null","contract_notes":"history"},"organizational_context":{"type":"municipality|health_authority|university|ministry|agency|school|other","leadership":"name","recent_changes":"changes","size_indicator":"small|medium|large"},"risk_factors":["risks"],"timing_insight":"when to engage","opportunity_score":75,"opportunity_reasoning":"why this score based on data","intent_confidence":"high|medium|low","intent_reasoning":"why this confidence level","sources":[{"url":"url","title":"title","relevance":"why"}]}
 
-CRITICAL: Return ONLY the raw JSON object. No markdown fences, no explanation text, no citations. Just the JSON.`;
+SCORING RULES for opportunity_score (integer 0-100):
+- 80-100: Clear renewal cycle approaching, strong spend history, open competition
+- 60-79: Good award history, moderate patterns, some incumbent lock-in but winnable
+- 40-59: Limited data or mixed signals, worth monitoring
+- 20-39: Sparse history, single low-value contract, or locked-in incumbent
+- 0-19: No meaningful data, speculative only
+
+INTENT CONFIDENCE based on DATA quality:
+- high: 3+ contracts with clear renewal cadence and approaching end date
+- medium: 1-2 contracts or irregular renewal pattern
+- low: No canonical award data, relying on web research alone
+
+CRITICAL: Return ONLY the raw JSON object. No markdown, no explanation, no preamble. Start with { end with }.`;
 
   const userParts = [
     `Research this public sector buyer for a predicted procurement opportunity:`,
@@ -83,40 +71,36 @@ CRITICAL: Return ONLY the raw JSON object. No markdown fences, no explanation te
     userParts.push("=== CANONICAL AWARD DATA (from official procurement portals) ===");
     userParts.push(`Total contracts on record: ${s.total_contracts}`);
     userParts.push(`Unique suppliers: ${s.unique_suppliers}`);
-    userParts.push(`Total spend: €${Number(s.total_spend).toLocaleString()}`);
-    userParts.push(`Average contract value: €${Number(s.avg_contract_value).toLocaleString()}`);
-    userParts.push(`Max contract value: €${Number(s.max_contract_value).toLocaleString()}`);
+    userParts.push(`Total spend: EUR ${Number(s.total_spend).toLocaleString()}`);
+    userParts.push(`Average contract value: EUR ${Number(s.avg_contract_value).toLocaleString()}`);
+    userParts.push(`Max contract value: EUR ${Number(s.max_contract_value).toLocaleString()}`);
     userParts.push(`Award history span: ${s.earliest_award} to ${s.latest_award}`);
     userParts.push(`Average contract duration: ${s.avg_duration_months} months`);
     userParts.push(`Framework agreements: ${s.framework_count}`);
     if (s.cpv_clusters?.length > 0) {
       userParts.push(`Procurement categories: ${s.cpv_clusters.join(", ")}`);
     }
-
     if (h.top_suppliers?.length > 0) {
       userParts.push("");
       userParts.push("Top suppliers:");
       for (const sup of h.top_suppliers) {
-        userParts.push(`  - ${sup.supplier}: ${sup.contracts} contracts, €${Number(sup.total_value).toLocaleString()}, last award ${sup.last_award}`);
+        userParts.push(`  - ${sup.supplier}: ${sup.contracts} contracts, EUR ${Number(sup.total_value).toLocaleString()}, last award ${sup.last_award}`);
       }
     }
-
     if (h.renewal_patterns?.length > 0) {
       userParts.push("");
       userParts.push("Renewal patterns by category:");
       for (const rp of h.renewal_patterns) {
-        userParts.push(`  - ${rp.cpv_cluster}: ${rp.occurrences} contracts, avg duration ${rp.avg_duration} months, avg value €${Number(rp.avg_value).toLocaleString()}, last end date ${rp.last_end_date || "unknown"}`);
+        userParts.push(`  - ${rp.cpv_cluster}: ${rp.occurrences} contracts, avg duration ${rp.avg_duration} months, avg value EUR ${Number(rp.avg_value).toLocaleString()}, last end date ${rp.last_end_date || "unknown"}`);
       }
     }
-
     if (h.recent_contracts?.length > 0) {
       userParts.push("");
       userParts.push("Most recent contracts:");
       for (const rc of h.recent_contracts.slice(0, 5)) {
-        userParts.push(`  - €${Number(rc.value_eur || 0).toLocaleString()} | ${rc.supplier || "unknown supplier"} | awarded ${rc.award_date} | ends ${rc.end_date || "unknown"} | CPV ${rc.cpv_primary || "n/a"} | ${rc.duration_months || "?"} months`);
+        userParts.push(`  - EUR ${Number(rc.value_eur || 0).toLocaleString()} | ${rc.supplier || "unknown supplier"} | awarded ${rc.award_date} | ends ${rc.end_date || "unknown"} | CPV ${rc.cpv_primary || "n/a"} | ${rc.duration_months || "?"} months`);
       }
     }
-
     userParts.push("");
     userParts.push("=== END CANONICAL DATA ===");
   } else {
@@ -130,53 +114,143 @@ CRITICAL: Return ONLY the raw JSON object. No markdown fences, no explanation te
   return { system, user: userParts.filter((p) => p !== undefined).join("\n") };
 }
 
-function extractJson(rawText: string): any {
-  // Strategy 1: Extract JSON from markdown code fence
-  const fenceMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/);
-  let jsonStr = fenceMatch ? fenceMatch[1].trim() : null;
+// --- Robust JSON extraction ---
 
-  // Strategy 2: Find outermost { } containing "summary"
+let _lastExtractError = "";
+
+function extractJson(rawText: string): any {
+  _lastExtractError = "";
+
+  // Step 1: Strip all HTML/XML tags (cite tags from web search)
+  const cleaned = rawText.replace(/<[^>]+>/g, "");
+
+  // Step 2: Locate JSON string
+  let jsonStr: string | null = null;
+
+  // Strategy A: markdown code fence
+  const fenceMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch) {
+    jsonStr = fenceMatch[1].trim();
+  }
+
+  // Strategy B: outermost braces around "summary"
   if (!jsonStr) {
-    const summaryIdx = rawText.indexOf('"summary"');
-    if (summaryIdx > -1) {
-      let braceStart = rawText.lastIndexOf("{", summaryIdx);
-      if (braceStart > -1) {
-        let depth = 0;
-        let braceEnd = -1;
-        for (let i = braceStart; i < rawText.length; i++) {
-          if (rawText[i] === "{") depth++;
-          if (rawText[i] === "}") depth--;
-          if (depth === 0) { braceEnd = i; break; }
+    const si = cleaned.indexOf('"summary"');
+    if (si > -1) {
+      const bs = cleaned.lastIndexOf("{", si);
+      if (bs > -1) {
+        let depth = 0, be = -1;
+        for (let i = bs; i < cleaned.length; i++) {
+          if (cleaned[i] === "{") depth++;
+          if (cleaned[i] === "}") depth--;
+          if (depth === 0) { be = i; break; }
         }
-        if (braceEnd > braceStart) jsonStr = rawText.slice(braceStart, braceEnd + 1);
+        if (be > bs) jsonStr = cleaned.slice(bs, be + 1);
       }
     }
   }
 
-  // Strategy 3: First { to last }
+  // Strategy C: first { to last }
   if (!jsonStr) {
-    const first = rawText.indexOf("{");
-    const last = rawText.lastIndexOf("}");
-    if (first > -1 && last > first) jsonStr = rawText.slice(first, last + 1);
+    const f = cleaned.indexOf("{");
+    const l = cleaned.lastIndexOf("}");
+    if (f > -1 && l > f) jsonStr = cleaned.slice(f, l + 1);
   }
 
-  // Clean citation tags
-  if (jsonStr) {
-    jsonStr = jsonStr.replace(/<cite[^>]*>[^<]*<\/cite>/g, "").replace(/<\/cite>/g, "");
+  if (!jsonStr) {
+    return { summary: cleaned.slice(0, 400).trim(), sources: [] };
   }
 
+  // Step 3: Clean for parsing - replace literal newlines and tabs with spaces
+  jsonStr = jsonStr.replace(/\n/g, " ").replace(/\r/g, " ").replace(/\t/g, " ");
+
+  // Attempt 1: direct parse
   try {
-    const parsed = jsonStr ? JSON.parse(jsonStr) : null;
-    if (parsed && parsed.summary) return parsed;
+    const p = JSON.parse(jsonStr);
+    if (p && p.summary) {
+      console.log("extractJson: OK, keys:", Object.keys(p).join(", "));
+      return p;
+    }
+  } catch (e) {
+    _lastExtractError = String(e);
+    console.error("extractJson: parse failed:", String(e).slice(0, 300));
+  }
+
+  // Attempt 2: fix trailing commas
+  try {
+    const fixed = jsonStr.replace(/,\s*}/g, "}").replace(/,\s*]/g, "]");
+    const p2 = JSON.parse(fixed);
+    if (p2 && p2.summary) {
+      console.log("extractJson: OK after trailing comma fix");
+      return p2;
+    }
   } catch (_) {}
 
-  // Fallback: extract summary from raw text
-  const summaryMatch = rawText.match(/"summary"\s*:\s*"([^"]+)"/);
-  return {
-    summary: summaryMatch ? summaryMatch[1] : rawText.replace(/```[\s\S]*?```/g, "").slice(0, 400).trim(),
-    sources: [],
-  };
+  // Attempt 3: regex field extraction (always produces results)
+  console.log("extractJson: falling back to field extraction");
+  const result: any = { sources: [] };
+
+  // Extract simple string fields
+  const fields = ["summary", "timing_insight", "opportunity_reasoning", "intent_confidence", "intent_reasoning"];
+  for (const f of fields) {
+    const re = new RegExp('"' + f + '"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"');
+    const m = cleaned.match(re);
+    if (m) result[f] = m[1].replace(/\\"/g, '"').replace(/\\n/g, " ");
+  }
+
+  // Extract opportunity_score (number)
+  const scoreMatch = cleaned.match(/"opportunity_score"\s*:\s*(\d+)/);
+  if (scoreMatch) result.opportunity_score = parseInt(scoreMatch[1], 10);
+
+  // Extract risk_factors array
+  const riskMatch = cleaned.match(/"risk_factors"\s*:\s*(\[[^\]]*\])/);
+  if (riskMatch) {
+    try { result.risk_factors = JSON.parse(riskMatch[1].replace(/\n/g, " ")); } catch (_) {}
+  }
+
+  // Extract nested objects
+  for (const field of ["procurement_patterns", "incumbent_landscape", "organizational_context"]) {
+    const fi = cleaned.indexOf('"' + field + '"');
+    if (fi > -1) {
+      const os = cleaned.indexOf("{", fi);
+      if (os > -1 && os < fi + field.length + 10) {
+        let depth = 0, oe = -1;
+        for (let i = os; i < cleaned.length; i++) {
+          if (cleaned[i] === "{") depth++;
+          if (cleaned[i] === "}") depth--;
+          if (depth === 0) { oe = i; break; }
+        }
+        if (oe > os) {
+          try {
+            result[field] = JSON.parse(cleaned.slice(os, oe + 1).replace(/\n/g, " "));
+          } catch (_) {}
+        }
+      }
+    }
+  }
+
+  // Extract sources array
+  const si2 = cleaned.lastIndexOf('"sources"');
+  if (si2 > -1) {
+    const as = cleaned.indexOf("[", si2);
+    if (as > -1) {
+      let depth = 0, ae = -1;
+      for (let i = as; i < cleaned.length; i++) {
+        if (cleaned[i] === "[") depth++;
+        if (cleaned[i] === "]") depth--;
+        if (depth === 0) { ae = i; break; }
+      }
+      if (ae > as) {
+        try { result.sources = JSON.parse(cleaned.slice(as, ae + 1).replace(/\n/g, " ")); } catch (_) {}
+      }
+    }
+  }
+
+  console.log("extractJson: extracted keys:", Object.keys(result).join(", "));
+  return result;
 }
+
+// --- Server ---
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -191,7 +265,7 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_KEY!);
 
-    // Check cache (keyed by buyer + country + context)
+    // Check cache
     const { data: cached } = await supabase
       .from("buyer_research_briefs")
       .select("*")
@@ -215,11 +289,11 @@ serve(async (req) => {
     if (context === "forecast") {
       const { data: historyData, error: historyErr } = await supabase
         .rpc("get_buyer_award_history", { p_buyer_name: buyer_name, p_country: country });
-
       if (historyErr) {
         console.error("Award history fetch failed:", historyErr);
       } else {
         awardHistory = historyData;
+        console.log("Award history:", awardHistory?.stats?.total_contracts, "contracts for", buyer_name);
       }
     }
 
@@ -252,11 +326,43 @@ serve(async (req) => {
     const textBlocks = result.content?.filter((b: any) => b.type === "text") || [];
     const rawText = textBlocks.map((b: any) => b.text).join("\n");
 
+    // TEMP DEBUG: if tenant_id starts with "rawdebug", return diagnostics
+    if (tenant_id.startsWith("rawdebug")) {
+      const debugBrief = extractJson(rawText);
+      return new Response(JSON.stringify({
+        raw_text_length: rawText.length,
+        has_cite: rawText.includes("<cite"),
+        parsed_keys: Object.keys(debugBrief),
+        opportunity_score: debugBrief?.opportunity_score ?? "MISSING",
+        intent_confidence: debugBrief?.intent_confidence ?? "MISSING",
+        timing_insight: debugBrief?.timing_insight ?? "MISSING",
+        opportunity_reasoning: debugBrief?.opportunity_reasoning ?? "MISSING",
+        summary_start: (debugBrief?.summary || "").slice(0, 200),
+        has_procurement_patterns: !!debugBrief?.procurement_patterns,
+        has_incumbent_landscape: !!debugBrief?.incumbent_landscape,
+        parse_error: _lastExtractError || "none",
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     const brief = extractJson(rawText);
 
     const inputTokens = result.usage?.input_tokens || 0;
     const outputTokens = result.usage?.output_tokens || 0;
     const costUsd = (inputTokens * 1.0 + outputTokens * 5.0) / 1_000_000;
+
+    // Build procurement_intent JSONB
+    let procurementIntent = null;
+    if (context === "forecast") {
+      procurementIntent = {
+        ...(brief?.procurement_patterns || {}),
+        intent_confidence: brief?.intent_confidence || null,
+        intent_reasoning: brief?.intent_reasoning || null,
+        opportunity_reasoning: brief?.opportunity_reasoning || null,
+        timing_insight: brief?.timing_insight || null,
+      };
+    } else if (brief?.recent_activity) {
+      procurementIntent = { signals: brief.recent_activity || [], confidence: brief.threat_level || "medium", notes: brief.recommendation || "" };
+    }
 
     const { data: stored, error: storeErr } = await supabase
       .from("buyer_research_briefs")
@@ -266,11 +372,11 @@ serve(async (req) => {
         country,
         category: context,
         summary: brief?.summary || null,
-        procurement_intent: brief?.procurement_patterns || brief?.procurement_intent || (brief?.recent_activity ? { signals: brief.recent_activity || [], confidence: brief.threat_level || "medium", notes: brief.recommendation || "" } : null),
+        procurement_intent: procurementIntent,
         organizational_context: brief?.organizational_context || (brief?.trajectory ? { trajectory: brief.trajectory, threat_level: brief.threat_level } : null),
         incumbent_landscape: brief?.incumbent_landscape || (brief?.key_strengths ? { known_suppliers: brief.key_strengths, contract_notes: brief.vulnerabilities?.join("; ") || "" } : null),
         risk_factors: brief?.risk_factors || brief?.vulnerabilities || null,
-        opportunity_score: null,
+        opportunity_score: typeof brief?.opportunity_score === "number" ? brief.opportunity_score : null,
         sources: brief?.sources || null,
         model_used: "claude-haiku-4-5",
         tokens_used: inputTokens + outputTokens,

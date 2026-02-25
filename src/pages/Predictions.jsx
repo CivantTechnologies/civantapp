@@ -688,8 +688,9 @@ export default function Predictions() {
                     <p className="text-sm text-slate-200 leading-relaxed">{agentBriefs[row.id || row.prediction_id]?.summary}</p>
                     {(() => {
                       const b = agentBriefs[row.id || row.prediction_id];
+                      const pi = b?.procurement_intent || {};
                       const score = b?.opportunity_score;
-                      const intent = b?.intent_confidence;
+                      const intent = pi?.intent_confidence || b?.intent_confidence;
                       const scoreColor = score >= 70 ? 'text-emerald-400' : score >= 40 ? 'text-amber-400' : 'text-red-400';
                       const intentColor = intent === 'high' ? 'text-emerald-400' : intent === 'medium' ? 'text-amber-400' : 'text-red-400';
                       return (score || intent) ? (
@@ -698,8 +699,8 @@ export default function Predictions() {
                             {score ? <><span className="text-[10px] text-muted-foreground">Opportunity</span><span className={`text-sm font-semibold ${scoreColor}`}>{score}/100</span></> : null}
                             {intent ? <><span className="text-[10px] text-muted-foreground">Intent</span><span className={`text-[10px] font-medium ${intentColor}`}>{intent}</span></> : null}
                           </div>
-                          {b?.opportunity_reasoning ? <p className="text-[10px] text-slate-400 leading-snug">{b.opportunity_reasoning}</p> : null}
-                          {b?.timing_insight ? <p className="text-[10px] text-cyan-400/70 leading-snug">⏱ {b.timing_insight}</p> : null}
+                          {(pi?.opportunity_reasoning || b?.opportunity_reasoning) ? <p className="text-[10px] text-slate-400 leading-snug">{pi?.opportunity_reasoning || b?.opportunity_reasoning}</p> : null}
+                          {(pi?.timing_insight || b?.timing_insight) ? <p className="text-[10px] text-cyan-400/70 leading-snug">⏱ {pi?.timing_insight || b?.timing_insight}</p> : null}
                         </div>
                       ) : null;
                     })()}
@@ -802,8 +803,9 @@ export default function Predictions() {
                     <p className="text-sm text-slate-200 leading-relaxed">{agentBriefs[row.id || row.prediction_id]?.summary}</p>
                     {(() => {
                       const b = agentBriefs[row.id || row.prediction_id];
+                      const pi = b?.procurement_intent || {};
                       const score = b?.opportunity_score;
-                      const intent = b?.intent_confidence;
+                      const intent = pi?.intent_confidence || b?.intent_confidence;
                       const scoreColor = score >= 70 ? 'text-emerald-400' : score >= 40 ? 'text-amber-400' : 'text-red-400';
                       const intentColor = intent === 'high' ? 'text-emerald-400' : intent === 'medium' ? 'text-amber-400' : 'text-red-400';
                       return (score || intent) ? (
@@ -812,8 +814,8 @@ export default function Predictions() {
                             {score ? <><span className="text-[10px] text-muted-foreground">Opportunity</span><span className={`text-sm font-semibold ${scoreColor}`}>{score}/100</span></> : null}
                             {intent ? <><span className="text-[10px] text-muted-foreground">Intent</span><span className={`text-[10px] font-medium ${intentColor}`}>{intent}</span></> : null}
                           </div>
-                          {b?.opportunity_reasoning ? <p className="text-[10px] text-slate-400 leading-snug">{b.opportunity_reasoning}</p> : null}
-                          {b?.timing_insight ? <p className="text-[10px] text-cyan-400/70 leading-snug">⏱ {b.timing_insight}</p> : null}
+                          {(pi?.opportunity_reasoning || b?.opportunity_reasoning) ? <p className="text-[10px] text-slate-400 leading-snug">{pi?.opportunity_reasoning || b?.opportunity_reasoning}</p> : null}
+                          {(pi?.timing_insight || b?.timing_insight) ? <p className="text-[10px] text-cyan-400/70 leading-snug">⏱ {pi?.timing_insight || b?.timing_insight}</p> : null}
                         </div>
                       ) : null;
                     })()}
