@@ -1,742 +1,321 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { civant } from '@/api/civantClient';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import { useTenant } from '@/lib/tenant';
 import { supabase } from '@/lib/supabaseClient';
-import IntelligenceTrajectorySection from '@/components/home/IntelligenceTrajectorySection';
 import HomePlatformFooter from '@/components/home/HomePlatformFooter';
-import { 
-    FileText, 
-    Clock, 
-    Bell, 
-    TrendingUp,
-    ArrowRight,
-    Loader2,
+import {
+  Zap,
+  FileText,
+  Target,
+  CheckCircle2,
+  Eye,
+  ArrowRight,
+  Loader2,
+  TrendingUp,
+  Calendar,
+  Activity,
 } from 'lucide-react';
-import { Page, PageHero, PageTitle, PageDescription, PageBody, Card, CardContent, CardHeader, CardTitle, Button } from '@/components/ui';
-import { format, formatDistanceToNow, subDays, subMonths, isAfter, startOfDay, startOfMonth, addMonths } from 'date-fns';
-import { isCompanyScopeFilterTemporarilyDisabled, setCompanyScopeFilterTemporarilyDisabled } from '@/lib/companyScopeSession';
+import { Page, PageBody, Card, CardContent, CardHeader, CardTitle, Button } from '@/components/ui';
+import { formatDistanceToNow } from 'date-fns';
 
-const CLUSTER_ALIAS_MAP = {
-    cluster_digital: 'cluster_it_software',
-    digital: 'cluster_it_software',
-    it: 'cluster_it_software',
-    software: 'cluster_it_software',
-    telecommunications: 'cluster_it_software',
-    telecoms: 'cluster_it_software',
-    cluster_professional_services: 'cluster_consulting',
-    'professional services': 'cluster_consulting',
-    consulting: 'cluster_consulting',
-    construction: 'cluster_construction',
-    cluster_facilities: 'cluster_facilities_maintenance',
-    maintenance: 'cluster_facilities_maintenance',
-    cluster_health: 'cluster_health_medical',
-    healthcare: 'cluster_health_medical',
-    medical: 'cluster_health_medical',
-    cluster_education: 'cluster_education_training',
-    education: 'cluster_education_training',
-    transport: 'cluster_transport',
-    food: 'cluster_food_catering',
-    hospitality: 'cluster_food_catering',
-    energy: 'cluster_energy_environment',
-    environmental: 'cluster_energy_environment',
-    cluster_environment: 'cluster_energy_environment',
-    cluster_communications: 'cluster_communications_media',
-    culture: 'cluster_communications_media',
-    financial: 'cluster_financial_legal',
-    legal: 'cluster_financial_legal',
-    cluster_finance: 'cluster_financial_legal',
-    cluster_legal: 'cluster_financial_legal',
-    security: 'cluster_defence_security',
-    cluster_defence: 'cluster_defence_security',
-    cluster_research: 'cluster_research'
-};
+const FLAG = { IE: '\u{1F1EE}\u{1F1EA}', FR: '\u{1F1EB}\u{1F1F7}', ES: '\u{1F1EA}\u{1F1F8}' };
 
-const BUYER_TYPE_PATTERNS = {
-    education: /(university|college|school|universit[eé]|[eé]cole|education)/i,
-    health: /(health|hospital|sant[eé]|h[oô]pital|hse|clinic)/i,
-    local_authority: /(council|city|county|commune|ville|municipal|municipality|mairie)/i,
-    central_government: /(ministry|minist[eè]re|minister|department|government|agency)/i,
-    transport: /(transport|rail|railway|road|airport|port|infrastructure)/i,
-    defence: /(defence|defense|military|police|gendarmerie|security)/i,
-    utilities: /(water|electric|electricity|gas|telecom|utility|energy)/i
-};
+function FeedIcon({ type }) {
+  if (type === 'hit_confirmed') return <CheckCircle2 className="h-4 w-4 text-emerald-400" />;
+  if (type === 'window_opening') return <Target className="h-4 w-4 text-cyan-400" />;
+  return <FileText className="h-4 w-4 text-slate-400" />;
+}
+
+function FeedLabel({ type }) {
+  if (type === 'hit_confirmed') return <span className="text-[10px] font-medium uppercase tracking-wider text-emerald-400">Prediction Confirmed</span>;
+  if (type === 'window_opening') return <span className="text-[10px] font-medium uppercase tracking-wider text-cyan-400">Window Opening</span>;
+  return <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">New Tender</span>;
+}
+
+function FeedCard({ item }) {
+  const dateLabel = item.event_date
+    ? formatDistanceToNow(new Date(item.event_date), { addSuffix: true })
+    : '';
+
+  const linkTo = item.event_type === 'tender_published'
+    ? createPageUrl(`TenderDetail?id=${item.ref_id}`)
+    : createPageUrl('Forecast');
+
+  return (
+    <Link to={linkTo} className="block transition-colors hover:bg-white/[0.02]">
+      <div className="flex gap-3 px-4 py-3.5">
+        <div className="mt-0.5 shrink-0">
+          <FeedIcon type={item.event_type} />
+        </div>
+        <div className="min-w-0 flex-1 space-y-1">
+          <FeedLabel type={item.event_type} />
+          <p className="text-sm font-medium text-card-foreground leading-snug">
+            {item.event_type === 'hit_confirmed'
+              ? `${item.buyer_name} confirmed \u2013 ${item.category}`
+              : item.event_type === 'window_opening'
+                ? `Renewal window opens: ${item.buyer_name}`
+                : item.title
+                  ? (item.title.length > 90 ? item.title.slice(0, 87) + '...' : item.title)
+                  : `New tender from ${item.buyer_name}`
+            }
+          </p>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+            <span>{FLAG[item.country] || ''} {item.country}</span>
+            {item.event_type !== 'tender_published' && item.category ? (
+              <><span className="text-white/[0.12]">\u00b7</span><span>{item.category}</span></>
+            ) : null}
+            {item.event_type === 'hit_confirmed' && item.delta_days != null ? (
+              <><span className="text-white/[0.12]">\u00b7</span><span className="text-emerald-400/80">{item.delta_days}d from prediction</span></>
+            ) : null}
+            {item.event_type === 'window_opening' && item.delta_days != null ? (
+              <><span className="text-white/[0.12]">\u00b7</span><span className="text-cyan-400/80">{item.delta_days}% confidence</span></>
+            ) : null}
+            {dateLabel ? (
+              <><span className="text-white/[0.12]">\u00b7</span><span>{dateLabel}</span></>
+            ) : null}
+          </div>
+        </div>
+        <span className="mt-1 shrink-0 text-xs text-muted-foreground/50">&rarr;</span>
+      </div>
+    </Link>
+  );
+}
 
 export default function Home() {
-    const [stats, setStats] = useState(null);
-    const [latestTenders, setLatestTenders] = useState([]);
-    const [predictionRows, setPredictionRows] = useState([]);
-    const [allTendersRaw, setAllTendersRaw] = useState([]);
-    const [allPredictionsRaw, setAllPredictionsRaw] = useState([]);
-    const [unscopedStats, setUnscopedStats] = useState(null);
-    const [unscopedLatestTenders, setUnscopedLatestTenders] = useState([]);
-    const [unscopedPredictionRows, setUnscopedPredictionRows] = useState([]);
-    const [unscopedTrajectorySeries12m, setUnscopedTrajectorySeries12m] = useState([]);
-    const [unscopedTrajectoryIndicators, setUnscopedTrajectoryIndicators] = useState({
-        missedRenewalCycles12m: 0,
-        newBuyersDetected90d: 0,
-        incumbentDominanceShift12m: 0
-    });
-    const [lastDataUpdateAt, setLastDataUpdateAt] = useState(null);
-    const [trajectorySeries12m, setTrajectorySeries12m] = useState([]);
-    const [trajectoryIndicators, setTrajectoryIndicators] = useState({
-        missedRenewalCycles12m: 0,
-        newBuyersDetected90d: 0,
-        incumbentDominanceShift12m: 0
-    });
-    const [trajectoryRange, setTrajectoryRange] = useState('12m');
-    const [loading, setLoading] = useState(true);
-    const [profileScope, setProfileScope] = useState(null);
-    const [loadError, setLoadError] = useState('');
-    const { activeTenantId, isLoadingTenants } = useTenant();
-    const [scopeTemporarilyDisabled, setScopeTemporarilyDisabled] = useState(() =>
-        isCompanyScopeFilterTemporarilyDisabled(activeTenantId)
-    );
-    const clearScopeTemporarily = () => {
-        setCompanyScopeFilterTemporarilyDisabled(activeTenantId, true);
-        setScopeTemporarilyDisabled(true);
-    };
-    const restoreScopeFilter = () => {
-        setCompanyScopeFilterTemporarilyDisabled(activeTenantId, false);
-        setScopeTemporarilyDisabled(false);
-    };
-    
-    useEffect(() => {
-        if (isLoadingTenants) return;
-        if (!activeTenantId) return;
-        setLoading(true);
-        void loadDashboardData();
-    }, [activeTenantId, isLoadingTenants]);
+  const [pulse, setPulse] = useState(null);
+  const [feed, setFeed] = useState(null);
+  const [pipeline, setPipeline] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const { activeTenantId, isLoadingTenants } = useTenant();
 
-    const getTenderPublicationDate = (tender) => tender.publication_date || tender.published_at || tender.first_seen_at || tender.updated_at;
-    const getTenderFirstSeen = (tender) => tender.first_seen_at || tender.published_at || tender.publication_date || tender.updated_at;
-    const parseDate = (value) => {
-        if (!value) return null;
-        const date = new Date(value);
-        return Number.isNaN(date.getTime()) ? null : date;
-    };
-    const confidencePercent = (value) => {
-        const numeric = Number(value);
-        if (!Number.isFinite(numeric)) return null;
-        if (numeric <= 1) {
-            return Math.max(0, Math.min(100, Math.round(numeric * 100)));
-        }
-        return Math.max(0, Math.min(100, Math.round(numeric)));
-    };
-    const getPredictionDate = (row) =>
-        row?.predicted_tender_date
-        || row?.predicted_window_start
-        || row?.contract_end_date
-        || row?.generated_at
-        || null;
-    const getPredictionConfidence = (row) =>
-        confidencePercent(
-            row?.probability
-            ?? row?.confidence
-            ?? row?.confidence_score
-            ?? row?.forecast_score
-        );
-    const toArray = (value) => {
-        if (!value) return [];
-        if (Array.isArray(value)) {
-            return value.map((item) => String(item || '').trim()).filter(Boolean);
-        }
-        if (typeof value === 'string') {
-            return value
-                .split(',')
-                .map((item) => item.trim())
-                .filter(Boolean);
-        }
-        return [];
-    };
-    const normalizeCluster = (value) => {
-        const raw = String(value || '').trim();
-        if (!raw) return '';
-        const lower = raw.toLowerCase();
-        return CLUSTER_ALIAS_MAP[lower] || lower;
-    };
-    const inferBuyerTypeMatch = (buyerName, selectedBuyerTypes) => {
-        if (!selectedBuyerTypes.length) return true;
-        const name = String(buyerName || '').trim();
-        if (!name) return false;
-        return selectedBuyerTypes.some((buyerType) => {
-            if (buyerType === 'other') return true;
-            const pattern = BUYER_TYPE_PATTERNS[buyerType];
-            return pattern ? pattern.test(name) : false;
-        });
-    };
-    const collectTrackedBuyerNames = (profile) => {
-        const keys = [
-            'tracked_buyers',
-            'target_buyers',
-            'priority_buyers',
-            'watch_buyers',
-            'key_buyers',
-            'tracked_buyer_names'
-        ];
-        const values = keys.flatMap((key) => toArray(profile?.[key]));
-        return Array.from(new Set(values.map((value) => value.toLowerCase())));
-    };
-    const getTenderClusterCandidates = (tender) => {
-        const raw = [
-            tender?.cpv_cluster,
-            tender?.cpv_cluster_id,
-            tender?.category,
-            tender?.cpv_family,
-            tender?.sector,
-            tender?.cpv_cluster_label
-        ];
-        return raw
-            .map((value) => normalizeCluster(value))
-            .filter(Boolean);
-    };
-    const matchesScope = ({ country, clusters, buyerName }, scope) => {
-        const normalizedCountry = String(country || '').trim().toUpperCase();
-        if (scope.targetCountries.size && (!normalizedCountry || !scope.targetCountries.has(normalizedCountry))) {
-            return false;
-        }
-
-        if (scope.targetClusters.size) {
-            const hasClusterMatch = clusters.some((cluster) => scope.targetClusters.has(cluster));
-            if (!hasClusterMatch) return false;
-        }
-
-        if (scope.trackedBuyerNames.length) {
-            const normalizedBuyerName = String(buyerName || '').toLowerCase();
-            if (!normalizedBuyerName) return false;
-            return scope.trackedBuyerNames.some((tracked) => normalizedBuyerName.includes(tracked));
-        }
-
-        return inferBuyerTypeMatch(buyerName, scope.targetBuyerTypes);
-    };
-    const buildMonthlyTrajectorySeries = (totalRows, scopedRows) => {
-        const now = new Date();
-        const points = Array.from({ length: 12 }, (_, index) => {
-            const monthDate = startOfMonth(subMonths(now, 11 - index));
-            const monthKey = format(monthDate, 'yyyy-MM');
-            return {
-                monthKey,
-                monthLabel: format(monthDate, 'MMM'),
-                trackedScope: 0,
-                totalMarket: 0
-            };
-        });
-        const pointByKey = new Map(points.map((point) => [point.monthKey, point]));
-
-        const applyRowsToSeries = (rows, key) => {
-            rows.forEach((row) => {
-                const publicationDate = parseDate(getTenderPublicationDate(row));
-                if (!publicationDate) return;
-                const monthKey = format(startOfMonth(publicationDate), 'yyyy-MM');
-                const bucket = pointByKey.get(monthKey);
-                if (!bucket) return;
-                bucket[key] += 1;
-            });
-        };
-
-        applyRowsToSeries(totalRows, 'totalMarket');
-        applyRowsToSeries(scopedRows, 'trackedScope');
-
-        return points.map(({ monthKey, ...rest }) => rest);
-    };
-    const computeTrajectoryIndicators = (scopedTenders, scopedPredictions) => {
-        const now = new Date();
-        const oneYearAgo = subMonths(now, 12);
-        const sixMonthsAgo = subMonths(now, 6);
-        const ninetyDaysAgo = subDays(now, 90);
-
-        const missedRenewalCycles12m = scopedPredictions.filter((row) => {
-            const predictedDate = parseDate(getPredictionDate(row));
-            if (!predictedDate || predictedDate < oneYearAgo || predictedDate > now) return false;
-            const urgency = String(row?.urgency || '').toLowerCase();
-            const status = String(row?.status || row?.lifecycle_status || '').toLowerCase();
-            const confidence = getPredictionConfidence(row) ?? 0;
-            return urgency === 'overdue' || status === 'miss' || confidence >= 80;
-        }).length;
-
-        const recentBuyers = new Set();
-        const baselineBuyers = new Set();
-        scopedTenders.forEach((tender) => {
-            const publicationDate = parseDate(getTenderPublicationDate(tender));
-            const buyerName = String(tender?.buyer_name || '').trim().toLowerCase();
-            if (!publicationDate || !buyerName) return;
-
-            if (publicationDate >= ninetyDaysAgo) {
-                recentBuyers.add(buyerName);
-                return;
-            }
-
-            if (publicationDate >= oneYearAgo) {
-                baselineBuyers.add(buyerName);
-            }
-        });
-        const newBuyersDetected90d = Array.from(recentBuyers).filter((buyer) => !baselineBuyers.has(buyer)).length;
-
-        const topBuyerShare = (startDate, endDate) => {
-            const counts = new Map();
-            let total = 0;
-
-            scopedTenders.forEach((tender) => {
-                const publicationDate = parseDate(getTenderPublicationDate(tender));
-                if (!publicationDate || publicationDate < startDate || publicationDate >= endDate) return;
-                const buyerName = String(tender?.buyer_name || '').trim().toLowerCase();
-                if (!buyerName) return;
-                counts.set(buyerName, (counts.get(buyerName) || 0) + 1);
-                total += 1;
-            });
-
-            if (!total || counts.size === 0) return 0;
-            const maxCount = Math.max(...counts.values());
-            return (maxCount / total) * 100;
-        };
-
-        const previousTopShare = topBuyerShare(oneYearAgo, sixMonthsAgo);
-        const currentTopShare = topBuyerShare(sixMonthsAgo, now);
-        const incumbentDominanceShift12m = Number((currentTopShare - previousTopShare).toFixed(1));
-
-        return {
-            missedRenewalCycles12m,
-            newBuyersDetected90d,
-            incumbentDominanceShift12m
-        };
-    };
-
-    const loadDashboardData = async () => {
-        try {
-            setLoadError('');
-            const [allTenders, profileRows] = await Promise.all([
-                civant.entities.TendersCurrent.list('-published_at', 1000),
-                civant.entities.company_profiles.filter(
-                    { tenant_id: activeTenantId },
-                    '-updated_at',
-                    1,
-                    'target_cpv_clusters,target_countries,target_buyer_types,tracked_buyers,target_buyers,priority_buyers,watch_buyers,key_buyers,tracked_buyer_names'
-                )
-            ]);
-            const profileScopeData = Array.isArray(profileRows) && profileRows.length > 0 ? profileRows[0] : null;
-            setProfileScope(profileScopeData);
-            const profileScope = profileScopeData;
-
-            let predictions = [];
-            try {
-                const { data, error } = await supabase
-                    .rpc('get_tenant_predictions', { p_tenant_id: activeTenantId })
-                    .limit(20000);
-                if (error) throw error;
-                predictions = Array.isArray(data) ? data : [];
-            } catch (error) {
-                console.warn('get_tenant_predictions unavailable for scoped stats:', error);
-            }
-            
-            const now = new Date();
-            const last24h = subDays(now, 1);
-            const next7days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-            const targetCountries = new Set(toArray(profileScope?.target_countries).map((country) => String(country).toUpperCase()));
-            const targetClusters = new Set(toArray(profileScope?.target_cpv_clusters).map((cluster) => normalizeCluster(cluster)).filter(Boolean));
-            const targetBuyerTypes = toArray(profileScope?.target_buyer_types).map((buyerType) => String(buyerType).toLowerCase());
-            const trackedBuyerNames = collectTrackedBuyerNames(profileScope);
-            const scope = {
-                targetCountries,
-                targetClusters,
-                targetBuyerTypes,
-                trackedBuyerNames
-            };
-
-            const scopedTenders = allTenders.filter((tender) => matchesScope({
-                country: tender?.country,
-                clusters: getTenderClusterCandidates(tender),
-                buyerName: tender?.buyer_name
-            }, scope));
-
-            const scopedPredictions = predictions.filter((row) => {
-                const clusters = [
-                    row?.cpv_cluster_id,
-                    row?.category,
-                    row?.cpv_cluster_label,
-                    row?.cpv_family
-                ]
-                    .map((cluster) => normalizeCluster(cluster))
-                    .filter(Boolean);
-
-                return matchesScope({
-                    country: row?.region || row?.country,
-                    clusters,
-                    buyerName: row?.buyer_name || row?.buyer_display_name
-                }, scope);
-            });
-
-            const newRelevantTenders24h = scopedTenders.filter((tender) =>
-                getTenderFirstSeen(tender) && isAfter(new Date(getTenderFirstSeen(tender)), last24h)
-            ).length;
-            const expiringContracts7d = scopedTenders.filter((tender) => {
-                if (!tender.deadline_date) return false;
-                const deadline = new Date(tender.deadline_date);
-                return !Number.isNaN(deadline.getTime()) && deadline >= now && deadline <= next7days;
-            }).length;
-            const openTrackedOpportunities = scopedTenders.filter((tender) => {
-                if (!tender.deadline_date) return false;
-                const deadline = new Date(tender.deadline_date);
-                return !Number.isNaN(deadline.getTime()) && deadline >= startOfDay(now);
-            }).length;
-            const highConfidenceSignals = scopedPredictions.filter((row) => {
-                const confidence = getPredictionConfidence(row);
-                return confidence !== null && confidence >= 75;
-            }).length;
-            const scopedMovement7d = scopedTenders.filter((tender) =>
-                getTenderFirstSeen(tender) && isAfter(new Date(getTenderFirstSeen(tender)), subDays(now, 7))
-            ).length;
-
-            setStats({
-                newRelevantTenders24h: Number(newRelevantTenders24h ?? 0),
-                expiringContracts7d: Number(expiringContracts7d ?? 0),
-                highConfidenceSignals: Number(highConfidenceSignals ?? 0),
-                openTrackedOpportunities: Number(openTrackedOpportunities ?? 0),
-                competitorMovement7d: Number(scopedMovement7d ?? 0)
-            });
-
-            setTrajectorySeries12m(buildMonthlyTrajectorySeries(allTenders, scopedTenders));
-            setTrajectoryIndicators(computeTrajectoryIndicators(scopedTenders, scopedPredictions));
-            
-            // Recent relevant activity is scoped and intentionally compact.
-            setLatestTenders(scopedTenders.slice(0, 5));
-            setPredictionRows(scopedPredictions);
-
-            // Store unscoped data for when scope filter is temporarily cleared
-            setAllTendersRaw(allTenders);
-            setAllPredictionsRaw(predictions);
-
-            const unscopedNew24h = allTenders.filter((t) =>
-                getTenderFirstSeen(t) && isAfter(new Date(getTenderFirstSeen(t)), last24h)
-            ).length;
-            const unscopedExpiring7d = allTenders.filter((t) => {
-                if (!t.deadline_date) return false;
-                const deadline = new Date(t.deadline_date);
-                return !Number.isNaN(deadline.getTime()) && deadline >= now && deadline <= next7days;
-            }).length;
-            const unscopedOpen = allTenders.filter((t) => {
-                if (!t.deadline_date) return false;
-                const deadline = new Date(t.deadline_date);
-                return !Number.isNaN(deadline.getTime()) && deadline >= startOfDay(now);
-            }).length;
-            const unscopedHighConf = predictions.filter((row) => {
-                const conf = getPredictionConfidence(row);
-                return conf !== null && conf >= 75;
-            }).length;
-            const unscopedMovement = allTenders.filter((t) =>
-                getTenderFirstSeen(t) && isAfter(new Date(getTenderFirstSeen(t)), subDays(now, 7))
-            ).length;
-
-            setUnscopedStats({
-                newRelevantTenders24h: unscopedNew24h,
-                expiringContracts7d: unscopedExpiring7d,
-                highConfidenceSignals: unscopedHighConf,
-                openTrackedOpportunities: unscopedOpen,
-                competitorMovement7d: unscopedMovement
-            });
-            setUnscopedTrajectorySeries12m(buildMonthlyTrajectorySeries(allTenders, allTenders));
-            setUnscopedTrajectoryIndicators(computeTrajectoryIndicators(allTenders, predictions));
-            setUnscopedLatestTenders(allTenders.slice(0, 5));
-            setUnscopedPredictionRows(predictions);
-            
-            try {
-                const [latestRun] = await civant.entities.ConnectorRuns.list('-started_at', 1);
-                setLastDataUpdateAt(latestRun?.started_at || latestRun?.created_at || null);
-            } catch (error) {
-                console.warn('Unable to fetch latest connector run timestamp:', error);
-                setLastDataUpdateAt(null);
-            }
-            
-        } catch (error) {
-            console.error('Error loading dashboard:', error);
-            setLoadError(error?.message || 'Failed to load dashboard data');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    // Active data: switch between scoped and unscoped based on toggle
-    const activeStats = scopeTemporarilyDisabled ? unscopedStats : stats;
-    const activeLatestTenders = scopeTemporarilyDisabled ? unscopedLatestTenders : latestTenders;
-    const activePredictionRows = scopeTemporarilyDisabled ? unscopedPredictionRows : predictionRows;
-    const activeTrajectorySeries = scopeTemporarilyDisabled ? unscopedTrajectorySeries12m : trajectorySeries12m;
-    const activeTrajectoryIndicators = scopeTemporarilyDisabled ? unscopedTrajectoryIndicators : trajectoryIndicators;
-
-    const briefing = useMemo(() => {
-        const now = new Date();
-        const horizon = addMonths(now, 6);
-
-        const predictionTimeline = activePredictionRows
-            .map((row) => ({
-                row,
-                confidence: getPredictionConfidence(row),
-                predictedAt: parseDate(getPredictionDate(row))
-            }));
-
-        const rankedPredictions = predictionTimeline
-            .filter((entry) => entry.confidence !== null)
-            .sort((a, b) => Number(b.confidence) - Number(a.confidence));
-
-        const topPrediction = rankedPredictions[0]?.row || null;
-        const topPredictionConfidence = rankedPredictions[0]?.confidence ?? null;
-        const topTender = activeLatestTenders[0] || null;
-
-        const predictionDate = topPrediction ? parseDate(getPredictionDate(topPrediction)) : null;
-        const fromWindow = parseDate(topPrediction?.predicted_window_start);
-        const signalDate = fromWindow || predictionDate;
-        const opensInDays = signalDate
-            ? Math.max(0, Math.ceil((signalDate.getTime() - now.getTime()) / 86400000))
-            : null;
-        const opensLabel = opensInDays === null ? 'Open date pending' : `Opens in ${opensInDays} days`;
-
-        const region = topPrediction?.region || topPrediction?.country || topTender?.country || 'Multi-region';
-        const sector = topPrediction?.category
-            || topPrediction?.cpv_cluster_label
-            || topPrediction?.cpv_cluster_id
-            || topTender?.sector
-            || topTender?.cpv_cluster
-            || 'General procurement';
-        const buyer = topPrediction?.buyer_name
-            || topPrediction?.buyer_display_name
-            || topTender?.buyer_name
-            || 'Unknown buyer';
-        const hasKnownBuyer = buyer !== 'Unknown buyer';
-
-        const upcomingRenewals = predictionTimeline.filter((entry) => {
-            if (!entry.predictedAt) return false;
-            return entry.predictedAt >= now && entry.predictedAt <= horizon;
-        }).length;
-        const highConfidenceSignals = rankedPredictions.filter((entry) => Number(entry.confidence) >= 75).length;
-
-        return {
-            eventTitle: 'Renewal window approaching',
-            buyer,
-            hasKnownBuyer,
-            opensLabel,
-            confidence: topPredictionConfidence ?? 0,
-            region,
-            sector,
-            upcomingRenewals,
-            highConfidenceSignals,
-            competitorMovement7d: Number(stats?.competitorMovement7d ?? 0)
-        };
-    }, [activeLatestTenders, activePredictionRows, activeStats]);
-    
-    const StatCard = ({ title, value, icon: Icon, color, subtext = null, to }) => (
-        <Link
-            to={to}
-            className="group block rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-            aria-label={`Open ${title}`}
-        >
-            <Card className="h-full cursor-pointer border border-white/[0.06] bg-white/[0.015] shadow-none transition-colors duration-150 group-hover:border-white/[0.12] group-hover:bg-white/[0.03]">
-                <CardContent className="p-5">
-                    <div className="flex items-start justify-between">
-                        <div>
-                            <p className="text-sm font-medium text-slate-300">{title}</p>
-                            <p className={`mt-2 text-4xl font-semibold tracking-tight ${color}`}>{value}</p>
-                            {subtext ? <p className="mt-1 text-xs text-muted-foreground/80">{subtext}</p> : null}
-                        </div>
-                        <div className="rounded-lg border border-primary/20 bg-primary/10 p-2.5 transition-transform duration-150 group-hover:-translate-y-px">
-                            <Icon className={`h-4 w-4 ${color}`} />
-                        </div>
-                    </div>
-                </CardContent>
-            </Card>
-        </Link>
-    );
-    
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center h-64">
-                <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
-            </div>
-        );
+  const loadData = useCallback(async () => {
+    if (!activeTenantId) return;
+    setLoading(true);
+    try {
+      const [pulseRes, feedRes, pipelineRes] = await Promise.allSettled([
+        supabase.rpc('get_home_pulse', { p_tenant_id: activeTenantId }),
+        supabase.rpc('get_home_feed', { p_tenant_id: activeTenantId, p_limit: 25 }),
+        supabase.rpc('get_home_pipeline_snapshot', { p_tenant_id: activeTenantId }),
+      ]);
+      if (pulseRes.status === 'fulfilled' && !pulseRes.value.error) setPulse(pulseRes.value.data);
+      if (feedRes.status === 'fulfilled' && !feedRes.value.error) setFeed(feedRes.value.data);
+      if (pipelineRes.status === 'fulfilled' && !pipelineRes.value.error) setPipeline(pipelineRes.value.data);
+    } catch (e) {
+      console.error('Home load error:', e);
+    } finally {
+      setLoading(false);
     }
+  }, [activeTenantId]);
 
-    if (!activeTenantId) {
-        return (
-            <Page className="space-y-8">
-                <PageHero>
-                    <PageTitle>Select a workspace to continue</PageTitle>
-                    <PageDescription>
-                        Choose a tenant from the workspace switcher to load scoped intelligence and forecasts.
-                    </PageDescription>
-                </PageHero>
-            </Page>
-        );
-    }
-    
+  useEffect(() => {
+    if (!isLoadingTenants && activeTenantId) loadData();
+  }, [activeTenantId, isLoadingTenants, loadData]);
+
+  if (loading || isLoadingTenants) {
     return (
-        <Page className="space-y-8">
-            <section className="bg-white/[0.03]">
-                <div className="grid grid-cols-1 gap-8 px-12 py-14 md:py-16 lg:grid-cols-[minmax(0,1.55fr)_minmax(18rem,0.85fr)] lg:items-end">
-                    <div className="max-w-[700px] space-y-4">
-                        <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Intelligence Briefing</p>
-                        <h1 className="text-3xl font-semibold tracking-tight text-card-foreground md:text-4xl">
-                            {briefing.eventTitle}
-                        </h1>
-                        <p className="text-xl font-medium text-card-foreground md:text-2xl">
-                            {briefing.buyer}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                            {briefing.opensLabel} · Confidence {briefing.confidence}% · {briefing.region} · {briefing.sector}
-                        </p>
-                        <p className="text-xs text-muted-foreground/75">
-                            Last data update: {lastDataUpdateAt ? formatDistanceToNow(new Date(lastDataUpdateAt), { addSuffix: true }) : 'Unknown'}
-                        </p>
-                        <div className="flex flex-wrap items-center gap-3 pt-2">
-                            <Button asChild variant="primary">
-                                <Link to={createPageUrl('Forecast')}>
-                                    View Forecast
-                                </Link>
-                            </Button>
-                            <Button asChild variant="ghost" className="text-slate-300 hover:bg-white/[0.05] hover:text-slate-100">
-                                <Link to={createPageUrl(briefing.hasKnownBuyer ? `Search?buyer=${encodeURIComponent(briefing.buyer)}` : 'Search')}>
-                                    View Buyer
-                                </Link>
-                            </Button>
-                        </div>
-                    </div>
-
-                    <div className="space-y-4 lg:pl-1">
-                        <div>
-                            <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Upcoming renewals (6 months)</p>
-                            <p className="mt-1 text-4xl font-semibold tracking-tight text-card-foreground">
-                                {briefing.upcomingRenewals.toLocaleString()}
-                            </p>
-                        </div>
-                        <div>
-                            <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">High confidence signals</p>
-                            <p className="mt-1 text-4xl font-semibold tracking-tight text-card-foreground">
-                                {briefing.highConfidenceSignals.toLocaleString()}
-                            </p>
-                        </div>
-                        <div>
-                            <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Competitor movement (7 days)</p>
-                            <p className="mt-1 text-4xl font-semibold tracking-tight text-card-foreground">
-                                {briefing.competitorMovement7d.toLocaleString()}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            {profileScope && !scopeTemporarilyDisabled ? (
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-12 text-xs text-muted-foreground">
-                    <span>Filtered by Company Scope</span>
-                    <Link to={createPageUrl('Company?tab=personalization')} className="text-cyan-300 hover:underline">Edit scope</Link>
-                    <button type="button" onClick={clearScopeTemporarily} className="text-cyan-300 hover:underline">Clear temporarily</button>
-                </div>
-            ) : profileScope && scopeTemporarilyDisabled ? (
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-12 text-xs text-muted-foreground">
-                    <span>Company scope filter temporarily cleared for this session.</span>
-                    <button type="button" onClick={restoreScopeFilter} className="text-cyan-300 hover:underline">Turn back on</button>
-                </div>
-            ) : !profileScope ? (
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-12 text-xs text-muted-foreground">
-                    <span>No company scope configured.</span>
-                    <Link to={createPageUrl('Company?tab=personalization')} className="text-cyan-300 hover:underline">Set up scope</Link>
-                </div>
-            ) : null}
-
-            <PageBody>
-                {loadError ? (
-                    <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                        {loadError}
-                    </div>
-                ) : null}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <StatCard 
-                        title={scopeTemporarilyDisabled ? "All New Tenders (24h)" : "New Relevant Tenders (24h)"} 
-                        value={activeStats?.newRelevantTenders24h >= 1000 ? '1,000+' : (activeStats?.newRelevantTenders24h || 0)}
-                        icon={FileText}
-                        color="text-primary"
-                        to={createPageUrl('Search?lastTendered=1')}
-                    />
-                    <StatCard 
-                        title="Expiring Contracts (7 days)" 
-                        value={activeStats?.expiringContracts7d || 0}
-                        icon={Clock}
-                        color="text-card-foreground"
-                        to={createPageUrl('Search?deadlineWithin=7')}
-                    />
-                    <StatCard 
-                        title="High-Confidence Signals" 
-                        value={activeStats?.highConfidenceSignals || 0}
-                        icon={Bell}
-                        color="text-primary"
-                        to={createPageUrl('Forecast')}
-                    />
-                    <StatCard 
-                        title={scopeTemporarilyDisabled ? "Open Opportunities (All)" : "Open Opportunities (Tracked Scope)"} 
-                        value={activeStats?.openTrackedOpportunities || 0}
-                        icon={TrendingUp}
-                        color="text-card-foreground"
-                        to={createPageUrl('Search')}
-                    />
-                </div>
-
-                <IntelligenceTrajectorySection
-                    series12m={activeTrajectorySeries}
-                    range={trajectoryRange}
-                    onRangeChange={setTrajectoryRange}
-                    indicators={activeTrajectoryIndicators}
-                />
-
-                <Card className="border border-white/[0.06] bg-white/[0.015] shadow-none">
-                    <CardHeader className="pb-3">
-                        <div className="flex items-center justify-between">
-                            <CardTitle className="text-lg font-semibold">Recent Relevant Activity</CardTitle>
-                            <Link to={createPageUrl('Search')}>
-                                <Button variant="ghost" size="sm">
-                                    View all <ArrowRight className="ml-1 h-4 w-4" />
-                                </Button>
-                            </Link>
-                        </div>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                        <div className="divide-y divide-white/[0.06]">
-                            {activeLatestTenders.length === 0 ? (
-                                <div className="px-6 py-8 text-sm text-muted-foreground">
-                                    No relevant activity yet. We will surface updates as tracked signals arrive.
-                                </div>
-                            ) : (
-                                latestTenders.map((tender) => {
-                                    const publishedAt = getTenderPublicationDate(tender);
-                                    return (
-                                        <Link
-                                            key={tender.id}
-                                            to={createPageUrl(`TenderDetail?id=${tender.id}`)}
-                                            className="block px-6 py-4 transition-colors hover:bg-white/[0.02]"
-                                        >
-                                            <div className="flex items-start justify-between gap-4">
-                                                <div className="min-w-0 flex-1 space-y-1">
-                                                    <p className="truncate text-sm font-medium text-card-foreground">
-                                                        {tender.title || 'Untitled notice'}
-                                                    </p>
-                                                    <p className="truncate text-xs text-muted-foreground">
-                                                        {tender.buyer_name || 'Unknown buyer'}
-                                                        {publishedAt ? ` · ${format(new Date(publishedAt), 'MMM d, yyyy')}` : ''}
-                                                        {tender.source ? ` · ${String(tender.source).toUpperCase()}` : ''}
-                                                    </p>
-                                                </div>
-                                                <span className="pt-0.5 text-xs text-muted-foreground">→</span>
-                                            </div>
-                                        </Link>
-                                    );
-                                })
-                            )}
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <HomePlatformFooter
-                    version={import.meta.env.VITE_APP_VERSION || 'v0.9.3'}
-                    lastDataRefresh={lastDataUpdateAt}
-                    supportTo={createPageUrl('Company?section=support')}
-                    legalTo={createPageUrl('Company?section=legal')}
-                />
-            </PageBody>
-        </Page>
+      <Page>
+        <PageBody>
+          <div className="flex items-center justify-center h-64">
+            <Loader2 className="h-6 w-6 animate-spin text-emerald-400" />
+          </div>
+        </PageBody>
+      </Page>
     );
+  }
+
+  const p = pulse || {};
+  const pi = pipeline || {};
+  const tw = pi.this_week || {};
+  const tm = pi.this_month || {};
+  const nq = pi.next_quarter || {};
+  const acc = pi.accuracy || {};
+  const feedItems = feed || [];
+
+  return (
+    <Page>
+      <PageBody className="space-y-6">
+
+        {/* ---- Pulse Strip ---- */}
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-5 py-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Activity className="h-3.5 w-3.5 text-emerald-400" />
+            <span className="text-[10px] uppercase tracking-[0.1em] font-medium text-emerald-400/80">Live Pulse</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <Link to="/forecast" className="group">
+              <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] px-3 py-2.5 transition-colors group-hover:border-cyan-500/20 group-hover:bg-cyan-500/[0.03]">
+                <p className="text-2xl font-semibold text-card-foreground tabular-nums">{(p.predictions_entering_window_7d || 0).toLocaleString()}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">predictions entering window this week</p>
+              </div>
+            </Link>
+            <Link to="/workbench/search" className="group">
+              <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] px-3 py-2.5 transition-colors group-hover:border-white/[0.1]">
+                <p className="text-2xl font-semibold text-card-foreground tabular-nums">{(p.new_tenders_7d || 0).toLocaleString()}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">new tenders this week</p>
+              </div>
+            </Link>
+            <div className="rounded-lg bg-emerald-500/[0.05] border border-emerald-500/15 px-3 py-2.5">
+              <p className="text-2xl font-semibold text-emerald-400 tabular-nums">{(p.hits_confirmed_30d || 0).toLocaleString()}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">predictions confirmed (30d)</p>
+            </div>
+            <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] px-3 py-2.5">
+              <p className="text-2xl font-semibold text-card-foreground tabular-nums">{(p.monitoring_total || 0).toLocaleString()}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">predictions monitoring</p>
+            </div>
+          </div>
+        </div>
+
+        {/* ---- Main Layout: Feed + Pipeline ---- */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_380px]">
+
+          {/* Left: Activity Feed */}
+          <Card className="border border-white/[0.06] bg-white/[0.015] shadow-none">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Zap className="h-4 w-4 text-emerald-400" /> Activity Feed
+                </CardTitle>
+                <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                  <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-emerald-400" /> Confirmed</span>
+                  <span className="flex items-center gap-1"><Target className="h-3 w-3 text-cyan-400" /> Opening</span>
+                  <span className="flex items-center gap-1"><FileText className="h-3 w-3 text-slate-400" /> Published</span>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="divide-y divide-white/[0.04]">
+                {feedItems.length === 0 ? (
+                  <div className="px-4 py-8 text-sm text-muted-foreground text-center">
+                    No recent activity. Feed will populate as tenders are published and predictions enter their windows.
+                  </div>
+                ) : (
+                  feedItems.slice(0, 15).map((item, i) => (
+                    <FeedCard key={`${item.event_type}-${item.ref_id}-${i}`} item={item} />
+                  ))
+                )}
+              </div>
+              {feedItems.length > 15 ? (
+                <div className="border-t border-white/[0.04] px-4 py-3 text-center">
+                  <Link to="/forecast" className="text-xs text-emerald-400 hover:text-emerald-300">
+                    View all activity <ArrowRight className="inline h-3 w-3 ml-0.5" />
+                  </Link>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          {/* Right: Pipeline Snapshot */}
+          <div className="space-y-4">
+
+            {/* Accuracy Badge */}
+            <Card className="border border-emerald-500/20 bg-emerald-500/[0.04] shadow-none">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider text-emerald-400/80">Prediction Accuracy</p>
+                    <p className="text-3xl font-bold text-emerald-400 tabular-nums mt-1">{acc.rate || 0}%</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      {(acc.confirmed || 0).toLocaleString()} confirmed of {(acc.total_resolved || 0).toLocaleString()} resolved
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Median Timing</p>
+                    <p className="text-xl font-semibold text-card-foreground mt-1">&plusmn;{pi.median_timing_days || 0}d</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">from predicted</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Pipeline Timeline */}
+            <Card className="border border-white/[0.06] bg-white/[0.015] shadow-none">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-cyan-400" /> Pipeline at a Glance
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* This Week */}
+                <div className="rounded-lg bg-cyan-500/[0.05] border border-cyan-500/15 px-3 py-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] uppercase tracking-wider text-cyan-400/80">This Week</p>
+                    <p className="text-lg font-semibold text-cyan-400 tabular-nums">{(tw.count || 0).toLocaleString()}</p>
+                  </div>
+                  {tw.top_buyers?.length > 0 ? (
+                    <div className="mt-2 space-y-1">
+                      {tw.top_buyers.map((b, i) => (
+                        <div key={i} className="flex items-center justify-between text-xs">
+                          <span className="text-slate-300 truncate max-w-[200px]">{FLAG[b.country] || ''} {b.name}</span>
+                          <span className="text-muted-foreground tabular-nums">{b.confidence}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* This Month */}
+                <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] px-3 py-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">This Month</p>
+                    <p className="text-lg font-semibold text-card-foreground tabular-nums">{(tm.count || 0).toLocaleString()}</p>
+                  </div>
+                  {tm.by_country?.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-3">
+                      {tm.by_country.map((c, i) => (
+                        <span key={i} className="text-xs text-muted-foreground">
+                          {FLAG[c.country] || ''} {c.country}: <span className="text-slate-300 tabular-nums">{c.cnt.toLocaleString()}</span>
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* Next Quarter */}
+                <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] px-3 py-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Next 90 Days</p>
+                    <p className="text-lg font-semibold text-card-foreground tabular-nums">{(nq.count || 0).toLocaleString()}</p>
+                  </div>
+                </div>
+
+                <Link to="/forecast" className="block">
+                  <Button variant="outline" size="sm" className="w-full text-xs border-white/[0.08] hover:bg-white/[0.04]">
+                    View Full Forecast <ArrowRight className="ml-1.5 h-3 w-3" />
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+
+            {/* Quick Links */}
+            <div className="grid grid-cols-2 gap-3">
+              <Link to="/workbench/search" className="group">
+                <Card className="border border-white/[0.05] bg-white/[0.015] shadow-none transition-colors group-hover:border-white/[0.1]">
+                  <CardContent className="p-3 flex items-center gap-2">
+                    <Eye className="h-4 w-4 text-muted-foreground group-hover:text-slate-300" />
+                    <span className="text-xs text-muted-foreground group-hover:text-slate-300">Search Tenders</span>
+                  </CardContent>
+                </Card>
+              </Link>
+              <Link to="/reports" className="group">
+                <Card className="border border-white/[0.05] bg-white/[0.015] shadow-none transition-colors group-hover:border-white/[0.1]">
+                  <CardContent className="p-3 flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-muted-foreground group-hover:text-slate-300" />
+                    <span className="text-xs text-muted-foreground group-hover:text-slate-300">View Reports</span>
+                  </CardContent>
+                </Card>
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        <HomePlatformFooter
+          version={import.meta.env.VITE_APP_VERSION || 'v0.9.3'}
+          lastDataRefresh={null}
+          supportTo={createPageUrl('Company?section=support')}
+          legalTo={createPageUrl('Company?section=legal')}
+        />
+      </PageBody>
+    </Page>
+  );
 }
