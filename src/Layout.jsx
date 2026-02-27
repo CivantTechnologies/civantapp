@@ -91,17 +91,23 @@ export default function Layout({ children, currentPageName }) {
         page: 'Home',
         to: '/home',
         icon: LayoutDashboard,
-        matches: ['Home', 'Search', 'Alerts', 'Insights'],
+        matches: ['Home', 'Alerts', 'Insights'],
         drawerSections: [
           {
             label: 'Workspace',
             items: [
-              { label: 'Search', to: '/workbench/search' },
               { label: 'Alerts', to: '/workbench/alerts' },
               { label: 'Insights', to: '/workbench/insights' }
             ]
           }
         ]
+      },
+      {
+        name: 'Search',
+        page: 'Search',
+        to: '/workbench/search',
+        icon: Search,
+        matches: ['Search']
       },
       {
         name: 'Forecast',
