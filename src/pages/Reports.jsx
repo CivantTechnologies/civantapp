@@ -102,19 +102,35 @@ function downloadCSV(filename, headers, rows) {
 // ---- Market Overview Tab ----
 function MarketOverview({ tenantId }) {
   const [data, setData] = useState(null);
+  const [monthlyData, setMonthlyData] = useState(null);
+  const [buyersData, setBuyersData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [country, setCountry] = useState('all');
   const [period, setPeriod] = useState('12');
 
   const load = useCallback(async () => {
     setLoading(true);
+    const params = {
+      p_tenant_id: tenantId,
+      p_country: country === 'all' ? null : country,
+      p_months_back: parseInt(period),
+    };
     try {
-      const { data: result, error } = await supabase.rpc('get_report_market_overview', {
-        p_tenant_id: tenantId,
-        p_country: country === 'all' ? null : country,
-        p_months_back: parseInt(period),
-      });
-      if (!error && result) setData(result);
+      // Fire all three in parallel
+      const [overviewRes, monthlyRes, buyersRes] = await Promise.allSettled([
+        supabase.rpc('get_report_market_overview', params),
+        supabase.rpc('get_report_monthly_volume', params),
+        supabase.rpc('get_report_top_buyers', { ...params, p_limit: 30 }),
+      ]);
+      if (overviewRes.status === 'fulfilled' && !overviewRes.value.error && overviewRes.value.data) {
+        setData(overviewRes.value.data);
+      }
+      if (monthlyRes.status === 'fulfilled' && !monthlyRes.value.error && monthlyRes.value.data) {
+        setMonthlyData(monthlyRes.value.data);
+      }
+      if (buyersRes.status === 'fulfilled' && !buyersRes.value.error && buyersRes.value.data) {
+        setBuyersData(buyersRes.value.data);
+      }
     } catch (e) {
       console.error('Market overview error:', e);
     } finally {
@@ -125,14 +141,14 @@ function MarketOverview({ tenantId }) {
   useEffect(() => { if (tenantId) load(); }, [load, tenantId]);
 
   const monthlyChartData = useMemo(() => {
-    if (!data?.by_month) return [];
+    if (!monthlyData) return [];
     const map = {};
-    data.by_month.forEach((m) => {
+    monthlyData.forEach((m) => {
       if (!map[m.month]) map[m.month] = { month: m.month };
       map[m.month][m.country] = m.tender_count;
     });
     return Object.values(map).sort((a, b) => a.month.localeCompare(b.month));
-  }, [data]);
+  }, [monthlyData]);
 
   const categoryChartData = useMemo(() => {
     if (!data?.by_category) return [];
@@ -143,20 +159,20 @@ function MarketOverview({ tenantId }) {
   }, [data]);
 
   const exportMarketCSV = () => {
-    if (!data?.by_month) return;
+    if (!monthlyData) return;
     downloadCSV(
       'market-overview',
       ['Month', 'Country', 'Tender Count'],
-      data.by_month.map((m) => [m.month, m.country, m.tender_count])
+      monthlyData.map((m) => [m.month, m.country, m.tender_count])
     );
   };
 
   const exportBuyersCSV = () => {
-    if (!data?.top_buyers) return;
+    if (!buyersData) return;
     downloadCSV(
       'top-buyers',
       ['Buyer', 'Country', 'Tender Count', 'Avg Value (EUR)', 'Last Tender'],
-      data.top_buyers.map((b) => [b.buyer_name, b.country, b.tender_count, b.avg_value, b.last_tender])
+      buyersData.map((b) => [b.buyer_name, b.country, b.tender_count, b.avg_value, b.last_tender])
     );
   };
 
@@ -281,7 +297,7 @@ function MarketOverview({ tenantId }) {
       ) : null}
 
       {/* Top Buyers Table */}
-      {data.top_buyers?.length > 0 ? (
+      {buyersData?.length > 0 ? (
         <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none">
           <CardHeader className="pb-2 flex flex-row items-center justify-between">
             <CardTitle className="text-sm font-semibold">Top Buyers</CardTitle>
@@ -301,7 +317,7 @@ function MarketOverview({ tenantId }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.top_buyers.slice(0, 20).map((b, i) => (
+                {buyersData.slice(0, 20).map((b, i) => (
                   <TableRow key={i} className="border-white/[0.04]">
                     <TableCell className="text-xs text-slate-300 max-w-[250px] truncate">{b.buyer_name}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{FLAG[b.country] || ''} {b.country}</TableCell>
