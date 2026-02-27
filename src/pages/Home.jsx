@@ -166,6 +166,28 @@ export default function Home() {
       <PageBody className="space-y-5">
 
         {/* ============================================================ */}
+        {/*  PAGE HEADER                                                  */}
+        {/* ============================================================ */}
+        <div className="flex items-end justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-card-foreground">Command Centre</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">Procurement intelligence across Ireland, France, and Spain</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link to="/workbench/search">
+              <Button variant="outline" size="sm" className="text-[11px] border-white/[0.06] hover:border-civant-teal/20 gap-1.5">
+                <Search className="h-3 w-3" /> Search
+              </Button>
+            </Link>
+            <Link to="/reports">
+              <Button variant="outline" size="sm" className="text-[11px] border-white/[0.06] hover:border-civant-teal/20 gap-1.5">
+                <TrendingUp className="h-3 w-3" /> Reports
+              </Button>
+            </Link>
+          </div>
+        </div>
+
+        {/* ============================================================ */}
         {/*  HERO: Horizon Chart + Stats Ticker                          */}
         {/* ============================================================ */}
         <div className="rounded-2xl border border-white/[0.06] bg-gradient-to-br from-white/[0.02] to-transparent overflow-hidden">
@@ -357,27 +379,18 @@ export default function Home() {
                 </div>
               ) : null}
 
-              <Link to="/forecast" className="block pt-1">
-                <Button variant="outline" size="sm" className="w-full text-[11px] border-white/[0.06] hover:bg-white/[0.04] hover:border-civant-teal/20">
-                  Open Forecast <ArrowRight className="ml-1 h-3 w-3" />
-                </Button>
-              </Link>
-            </div>
-
-            {/* Quick nav */}
-            <div className="flex gap-2">
-              <Link to="/workbench/search" className="flex-1 group">
-                <div className="rounded-lg border border-white/[0.05] bg-white/[0.015] p-2.5 flex items-center gap-2 transition-colors group-hover:border-civant-teal/15">
-                  <Search className="h-3.5 w-3.5 text-muted-foreground group-hover:text-civant-teal" />
-                  <span className="text-[11px] text-muted-foreground group-hover:text-slate-300">Search</span>
-                </div>
-              </Link>
-              <Link to="/reports" className="flex-1 group">
-                <div className="rounded-lg border border-white/[0.05] bg-white/[0.015] p-2.5 flex items-center gap-2 transition-colors group-hover:border-civant-teal/15">
-                  <TrendingUp className="h-3.5 w-3.5 text-muted-foreground group-hover:text-civant-teal" />
-                  <span className="text-[11px] text-muted-foreground group-hover:text-slate-300">Reports</span>
-                </div>
-              </Link>
+              <div className="flex gap-2 pt-1">
+                <Link to="/forecast" className="flex-1">
+                  <Button variant="outline" size="sm" className="w-full text-[11px] border-civant-teal/20 text-civant-teal hover:bg-civant-teal/[0.06] gap-1.5">
+                    Open Forecast <ArrowRight className="h-3 w-3" />
+                  </Button>
+                </Link>
+                <Link to="/competitors">
+                  <Button variant="outline" size="sm" className="text-[11px] border-white/[0.06] hover:border-civant-teal/20">
+                    Competitors
+                  </Button>
+                </Link>
+              </div>
             </div>
           </div>
         </div>
