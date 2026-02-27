@@ -335,9 +335,9 @@ export default function Home() {
 
               {/* Timeline bars */}
               {[
-                { label: 'This Week', count: tw.count || 0, accent: true },
-                { label: 'This Month', count: tm.count || 0, accent: false },
                 { label: 'Next 90 Days', count: nq.count || 0, accent: false },
+                { label: 'This Month', count: tm.count || 0, accent: false },
+                { label: 'This Week', count: tw.count || 0, accent: true },
               ].map((row, i) => {
                 const maxCount = Math.max(tw.count || 0, tm.count || 0, nq.count || 0, 1);
                 const pct = Math.max(4, (row.count / maxCount) * 100);
