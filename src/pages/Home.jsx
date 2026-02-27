@@ -258,7 +258,7 @@ export default function Home() {
         {/* ============================================================ */}
         {/*  MAIN: Feed + Pipeline sidebar                               */}
         {/* ============================================================ */}
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_340px]">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_340px] lg:items-stretch">
 
           {/* Left: Activity Feed */}
           <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] overflow-hidden">
@@ -307,7 +307,7 @@ export default function Home() {
           </div>
 
           {/* Right sidebar */}
-          <div className="space-y-4">
+          <div className="flex flex-col gap-4">
 
             {/* Accuracy + Timing */}
             <div className="rounded-xl border border-civant-teal/15 bg-civant-teal/[0.03] p-4">
@@ -325,11 +325,13 @@ export default function Home() {
             </div>
 
             {/* Pipeline */}
-            <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] p-4 space-y-3">
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] p-4 flex-1 flex flex-col">
               <div className="flex items-center gap-2 mb-1">
                 <Calendar className="h-3.5 w-3.5 text-civant-teal" />
                 <span className="text-xs font-semibold text-card-foreground">Pipeline</span>
               </div>
+
+              <div className="flex-1 flex flex-col justify-between space-y-3">
 
               {/* Timeline bars */}
               {[
@@ -379,7 +381,7 @@ export default function Home() {
                 </div>
               ) : null}
 
-              <div className="flex gap-2 pt-1">
+              <div className="flex gap-2 pt-1 mt-auto">
                 <Link to="/forecast" className="flex-1">
                   <Button variant="outline" size="sm" className="w-full text-[11px] border-civant-teal/20 text-civant-teal hover:bg-civant-teal/[0.06] gap-1.5">
                     Open Forecast <ArrowRight className="h-3 w-3" />
@@ -390,6 +392,7 @@ export default function Home() {
                     Competitors
                   </Button>
                 </Link>
+              </div>
               </div>
             </div>
           </div>
