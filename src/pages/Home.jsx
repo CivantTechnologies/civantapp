@@ -333,6 +333,30 @@ export default function Home() {
 
               <div className="flex-1 flex flex-col justify-between space-y-3">
 
+              {/* Top buyers this week */}
+              {tw.top_buyers?.length > 0 ? (
+                <div className="pb-2 border-b border-white/[0.04]">
+                  <p className="text-[9px] uppercase tracking-wider text-muted-foreground mb-1.5">Top signals this week</p>
+                  {tw.top_buyers.map((b, i) => (
+                    <div key={i} className="flex items-center justify-between py-1 text-[11px]">
+                      <span className="text-slate-300 truncate max-w-[190px]">{FLAG[b.country] || ''} {b.name}</span>
+                      <span className="text-civant-teal/70 tabular-nums shrink-0 ml-2">{b.confidence}%</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {/* Country breakdown */}
+              {tm.by_country?.length > 0 ? (
+                <div className="flex flex-wrap gap-2 pb-2 border-b border-white/[0.04]">
+                  {tm.by_country.map((c, i) => (
+                    <span key={i} className="text-[10px] text-muted-foreground">
+                      {FLAG[c.country] || ''} <span className="text-slate-300 tabular-nums">{c.cnt.toLocaleString()}</span>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+
               {/* Timeline bars */}
               {[
                 { label: 'Next 90 Days', count: nq.count || 0, accent: false },
@@ -356,30 +380,6 @@ export default function Home() {
                   </div>
                 );
               })}
-
-              {/* Top buyers this week */}
-              {tw.top_buyers?.length > 0 ? (
-                <div className="pt-2 border-t border-white/[0.04]">
-                  <p className="text-[9px] uppercase tracking-wider text-muted-foreground mb-1.5">Top signals this week</p>
-                  {tw.top_buyers.map((b, i) => (
-                    <div key={i} className="flex items-center justify-between py-1 text-[11px]">
-                      <span className="text-slate-300 truncate max-w-[190px]">{FLAG[b.country] || ''} {b.name}</span>
-                      <span className="text-civant-teal/70 tabular-nums shrink-0 ml-2">{b.confidence}%</span>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              {/* Country breakdown */}
-              {tm.by_country?.length > 0 ? (
-                <div className="flex flex-wrap gap-2 pt-2 border-t border-white/[0.04]">
-                  {tm.by_country.map((c, i) => (
-                    <span key={i} className="text-[10px] text-muted-foreground">
-                      {FLAG[c.country] || ''} <span className="text-slate-300 tabular-nums">{c.cnt.toLocaleString()}</span>
-                    </span>
-                  ))}
-                </div>
-              ) : null}
 
               <div className="flex gap-2 pt-1 mt-auto">
                 <Link to="/forecast" className="flex-1">
