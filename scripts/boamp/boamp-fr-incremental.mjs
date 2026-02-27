@@ -203,6 +203,7 @@ async function main() {
 
   const dryRun = toBool(args['dry-run'], false);
   const startDate = asStartDate(args['start-date'] || args.start_date);
+  const endDate = asStartDate(args['end-date'] || args.end_date);
   const pageSize = Math.max(10, Number(args['page-size'] || 100));
   const maxPages = Math.max(1, Number(args['max-pages'] || 30));
 
@@ -217,7 +218,9 @@ async function main() {
     params.set('limit', String(pageSize));
     params.set('offset', String(offset));
     params.set('order_by', 'dateparution desc,idweb desc');
-    if (startDate) {
+    if (startDate && endDate) {
+      params.set('where', `dateparution >= '${startDate}' AND dateparution < '${endDate}'`);
+    } else if (startDate) {
       params.set('where', `dateparution >= '${startDate}'`);
     }
 
@@ -296,7 +299,7 @@ async function main() {
     if (rows.length < pageSize) break;
   }
 
-  console.error(`boamp_fr_incremental fetched_rows=${fetchedRows} staged_rows=${filteredRows} start_date=${startDate || '<none>'} max_published_at=${maxPublishedAt || '<none>'} dry_run=${dryRun}`);
+  console.error(`boamp_fr_incremental fetched_rows=${fetchedRows} staged_rows=${filteredRows} start_date=${startDate || '<none>'} end_date=${endDate || '<none>'} max_published_at=${maxPublishedAt || '<none>'} dry_run=${dryRun}`);
 
   if (dryRun) {
     for (const line of out.slice(0, 5)) {
