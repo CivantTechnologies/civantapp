@@ -86,6 +86,7 @@ export default function Home() {
   const [pulse, setPulse] = useState(null);
   const [feed, setFeed] = useState(null);
   const [pipeline, setPipeline] = useState(null);
+  const [spotlight, setSpotlight] = useState(null);
   const [loading, setLoading] = useState(true);
   const { activeTenantId, isLoadingTenants } = useTenant();
 
@@ -93,14 +94,16 @@ export default function Home() {
     if (!activeTenantId) return;
     setLoading(true);
     try {
-      const [pulseRes, feedRes, pipelineRes] = await Promise.allSettled([
+      const [pulseRes, feedRes, pipelineRes, spotlightRes] = await Promise.allSettled([
         supabase.rpc('get_home_pulse', { p_tenant_id: activeTenantId }),
         supabase.rpc('get_home_feed', { p_tenant_id: activeTenantId, p_limit: 25 }),
         supabase.rpc('get_home_pipeline_snapshot', { p_tenant_id: activeTenantId }),
+        supabase.rpc('get_home_spotlight', { p_tenant_id: activeTenantId }),
       ]);
       if (pulseRes.status === 'fulfilled' && !pulseRes.value.error) setPulse(pulseRes.value.data);
       if (feedRes.status === 'fulfilled' && !feedRes.value.error) setFeed(feedRes.value.data);
       if (pipelineRes.status === 'fulfilled' && !pipelineRes.value.error) setPipeline(pipelineRes.value.data);
+      if (spotlightRes.status === 'fulfilled' && !spotlightRes.value.error) setSpotlight(spotlightRes.value.data);
     } catch (e) {
       console.error('Home load error:', e);
     } finally {
@@ -169,6 +172,64 @@ export default function Home() {
             </Link>
           </div>
         </div>
+
+        {/* ---- Spotlight Strip ---- */}
+        {spotlight ? (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {/* Top Predicted Buyer */}
+            <Link to="/forecast" className="group">
+              <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3.5 transition-colors group-hover:border-civant-teal/20 group-hover:bg-white/[0.04]">
+                <p className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground mb-1.5">Top Signal This Week</p>
+                {spotlight.top_buyer ? (
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-card-foreground truncate">
+                      {FLAG[spotlight.top_buyer.country] || ''} {spotlight.top_buyer.name}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {spotlight.top_buyer.category} · <span className="text-civant-teal">{spotlight.top_buyer.confidence}% confidence</span>
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No high-confidence signals this week</p>
+                )}
+              </div>
+            </Link>
+
+            {/* Scope Matches */}
+            <Link to="/workbench/search" className="group">
+              <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3.5 transition-colors group-hover:border-civant-teal/20 group-hover:bg-white/[0.04]">
+                <p className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground mb-1.5">Categorised Tenders (7d)</p>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-xl font-semibold text-card-foreground tabular-nums">{(spotlight.scope_matches_7d || 0).toLocaleString()}</p>
+                  {spotlight.high_confidence_opening_count > 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      incl. <span className="text-civant-teal">{spotlight.high_confidence_opening_count}</span> high-confidence windows opening
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </Link>
+
+            {/* Accuracy Trend */}
+            <Link to="/reports" className="group">
+              <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3.5 transition-colors group-hover:border-civant-teal/20 group-hover:bg-white/[0.04]">
+                <p className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground mb-1.5">Accuracy This Month</p>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-xl font-semibold text-civant-teal tabular-nums">
+                    {spotlight.accuracy_this_month != null ? `${spotlight.accuracy_this_month}%` : 'N/A'}
+                  </p>
+                  {spotlight.accuracy_last_month != null ? (
+                    <p className="text-xs text-muted-foreground">
+                      vs {spotlight.accuracy_last_month}% last month
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">first month tracking</p>
+                  )}
+                </div>
+              </div>
+            </Link>
+          </div>
+        ) : null}
 
         {/* ---- Main Layout: Feed + Pipeline ---- */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_380px]">
