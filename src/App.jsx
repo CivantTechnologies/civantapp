@@ -27,6 +27,7 @@ const PipelineAdminPage = Pages.PipelineAdmin;
 const ArchitecturePage = Pages.Architecture;
 const SystemPage = Pages.System;
 const TenderDetailPage = Pages.TenderDetail;
+const ReportsPage = Pages.Reports;
 
 const LayoutWrapper = ({ children, currentPageName }) => Layout
   ? <Layout currentPageName={currentPageName}>{children}</Layout>
@@ -284,6 +285,17 @@ function ProtectedRoutes() {
           <LayoutWrapper currentPageName="Home">
             <Suspense fallback={<RouteLoader />}>
               <InsightsPage />
+            </Suspense>
+          </LayoutWrapper>
+        }
+      />
+
+      <Route
+        path="/reports"
+        element={
+          <LayoutWrapper currentPageName="Reports">
+            <Suspense fallback={<RouteLoader />}>
+              <ReportsPage />
             </Suspense>
           </LayoutWrapper>
         }

@@ -15,6 +15,7 @@ const loadForecast = () => import('./pages/Predictions');
 const loadProfile = () => import('./pages/Profile');
 const loadSearch = () => import('./pages/Search');
 const loadTenderDetail = () => import('./pages/TenderDetail');
+const loadReports = () => import('./pages/Reports');
 
 const Alerts = lazy(loadAlerts);
 const Architecture = lazy(loadArchitecture);
@@ -28,6 +29,7 @@ const Forecast = lazy(loadForecast);
 const Profile = lazy(loadProfile);
 const Search = lazy(loadSearch);
 const TenderDetail = lazy(loadTenderDetail);
+const Reports = lazy(loadReports);
 
 const CORE_PREFETCH_LOADERS = [
   loadCompanyProfile,
@@ -50,6 +52,7 @@ export const PAGES = {
     "PipelineAdmin": PipelineAdmin,
     "Forecast": Forecast,
     "Profile": Profile,
+    "Reports": Reports,
     "Search": Search,
     "System": System,
     "TenderDetail": TenderDetail,

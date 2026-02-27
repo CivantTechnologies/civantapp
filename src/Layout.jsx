@@ -13,6 +13,7 @@ import {
   Menu,
   X,
   Radar,
+  FileText,
   ChevronRight,
   LogOut,
   Plus,
@@ -122,6 +123,13 @@ export default function Layout({ children, currentPageName }) {
         to: '/competitors',
         icon: Radar,
         matches: ['Competitors']
+      },
+      {
+        name: 'Reports',
+        page: 'Reports',
+        to: '/reports',
+        icon: FileText,
+        matches: ['Reports']
       },
       {
         name: 'Company',
