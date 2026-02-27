@@ -38,7 +38,7 @@ function FeedCard({ item }) {
     ? formatDistanceToNow(new Date(item.event_date), { addSuffix: true })
     : '';
 
-  const linkTo = item.event_type === 'tender_published'
+  const linkTo = item.event_type === 'tender_published' || item.event_type === 'hit_confirmed'
     ? createPageUrl(`TenderDetail?id=${item.ref_id}`)
     : createPageUrl('Forecast');
 
@@ -63,16 +63,16 @@ function FeedCard({ item }) {
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
             <span>{FLAG[item.country] || ''} {item.country}</span>
             {item.event_type !== 'tender_published' && item.category ? (
-              <><span className="text-white/[0.12]">\u00b7</span><span>{item.category}</span></>
+              <><span className="text-white/[0.12]">·</span><span>{item.category}</span></>
             ) : null}
             {item.event_type === 'hit_confirmed' && item.delta_days != null ? (
-              <><span className="text-white/[0.12]">\u00b7</span><span className="text-emerald-400/80">{item.delta_days}d from prediction</span></>
+              <><span className="text-white/[0.12]">·</span><span className="text-emerald-400/80">{item.delta_days}d from prediction</span></>
             ) : null}
             {item.event_type === 'window_opening' && item.delta_days != null ? (
-              <><span className="text-white/[0.12]">\u00b7</span><span className="text-cyan-400/80">{item.delta_days}% confidence</span></>
+              <><span className="text-white/[0.12]">·</span><span className="text-cyan-400/80">{item.delta_days}% confidence</span></>
             ) : null}
             {dateLabel ? (
-              <><span className="text-white/[0.12]">\u00b7</span><span>{dateLabel}</span></>
+              <><span className="text-white/[0.12]">·</span><span>{dateLabel}</span></>
             ) : null}
           </div>
         </div>
@@ -117,7 +117,7 @@ export default function Home() {
       <Page>
         <PageBody>
           <div className="flex items-center justify-center h-64">
-            <Loader2 className="h-6 w-6 animate-spin text-emerald-400" />
+            <Loader2 className="h-6 w-6 animate-spin text-teal-400" />
           </div>
         </PageBody>
       </Page>
@@ -139,8 +139,8 @@ export default function Home() {
         {/* ---- Pulse Strip ---- */}
         <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-5 py-4">
           <div className="flex items-center gap-2 mb-3">
-            <Activity className="h-3.5 w-3.5 text-emerald-400" />
-            <span className="text-[10px] uppercase tracking-[0.1em] font-medium text-emerald-400/80">Live Pulse</span>
+            <Activity className="h-3.5 w-3.5 text-teal-400" />
+            <span className="text-[10px] uppercase tracking-[0.1em] font-medium text-teal-400/80">Live Pulse</span>
           </div>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <Link to="/forecast" className="group">
@@ -155,7 +155,7 @@ export default function Home() {
                 <p className="text-[10px] text-muted-foreground mt-0.5">new tenders this week</p>
               </div>
             </Link>
-            <div className="rounded-lg bg-emerald-500/[0.05] border border-emerald-500/15 px-3 py-2.5">
+            <div className="rounded-lg bg-teal-500/[0.05] border border-teal-500/15 px-3 py-2.5">
               <p className="text-2xl font-semibold text-emerald-400 tabular-nums">{(p.hits_confirmed_30d || 0).toLocaleString()}</p>
               <p className="text-[10px] text-muted-foreground mt-0.5">predictions confirmed (30d)</p>
             </div>
@@ -174,7 +174,7 @@ export default function Home() {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <Zap className="h-4 w-4 text-emerald-400" /> Activity Feed
+                  <Zap className="h-4 w-4 text-teal-400" /> Activity Feed
                 </CardTitle>
                 <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
                   <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-emerald-400" /> Confirmed</span>
@@ -197,7 +197,7 @@ export default function Home() {
               </div>
               {feedItems.length > 15 ? (
                 <div className="border-t border-white/[0.04] px-4 py-3 text-center">
-                  <Link to="/forecast" className="text-xs text-emerald-400 hover:text-emerald-300">
+                  <Link to="/forecast" className="text-xs text-emerald-400 hover:text-teal-300">
                     View all activity <ArrowRight className="inline h-3 w-3 ml-0.5" />
                   </Link>
                 </div>
@@ -209,11 +209,11 @@ export default function Home() {
           <div className="space-y-4">
 
             {/* Accuracy Badge */}
-            <Card className="border border-emerald-500/20 bg-emerald-500/[0.04] shadow-none">
+            <Card className="border border-teal-500/20 bg-teal-500/[0.04] shadow-none">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-[10px] uppercase tracking-wider text-emerald-400/80">Prediction Accuracy</p>
+                    <p className="text-[10px] uppercase tracking-wider text-teal-400/80">Prediction Accuracy</p>
                     <p className="text-3xl font-bold text-emerald-400 tabular-nums mt-1">{acc.rate || 0}%</p>
                     <p className="text-[10px] text-muted-foreground mt-1">
                       {(acc.confirmed || 0).toLocaleString()} confirmed of {(acc.total_resolved || 0).toLocaleString()} resolved
