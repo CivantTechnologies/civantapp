@@ -22,14 +22,14 @@ import { formatDistanceToNow } from 'date-fns';
 const FLAG = { IE: '\u{1F1EE}\u{1F1EA}', FR: '\u{1F1EB}\u{1F1F7}', ES: '\u{1F1EA}\u{1F1F8}' };
 
 function FeedIcon({ type }) {
-  if (type === 'hit_confirmed') return <CheckCircle2 className="h-4 w-4 text-emerald-400" />;
-  if (type === 'window_opening') return <Target className="h-4 w-4 text-cyan-400" />;
+  if (type === 'hit_confirmed') return <CheckCircle2 className="h-4 w-4 text-civant-teal" />;
+  if (type === 'window_opening') return <Target className="h-4 w-4 text-civant-teal" />;
   return <FileText className="h-4 w-4 text-slate-400" />;
 }
 
 function FeedLabel({ type }) {
-  if (type === 'hit_confirmed') return <span className="text-[10px] font-medium uppercase tracking-wider text-emerald-400">Prediction Confirmed</span>;
-  if (type === 'window_opening') return <span className="text-[10px] font-medium uppercase tracking-wider text-cyan-400">Window Opening</span>;
+  if (type === 'hit_confirmed') return <span className="text-[10px] font-medium uppercase tracking-wider text-civant-teal">Prediction Confirmed</span>;
+  if (type === 'window_opening') return <span className="text-[10px] font-medium uppercase tracking-wider text-civant-teal">Window Opening</span>;
   return <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">New Tender</span>;
 }
 
@@ -66,10 +66,10 @@ function FeedCard({ item }) {
               <><span className="text-white/[0.12]">·</span><span>{item.category}</span></>
             ) : null}
             {item.event_type === 'hit_confirmed' && item.delta_days != null ? (
-              <><span className="text-white/[0.12]">·</span><span className="text-emerald-400/80">{item.delta_days}d from prediction</span></>
+              <><span className="text-white/[0.12]">·</span><span className="text-civant-teal/80">{item.delta_days}d from prediction</span></>
             ) : null}
             {item.event_type === 'window_opening' && item.delta_days != null ? (
-              <><span className="text-white/[0.12]">·</span><span className="text-cyan-400/80">{item.delta_days}% confidence</span></>
+              <><span className="text-white/[0.12]">·</span><span className="text-civant-teal/80">{item.delta_days}% confidence</span></>
             ) : null}
             {dateLabel ? (
               <><span className="text-white/[0.12]">·</span><span>{dateLabel}</span></>
@@ -117,7 +117,7 @@ export default function Home() {
       <Page>
         <PageBody>
           <div className="flex items-center justify-center h-64">
-            <Loader2 className="h-6 w-6 animate-spin text-teal-400" />
+            <Loader2 className="h-6 w-6 animate-spin text-civant-teal" />
           </div>
         </PageBody>
       </Page>
@@ -139,30 +139,34 @@ export default function Home() {
         {/* ---- Pulse Strip ---- */}
         <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-5 py-4">
           <div className="flex items-center gap-2 mb-3">
-            <Activity className="h-3.5 w-3.5 text-teal-400" />
-            <span className="text-[10px] uppercase tracking-[0.1em] font-medium text-teal-400/80">Live Pulse</span>
+            <Activity className="h-3.5 w-3.5 text-civant-teal" />
+            <span className="text-[10px] uppercase tracking-[0.1em] font-medium text-civant-teal/80">Live Pulse</span>
           </div>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <Link to="/forecast" className="group">
-              <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] px-3 py-2.5 transition-colors group-hover:border-cyan-500/20 group-hover:bg-cyan-500/[0.03]">
+              <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] px-3 py-2.5 transition-colors group-hover:border-civant-teal/20 group-hover:bg-white/[0.04]">
                 <p className="text-2xl font-semibold text-card-foreground tabular-nums">{(p.predictions_entering_window_7d || 0).toLocaleString()}</p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">predictions entering window this week</p>
               </div>
             </Link>
             <Link to="/workbench/search" className="group">
-              <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] px-3 py-2.5 transition-colors group-hover:border-white/[0.1]">
+              <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] px-3 py-2.5 transition-colors group-hover:border-civant-teal/20 group-hover:bg-white/[0.04]">
                 <p className="text-2xl font-semibold text-card-foreground tabular-nums">{(p.new_tenders_7d || 0).toLocaleString()}</p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">new tenders this week</p>
               </div>
             </Link>
-            <div className="rounded-lg bg-teal-500/[0.05] border border-teal-500/15 px-3 py-2.5">
-              <p className="text-2xl font-semibold text-emerald-400 tabular-nums">{(p.hits_confirmed_30d || 0).toLocaleString()}</p>
-              <p className="text-[10px] text-muted-foreground mt-0.5">predictions confirmed (30d)</p>
-            </div>
-            <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] px-3 py-2.5">
-              <p className="text-2xl font-semibold text-card-foreground tabular-nums">{(p.monitoring_total || 0).toLocaleString()}</p>
-              <p className="text-[10px] text-muted-foreground mt-0.5">predictions monitoring</p>
-            </div>
+            <Link to="/reports" className="group">
+              <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] px-3 py-2.5 transition-colors group-hover:border-civant-teal/20 group-hover:bg-white/[0.04]">
+                <p className="text-2xl font-semibold text-civant-teal tabular-nums">{(p.hits_confirmed_30d || 0).toLocaleString()}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">predictions confirmed (30d)</p>
+              </div>
+            </Link>
+            <Link to="/forecast" className="group">
+              <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] px-3 py-2.5 transition-colors group-hover:border-civant-teal/20 group-hover:bg-white/[0.04]">
+                <p className="text-2xl font-semibold text-card-foreground tabular-nums">{(p.monitoring_total || 0).toLocaleString()}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">predictions monitoring</p>
+              </div>
+            </Link>
           </div>
         </div>
 
@@ -174,11 +178,11 @@ export default function Home() {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <Zap className="h-4 w-4 text-teal-400" /> Activity Feed
+                  <Zap className="h-4 w-4 text-civant-teal" /> Activity Feed
                 </CardTitle>
                 <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                  <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-emerald-400" /> Confirmed</span>
-                  <span className="flex items-center gap-1"><Target className="h-3 w-3 text-cyan-400" /> Opening</span>
+                  <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-civant-teal" /> Confirmed</span>
+                  <span className="flex items-center gap-1"><Target className="h-3 w-3 text-civant-teal" /> Opening</span>
                   <span className="flex items-center gap-1"><FileText className="h-3 w-3 text-slate-400" /> Published</span>
                 </div>
               </div>
@@ -197,7 +201,7 @@ export default function Home() {
               </div>
               {feedItems.length > 15 ? (
                 <div className="border-t border-white/[0.04] px-4 py-3 text-center">
-                  <Link to="/forecast" className="text-xs text-emerald-400 hover:text-teal-300">
+                  <Link to="/forecast" className="text-xs text-civant-teal hover:text-civant-teal">
                     View all activity <ArrowRight className="inline h-3 w-3 ml-0.5" />
                   </Link>
                 </div>
@@ -209,12 +213,12 @@ export default function Home() {
           <div className="space-y-4">
 
             {/* Accuracy Badge */}
-            <Card className="border border-teal-500/20 bg-teal-500/[0.04] shadow-none">
+            <Card className="border border-civant-teal/20 bg-civant-teal/[0.04] shadow-none">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-[10px] uppercase tracking-wider text-teal-400/80">Prediction Accuracy</p>
-                    <p className="text-3xl font-bold text-emerald-400 tabular-nums mt-1">{acc.rate || 0}%</p>
+                    <p className="text-[10px] uppercase tracking-wider text-civant-teal/80">Prediction Accuracy</p>
+                    <p className="text-3xl font-bold text-civant-teal tabular-nums mt-1">{acc.rate || 0}%</p>
                     <p className="text-[10px] text-muted-foreground mt-1">
                       {(acc.confirmed || 0).toLocaleString()} confirmed of {(acc.total_resolved || 0).toLocaleString()} resolved
                     </p>
@@ -232,15 +236,15 @@ export default function Home() {
             <Card className="border border-white/[0.06] bg-white/[0.015] shadow-none">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-cyan-400" /> Pipeline at a Glance
+                  <Calendar className="h-4 w-4 text-civant-teal" /> Pipeline at a Glance
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* This Week */}
-                <div className="rounded-lg bg-cyan-500/[0.05] border border-cyan-500/15 px-3 py-3">
+                <div className="rounded-lg bg-civant-teal/[0.05] border border-civant-teal/15 px-3 py-3">
                   <div className="flex items-center justify-between">
-                    <p className="text-[10px] uppercase tracking-wider text-cyan-400/80">This Week</p>
-                    <p className="text-lg font-semibold text-cyan-400 tabular-nums">{(tw.count || 0).toLocaleString()}</p>
+                    <p className="text-[10px] uppercase tracking-wider text-civant-teal/80">This Week</p>
+                    <p className="text-lg font-semibold text-civant-teal tabular-nums">{(tw.count || 0).toLocaleString()}</p>
                   </div>
                   {tw.top_buyers?.length > 0 ? (
                     <div className="mt-2 space-y-1">
