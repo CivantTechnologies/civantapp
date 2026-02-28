@@ -10,10 +10,6 @@ import {
 } from '@/lib/companyScopeSession';
 import HomePlatformFooter from '@/components/home/HomePlatformFooter';
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip,
-  ResponsiveContainer, Cell
-} from 'recharts';
-import {
   Zap, FileText, Target, CheckCircle2, ArrowRight,
   Loader2, Calendar
 } from 'lucide-react';
@@ -76,36 +72,20 @@ function FeedCard({ item }) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Custom Opportunity bar tooltip                                     */
+/*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
-function OpportunityTooltip({ active, payload }) {
-  if (!active || !payload?.length) return null;
-  const d = payload[0]?.payload;
-  if (!d) return null;
-  const fmtVal = (v) => {
-    if (!v || v <= 0) return 'Unknown';
-    if (v >= 1_000_000) return `\u20AC${(v / 1_000_000).toFixed(1)}M`;
-    if (v >= 1_000) return `\u20AC${(v / 1_000).toFixed(0)}K`;
-    return `\u20AC${v.toLocaleString()}`;
-  };
-  const incumbencyLabel = d.incumbency_pct >= 75 ? 'Strong' : d.incumbency_pct >= 40 ? 'Moderate' : 'Weak';
-  const incumbencyColor = d.incumbency_pct >= 75 ? 'text-red-400' : d.incumbency_pct >= 40 ? 'text-amber-400' : 'text-emerald-400';
-  return (
-    <div className="rounded-lg bg-[#0d1b2a] border border-white/10 px-3 py-2.5 text-xs shadow-xl max-w-[300px] z-50">
-      <p className="font-medium text-white mb-1.5">{FLAG[d.region] || ''} {d.buyer}</p>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-slate-300">
-        <span>Est. value</span><span className="text-white font-medium text-right">{fmtVal(d.est_value_eur)}</span>
-        <span>Confidence</span><span className="text-civant-teal font-medium text-right">{d.confidence}%</span>
-        <span>Window</span><span className="text-right">{d.dateLabel}</span>
-        <span>Incumbency</span><span className={`text-right font-medium ${incumbencyColor}`}>{incumbencyLabel} ({d.incumbency_pct}%)</span>
-        {d.incumbent_name ? (
-          <><span>Incumbent</span><span className="text-slate-200 text-right truncate max-w-[140px]">{d.incumbent_short}</span></>
-        ) : null}
-      </div>
-      <p className="text-muted-foreground mt-1.5">{d.category} &middot; Score: {d.opportunity_score}/100</p>
-    </div>
-  );
-}
+const fmtValue = (v) => {
+  if (!v || v <= 0) return '?';
+  if (v >= 1_000_000) return `\u20AC${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `\u20AC${Math.round(v / 1_000)}K`;
+  return `\u20AC${v.toLocaleString()}`;
+};
+const incumbencyLabel = (pct) => pct >= 75 ? 'Strong' : pct >= 40 ? 'Moderate' : 'Weak';
+const incumbencyStyle = (pct) => pct >= 75
+  ? 'bg-red-500/15 text-red-400 border-red-500/20'
+  : pct >= 40
+    ? 'bg-amber-500/15 text-amber-400 border-amber-500/20'
+    : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20';
 
 /* ------------------------------------------------------------------ */
 /*  Main                                                               */
@@ -191,28 +171,14 @@ export default function Home() {
     if (!isLoadingTenants && activeTenantId) loadData();
   }, [activeTenantId, isLoadingTenants, loadData]);
 
-  const barData = useMemo(() => {
+  const cardData = useMemo(() => {
     if (!Array.isArray(topOpps)) return [];
-    return topOpps.map(o => {
-      // Truncate long buyer names
-      const shortBuyer = o.buyer.length > 28 ? o.buyer.slice(0, 26) + '...' : o.buyer;
-      const incumbentShort = o.incumbent_name && o.incumbent_name.length > 30 ? o.incumbent_name.slice(0, 28) + '...' : o.incumbent_name;
-      return {
-        ...o,
-        shortBuyer,
-        incumbent_short: incumbentShort,
-        dateLabel: format(parseISO(o.expected_date), 'MMM d'),
-        barColor: o.incumbency_pct >= 75 ? 'hsl(0, 60%, 55%)' : o.incumbency_pct >= 40 ? 'hsl(38, 80%, 55%)' : 'hsl(174, 71%, 43%)',
-      };
-    });
+    return topOpps.map(o => ({
+      ...o,
+      dateLabel: format(parseISO(o.expected_date), 'MMM yyyy'),
+      incumbentShort: o.incumbent_name && o.incumbent_name.length > 35 ? o.incumbent_name.slice(0, 33) + '...' : o.incumbent_name,
+    }));
   }, [topOpps]);
-
-  const fmtValue = (v) => {
-    if (!v || v <= 0) return '';
-    if (v >= 1_000_000) return `\u20AC${(v / 1_000_000).toFixed(1)}M`;
-    if (v >= 1_000) return `\u20AC${Math.round(v / 1_000)}K`;
-    return `\u20AC${v}`;
-  };
 
   const filteredFeed = useMemo(() => {
     const items = feed || [];
@@ -265,10 +231,9 @@ export default function Home() {
         ) : null}
 
         {/* ============================================================ */}
-        {/*  HERO: Opportunity Landscape + Stats Ticker                    */}
+        {/*  STATS TICKER                                                  */}
         {/* ============================================================ */}
         <div className="rounded-2xl border border-white/[0.06] bg-gradient-to-br from-white/[0.02] to-transparent overflow-hidden">
-          {/* Stats grid - responsive, no overflow */}
           <div className="grid grid-cols-3 gap-px bg-white/[0.04] md:grid-cols-5">
             {[
               { val: (p.predictions_entering_window_7d || 0).toLocaleString(), label: 'Windows opening', accent: false },
@@ -283,64 +248,73 @@ export default function Home() {
               </div>
             ))}
           </div>
+        </div>
 
-          {/* Top opportunities chart */}
-          <div className="px-4 py-3">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
-                Top Opportunities{companyScopeFilteringActive ? <span className="text-civant-teal/60 ml-1.5 normal-case tracking-normal">Filtered by your scope</span> : null}
-              </p>
-              <div className="flex items-center gap-1">
-                {['1m', '6m', '1y'].map(h => (
-                  <button
-                    key={h}
-                    type="button"
-                    onClick={() => setOppHorizon(h)}
-                    className={`px-2 py-0.5 rounded text-[10px] transition-colors ${oppHorizon === h ? 'bg-civant-teal/20 text-civant-teal' : 'text-muted-foreground hover:text-slate-300'}`}
-                  >
-                    {h === '1m' ? '1 Month' : h === '6m' ? '6 Months' : '1 Year'}
-                  </button>
-                ))}
-              </div>
+        {/* ============================================================ */}
+        {/*  TOP OPPORTUNITIES CARDS                                      */}
+        {/* ============================================================ */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Target className="h-4 w-4 text-civant-teal" />
+              <h2 className="text-sm font-semibold text-card-foreground">Top Opportunities</h2>
+              {companyScopeFilteringActive ? <span className="text-[10px] text-civant-teal/60">Filtered by your scope</span> : null}
             </div>
-            {barData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={barData.length * 38 + 10}>
-                <BarChart data={barData} layout="vertical" margin={{ top: 0, right: 10, bottom: 0, left: 0 }} barCategoryGap="20%">
-                  <XAxis type="number" hide domain={[0, 100]} />
-                  <YAxis
-                    dataKey="shortBuyer"
-                    type="category"
-                    tick={{ fill: 'hsl(220,10%,65%)', fontSize: 10 }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={160}
-                  />
-                  <RechartsTooltip content={<OpportunityTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-                  <Bar
-                    dataKey="opportunity_score"
-                    radius={[0, 4, 4, 0]}
-                    cursor="pointer"
-                    onClick={(d) => {
-                      if (d?.buyer) window.location.href = `/workbench/search?buyer=${encodeURIComponent(d.buyer)}`;
-                    }}
-                  >
-                    {barData.map((entry, i) => (
-                      <Cell key={i} fill={entry.barColor} fillOpacity={0.85} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-[200px] flex items-center justify-center text-sm text-muted-foreground">No opportunity data available</div>
-            )}
-            {/* Legend */}
-            <div className="flex flex-wrap items-center gap-3 mt-1 text-[9px] text-muted-foreground">
-              <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-civant-teal" />Weak incumbency</span>
-              <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-amber-500" />Moderate</span>
-              <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-red-500" />Strong incumbency</span>
-              <span className="ml-auto">Bar = opportunity score</span>
+            <div className="flex items-center gap-1">
+              {['1m', '6m', '1y'].map(h => (
+                <button
+                  key={h}
+                  type="button"
+                  onClick={() => setOppHorizon(h)}
+                  className={`px-2.5 py-1 rounded-md text-[10px] font-medium transition-colors ${oppHorizon === h ? 'bg-civant-teal/15 text-civant-teal' : 'text-muted-foreground hover:text-slate-300'}`}
+                >
+                  {h === '1m' ? '1 Month' : h === '6m' ? '6 Months' : '1 Year'}
+                </button>
+              ))}
             </div>
           </div>
+
+          {cardData.length > 0 ? (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              {cardData.slice(0, 10).map((opp, i) => (
+                <Link
+                  key={opp.prediction_id || i}
+                  to={`/workbench/search?buyer=${encodeURIComponent(opp.buyer)}`}
+                  className="group rounded-xl border border-white/[0.06] bg-white/[0.015] p-3.5 hover:border-civant-teal/30 hover:bg-white/[0.03] transition-all"
+                >
+                  {/* Rank + Score */}
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-bold text-civant-teal/50">#{i + 1}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.05] text-muted-foreground tabular-nums">{opp.opportunity_score}/100</span>
+                  </div>
+
+                  {/* Value - big and bold */}
+                  <p className="text-xl font-bold text-card-foreground tabular-nums leading-tight">{fmtValue(opp.est_value_eur)}</p>
+
+                  {/* Buyer name */}
+                  <p className="text-xs text-slate-300 mt-1 line-clamp-2 min-h-[2rem] leading-snug group-hover:text-white transition-colors">
+                    {FLAG[opp.region] || ''} {opp.buyer}
+                  </p>
+
+                  {/* Meta row */}
+                  <div className="flex items-center gap-2 mt-2.5">
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full border ${incumbencyStyle(opp.incumbency_pct)}`}>
+                      {incumbencyLabel(opp.incumbency_pct)}
+                    </span>
+                    <span className="text-[9px] text-muted-foreground ml-auto">{opp.dateLabel}</span>
+                  </div>
+
+                  {/* Confidence bar */}
+                  <div className="mt-2 h-1 rounded-full bg-white/[0.06] overflow-hidden">
+                    <div className="h-full rounded-full bg-civant-teal transition-all" style={{ width: `${opp.confidence}%` }} />
+                  </div>
+                  <p className="text-[8px] text-muted-foreground mt-0.5 tabular-nums">{opp.confidence}% confidence</p>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="h-32 flex items-center justify-center text-sm text-muted-foreground rounded-xl border border-white/[0.06] bg-white/[0.015]">No opportunities found for this timeframe</div>
+          )}
         </div>
 
         {/* ============================================================ */}
