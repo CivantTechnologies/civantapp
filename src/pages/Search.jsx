@@ -664,7 +664,7 @@ export default function Search() {
 
     const hasPendingFilterChanges = !areFilterSnapshotsEqual(currentFilters, appliedFilters);
     const hasActiveFilters = !areFilterSnapshotsEqual(appliedFilters, DEFAULT_FILTERS);
-    const canViewSearchDiagnostics = Array.isArray(roles) && (roles.includes('admin') || roles.includes('creator'));
+    const canViewSearchDiagnostics = Array.isArray(roles) && (roles.includes('admin') || roles.includes('creator')) && new URLSearchParams(window.location.search).has('debug');
     const tedOnlyResults = filteredTenders.length > 0 && filteredTenders.every((tender) => tender.coverage_status === 'ted_only');
 
     const applySearch = () => {
@@ -704,9 +704,9 @@ export default function Search() {
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div className="pb-6">
-                <h1 className="text-4xl font-semibold tracking-tight text-card-foreground md:text-5xl">Finder</h1>
-                <p className="text-base text-muted-foreground md:text-lg mt-1">Your live and upcoming opportunities</p>
+            <div className="pb-2">
+                <h1 className="text-4xl font-semibold tracking-tight text-card-foreground md:text-5xl">Search Tenders</h1>
+                <p className="text-base text-muted-foreground md:text-lg mt-1">Find procurement opportunities matching your criteria</p>
             </div>
 
             {companyProfile && companyScopeFilteringActive ? (
@@ -756,7 +756,7 @@ export default function Search() {
                             className="bg-civant-teal text-slate-950 hover:bg-civant-teal/90"
                         >
                             <SearchIcon className="h-4 w-4 mr-2" />
-                            Find
+                            Search
                         </Button>
                         <Button
                             type="button"
@@ -769,7 +769,7 @@ export default function Search() {
                         </Button>
                     </div>
                     {hasPendingFilterChanges ? (
-                        <p className="mt-2 text-xs text-amber-300">You changed filters. Click Find to refresh results.</p>
+                        <p className="mt-2 text-xs text-amber-300">You changed filters. Click Search to refresh results.</p>
                     ) : null}
                     
                     {/* Expanded Filters */}
