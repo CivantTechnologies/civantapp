@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import { useTenant } from '@/lib/tenant';
@@ -8,9 +8,9 @@ import {
   isCompanyScopeFilterTemporarilyDisabled,
   setCompanyScopeFilterTemporarilyDisabled
 } from '@/lib/companyScopeSession';
-import { ArrowRight, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Page, PageBody } from '@/components/ui';
-import { format, parseISO } from 'date-fns';
+import { parseISO } from 'date-fns';
 
 const FLAG = { IE: '\u{1F1EE}\u{1F1EA}', FR: '\u{1F1EB}\u{1F1F7}', ES: '\u{1F1EA}\u{1F1F8}' };
 
@@ -25,9 +25,11 @@ const fmtValue = (v) => {
 };
 
 const fitLabel = (score) => score >= 70 ? 'High' : score >= 55 ? 'Strong' : 'Moderate';
-const fitStyle = (score) => score >= 70 ? 'text-civant-teal' : score >= 55 ? 'text-slate-200' : 'text-muted-foreground';
-const lockLabel = (pct) => pct >= 70 ? 'High' : pct >= 35 ? 'Medium' : 'Low';
-const lockStyle = (pct) => pct >= 70 ? 'text-red-400' : pct >= 35 ? 'text-amber-400' : 'text-emerald-400';
+const fitColor = (score) => score >= 70
+  ? 'bg-civant-teal/15 text-civant-teal border-civant-teal/20'
+  : score >= 55
+    ? 'bg-civant-teal/10 text-civant-teal/80 border-civant-teal/15'
+    : 'bg-white/[0.04] text-muted-foreground border-white/[0.06]';
 
 const windowLabel = (dateStr) => {
   const d = parseISO(dateStr);
@@ -36,13 +38,35 @@ const windowLabel = (dateStr) => {
 };
 
 /* ------------------------------------------------------------------ */
+/*  Static tips (rotate weekly via date seed)                          */
+/* ------------------------------------------------------------------ */
+const ALL_TIPS = [
+  'Engage buyers at least 6 months before renewal windows open.',
+  'Framework incumbents retain contracts 68% of the time. Build early differentiation.',
+  'Budget increases in Facilities & Maintenance cluster suggest Q2 expansion.',
+  'Low lock-in windows are your highest-leverage pursuit targets.',
+  'Multi-lot frameworks often split across 3+ suppliers. Position for Lot 2.',
+  'Irish public bodies publish PIN notices 40 days before formal tenders on average.',
+  'French BOAMP notices give a 52-day average lead time from publication to deadline.',
+  'Track repeat buyers. 73% of procurement officers re-tender with the same scope.',
+  'Spanish PLACSP tenders above \u20AC140K require 30+ day submission windows.',
+];
+
+function getTips() {
+  const weekSeed = Math.floor(Date.now() / (7 * 86400000));
+  const start = (weekSeed * 3) % ALL_TIPS.length;
+  const tips = [];
+  for (let i = 0; i < 3; i++) tips.push(ALL_TIPS[(start + i) % ALL_TIPS.length]);
+  return tips;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Main                                                               */
 /* ------------------------------------------------------------------ */
 export default function Home() {
   const [data, setData] = useState(null);
   const [pulse, setPulse] = useState(null);
   const [pipeline, setPipeline] = useState(null);
-  const [oppHorizon, setOppHorizon] = useState('6m');
   const [companyProfile, setCompanyProfile] = useState(null);
   const [scopeFilterTemporarilyDisabled, setScopeFilterTemporarilyDisabledState] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -91,7 +115,7 @@ export default function Home() {
       if (countries) scopeParams.p_countries = countries;
 
       const [oppsRes, pulseRes, pipelineRes] = await Promise.allSettled([
-        supabase.rpc('get_home_top_opportunities', { p_tenant_id: activeTenantId, ...scopeParams, p_horizon: oppHorizon, p_limit: 5 }),
+        supabase.rpc('get_home_top_opportunities', { p_tenant_id: activeTenantId, ...scopeParams, p_horizon: '6m', p_limit: 5 }),
         supabase.rpc('get_home_pulse', { p_tenant_id: activeTenantId }),
         supabase.rpc('get_home_pipeline_snapshot', { p_tenant_id: activeTenantId }),
       ]);
@@ -103,11 +127,13 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [activeTenantId, scopeFilterTemporarilyDisabled, oppHorizon]);
+  }, [activeTenantId, scopeFilterTemporarilyDisabled]);
 
   useEffect(() => {
     if (!isLoadingTenants && activeTenantId) loadData();
   }, [activeTenantId, isLoadingTenants, loadData]);
+
+  const tips = getTips();
 
   if (loading || isLoadingTenants) {
     return (
@@ -122,18 +148,17 @@ export default function Home() {
   const opps = data?.opportunities || [];
   const exposure = data?.exposure || {};
   const acc = pipeline?.accuracy || {};
-  const p = pulse || {};
 
   return (
     <Page>
-      <PageBody className="max-w-4xl mx-auto space-y-10 pb-16">
+      <PageBody className="space-y-6 pb-12">
 
         {/* ============================================================ */}
         {/*  HEADER                                                      */}
         {/* ============================================================ */}
-        <div className="pt-2">
-          <h1 className="text-3xl font-semibold tracking-tight text-card-foreground">Panorama</h1>
-          <p className="text-sm text-muted-foreground mt-1">Strategic procurement intelligence for your scope.</p>
+        <div>
+          <h1 className="text-4xl font-semibold tracking-tight text-card-foreground">Panorama</h1>
+          <p className="text-base text-muted-foreground mt-1">Your strategic runway, at a glance</p>
 
           {companyProfile && companyScopeFilteringActive ? (
             <div className="flex items-center gap-3 mt-3 text-xs text-muted-foreground">
@@ -153,129 +178,155 @@ export default function Home() {
         </div>
 
         {/* ============================================================ */}
-        {/*  1. RUNWAY OPPORTUNITIES                                     */}
+        {/*  MAIN GRID: Left (Runway + Exposure) | Right (Tips + Trust)  */}
         {/* ============================================================ */}
-        <section>
-          <div className="flex items-center justify-between mb-1">
-            <h2 className="text-sm font-semibold tracking-wide text-card-foreground">Runway Opportunities</h2>
-            <div className="flex items-center gap-0.5">
-              {['1m', '6m', '1y'].map(h => (
-                <button
-                  key={h} type="button"
-                  onClick={() => setOppHorizon(h)}
-                  className={`px-2.5 py-1 rounded text-[10px] font-medium transition-colors ${
-                    oppHorizon === h ? 'bg-civant-teal/12 text-civant-teal' : 'text-muted-foreground hover:text-slate-300'
-                  }`}
-                >
-                  {h === '1m' ? '1M' : h === '6m' ? '6M' : '1Y'}
-                </button>
-              ))}
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground mb-4">Best-fit renewal windows within your tracked scope.</p>
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_320px]">
 
-          {opps.length > 0 ? (
-            <div className="divide-y divide-white/[0.04]">
-              {/* Header row */}
-              <div className="hidden md:grid grid-cols-[1fr_72px_88px_52px_52px_52px_72px] gap-2 pb-2 text-[9px] uppercase tracking-wider text-muted-foreground">
-                <span>Buyer</span>
-                <span className="text-right">Window</span>
-                <span className="text-right">Est. Value</span>
-                <span className="text-right">Win %</span>
-                <span className="text-right">Fit</span>
-                <span className="text-right">Lock-in</span>
-                <span />
-              </div>
+          {/* ---------------------------------------------------------- */}
+          {/*  LEFT COLUMN                                                */}
+          {/* ---------------------------------------------------------- */}
+          <div className="space-y-5">
 
-              {opps.map((opp, i) => (
-                <div
-                  key={opp.prediction_id || i}
-                  className="md:grid md:grid-cols-[1fr_72px_88px_52px_52px_52px_72px] gap-2 py-3 items-center group"
-                >
-                  <div className="min-w-0">
-                    <p className="text-[13px] text-card-foreground truncate leading-snug">
-                      {FLAG[opp.region] || ''} {opp.buyer}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground truncate">{opp.category}</p>
+            {/* RUNWAY OPPORTUNITIES */}
+            <section className="rounded-xl border border-white/[0.06] bg-white/[0.015] p-5">
+              <h2 className="text-lg font-semibold text-card-foreground">Runway Opportunities</h2>
+              <p className="text-sm text-muted-foreground mt-0.5 mb-5">Best-fit renewal windows within your tracked scope.</p>
+
+              {opps.length > 0 ? (
+                <div>
+                  {/* Table header */}
+                  <div className="grid grid-cols-[1fr_88px_88px_96px_64px_80px] gap-3 pb-2 border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-muted-foreground">
+                    <span>Buyer</span>
+                    <span>Window</span>
+                    <span>Est. Value</span>
+                    <span>Win Probability</span>
+                    <span>Fit</span>
+                    <span />
                   </div>
 
-                  <span className="text-xs text-muted-foreground md:text-right tabular-nums">{windowLabel(opp.expected_date)}</span>
-                  <span className="text-xs font-semibold text-card-foreground md:text-right tabular-nums">{fmtValue(opp.est_value_eur)}</span>
-                  <span className="text-xs text-civant-teal md:text-right tabular-nums">{opp.confidence}%</span>
-                  <span className={`text-[11px] md:text-right ${fitStyle(opp.opportunity_score)}`}>{fitLabel(opp.opportunity_score)}</span>
-                  <span className={`text-[11px] md:text-right ${lockStyle(opp.incumbency_pct)}`}>{lockLabel(opp.incumbency_pct)}</span>
+                  {/* Table rows */}
+                  {opps.map((opp, i) => (
+                    <div
+                      key={opp.prediction_id || i}
+                      className="grid grid-cols-[1fr_88px_88px_96px_64px_80px] gap-3 py-3.5 items-center border-b border-white/[0.04] last:border-0 group"
+                    >
+                      {/* Buyer */}
+                      <div className="min-w-0 flex items-center gap-2">
+                        <span className="text-sm shrink-0">{FLAG[opp.region] || ''}</span>
+                        <span className="text-[13px] text-card-foreground truncate font-medium">{opp.buyer}</span>
+                      </div>
 
-                  <Link
-                    to={`/workbench/search?buyer=${encodeURIComponent(opp.buyer)}`}
-                    className="text-[10px] text-civant-teal hover:underline md:text-right opacity-50 group-hover:opacity-100 transition-opacity"
-                  >
-                    Prepare Now &rarr;
-                  </Link>
+                      {/* Window */}
+                      <span className="text-[13px] text-muted-foreground tabular-nums">{windowLabel(opp.expected_date)}</span>
+
+                      {/* Est. Value */}
+                      <span className="text-[13px] font-semibold text-card-foreground tabular-nums">{fmtValue(opp.est_value_eur)}</span>
+
+                      {/* Win Probability */}
+                      <span className="text-[13px] text-card-foreground tabular-nums">{opp.confidence}%</span>
+
+                      {/* Fit */}
+                      <span className={`text-[10px] font-medium px-2 py-0.5 rounded border inline-flex items-center justify-center ${fitColor(opp.opportunity_score)}`}>
+                        {fitLabel(opp.opportunity_score)}
+                      </span>
+
+                      {/* CTA */}
+                      <Link
+                        to={`/workbench/search?buyer=${encodeURIComponent(opp.buyer)}`}
+                        className="text-[11px] text-muted-foreground border border-white/[0.08] rounded px-2.5 py-1 text-center hover:border-civant-teal/30 hover:text-civant-teal transition-colors"
+                      >
+                        Prepare Now
+                      </Link>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground py-8 text-center">No high-fit opportunities in this timeframe.</p>
-          )}
-        </section>
+              ) : (
+                <p className="text-sm text-muted-foreground py-6 text-center">No high-fit opportunities in this timeframe.</p>
+              )}
+            </section>
 
-        {/* ============================================================ */}
-        {/*  2. COMPETITIVE EXPOSURE                                     */}
-        {/* ============================================================ */}
-        <section>
-          <h2 className="text-sm font-semibold tracking-wide text-card-foreground mb-3">Competitive Exposure</h2>
-          <div className="space-y-2 text-[13px] text-slate-300 leading-relaxed">
-            {exposure.total_value_eur > 0 ? (
-              <p>{fmtValue(exposure.total_value_eur)} in estimated contract value across {exposure.total_opportunities || 0} renewal windows in the next 12 months.</p>
-            ) : null}
-            {exposure.low_lockin_count > 0 ? (
-              <p>{exposure.low_lockin_count} windows with low incumbent lock-in identified within your scope.</p>
-            ) : null}
-            {exposure.unique_incumbents > 10 ? (
-              <p>{exposure.unique_incumbents} distinct incumbents across your tracked categories. Concentration risk remains distributed.</p>
-            ) : null}
+            {/* COMPETITIVE EXPOSURE */}
+            <section className="rounded-xl border border-white/[0.06] bg-white/[0.015] p-5">
+              <h2 className="text-lg font-semibold text-card-foreground mb-3">Competitive Exposure</h2>
+              <div className="space-y-2.5">
+                {exposure.total_value_eur > 0 ? (
+                  <div className="flex items-start gap-2.5">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/40 mt-1.5 shrink-0" />
+                    <p className="text-[13px] text-slate-300 leading-relaxed">
+                      <span className="font-semibold text-card-foreground">{fmtValue(exposure.total_value_eur)}</span> competitor exposure in the next 12 months.
+                    </p>
+                  </div>
+                ) : null}
+                {exposure.low_lockin_count > 0 ? (
+                  <div className="flex items-start gap-2.5">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/40 mt-1.5 shrink-0" />
+                    <p className="text-[13px] text-slate-300 leading-relaxed">
+                      {exposure.low_lockin_count} renewal windows with low incumbent lock-in.
+                    </p>
+                  </div>
+                ) : null}
+                {exposure.unique_incumbents > 3 ? (
+                  <div className="flex items-start gap-2.5">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/40 mt-1.5 shrink-0" />
+                    <p className="text-[13px] text-slate-300 leading-relaxed">
+                      Concentration risk emerging at {exposure.unique_incumbents} institutions.
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            </section>
           </div>
-        </section>
 
-        {/* ============================================================ */}
-        {/*  3. INTELLIGENCE PULSE                                       */}
-        {/* ============================================================ */}
-        <section>
-          <h2 className="text-sm font-semibold tracking-wide text-card-foreground mb-3">Intelligence Pulse</h2>
-          <div className="space-y-2 text-[13px] text-slate-300 leading-relaxed">
-            {(p.predictions_entering_window_7d || 0) > 0 ? (
-              <p><span className="text-civant-teal font-medium">{(p.predictions_entering_window_7d).toLocaleString()}</span> renewal windows opened this week across your tracked markets.</p>
-            ) : null}
-            {(p.new_tenders_7d || 0) > 0 ? (
-              <p><span className="text-card-foreground font-medium">{(p.new_tenders_7d).toLocaleString()}</span> new tenders published in the last 7 days.</p>
-            ) : null}
-            {(p.hits_confirmed_30d || 0) > 0 ? (
-              <p><span className="text-civant-teal font-medium">{(p.hits_confirmed_30d).toLocaleString()}</span> forecasts confirmed in the last 30 days.</p>
-            ) : null}
-            {(p.monitoring_total || 0) > 0 ? (
-              <p>{(p.monitoring_total).toLocaleString()} active signals currently under monitoring.</p>
-            ) : null}
+          {/* ---------------------------------------------------------- */}
+          {/*  RIGHT COLUMN                                               */}
+          {/* ---------------------------------------------------------- */}
+          <div className="space-y-5">
+
+            {/* TODAY'S TENDER TIPS */}
+            <section className="rounded-xl border border-white/[0.06] bg-white/[0.015] p-5">
+              <h2 className="text-lg font-semibold text-card-foreground mb-4">Today's Tender Tips</h2>
+              <div className="space-y-4">
+                {tips.map((tip, i) => (
+                  <div key={i} className="flex items-start gap-2.5">
+                    <span className="inline-block w-2 h-2 rounded-full bg-civant-teal mt-1 shrink-0" />
+                    <p className="text-[13px] text-slate-300 leading-relaxed">{tip}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* TRUST */}
+            <section className="rounded-xl border border-white/[0.06] bg-white/[0.015] p-5">
+              <h2 className="text-lg font-semibold text-card-foreground mb-3">Trust</h2>
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-civant-teal text-sm">&#9670;</span>
+                    <span className="text-[13px] text-slate-300">Accuracy</span>
+                  </div>
+                  <span className="text-lg font-semibold text-card-foreground tabular-nums">{acc.rate || 0}%</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-civant-teal text-sm">&#9670;</span>
+                    <span className="text-[13px] text-slate-300">Median timing</span>
+                  </div>
+                  <span className="text-lg font-semibold text-civant-teal tabular-nums">&plusmn;{pipeline?.median_timing_days || 0}d</span>
+                </div>
+              </div>
+            </section>
           </div>
-        </section>
+        </div>
 
         {/* ============================================================ */}
-        {/*  4. NAVIGATION                                               */}
+        {/*  FOOTER                                                      */}
         {/* ============================================================ */}
-        <section className="flex flex-wrap gap-4 text-xs">
-          <Link to="/forecast" className="flex items-center gap-1.5 text-civant-teal hover:underline">Open Forecast <ArrowRight className="h-3 w-3" /></Link>
-          <Link to="/workbench/search" className="flex items-center gap-1.5 text-civant-teal hover:underline">Finder <ArrowRight className="h-3 w-3" /></Link>
-          <Link to="/competitors" className="flex items-center gap-1.5 text-civant-teal hover:underline">Competitors <ArrowRight className="h-3 w-3" /></Link>
-          <Link to="/reports" className="flex items-center gap-1.5 text-civant-teal hover:underline">Reports <ArrowRight className="h-3 w-3" /></Link>
-        </section>
-
-        {/* ============================================================ */}
-        {/*  5. TRUST FOOTER                                             */}
-        {/* ============================================================ */}
-        <footer className="border-t border-white/[0.04] pt-4 flex flex-wrap gap-x-6 gap-y-1 text-[10px] text-muted-foreground">
-          <span>Accuracy: <span className="text-slate-300 tabular-nums">{acc.rate || 0}%</span></span>
-          <span>Confirmed: <span className="text-slate-300 tabular-nums">{(acc.confirmed || 0).toLocaleString()}</span> of <span className="tabular-nums">{(acc.total_resolved || 0).toLocaleString()}</span></span>
-          {pipeline?.median_timing_days ? <span>Median timing: <span className="text-slate-300 tabular-nums">&plusmn;{pipeline.median_timing_days}d</span></span> : null}
-          <span>Data: <span className="text-slate-300">Live</span></span>
+        <footer className="flex items-center justify-between text-[11px] text-muted-foreground pt-2">
+          <span>Last data refresh: <span className="text-slate-400">live</span></span>
+          <div className="flex items-center gap-4">
+            <Link to={createPageUrl('Company?section=support')} className="hover:text-slate-300">Support</Link>
+            <Link to={createPageUrl('Company?section=legal')} className="text-civant-teal hover:underline">Privacy / Legal</Link>
+          </div>
         </footer>
 
       </PageBody>
