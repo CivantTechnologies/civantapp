@@ -10,7 +10,7 @@ import {
 } from '@/lib/companyScopeSession';
 import HomePlatformFooter from '@/components/home/HomePlatformFooter';
 import {
-  ScatterChart, Scatter, XAxis, YAxis, ZAxis, Tooltip as RechartsTooltip,
+  BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip,
   ResponsiveContainer, Cell
 } from 'recharts';
 import {
@@ -76,7 +76,7 @@ function FeedCard({ item }) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Custom Opportunity scatter tooltip                                 */
+/*  Custom Opportunity bar tooltip                                     */
 /* ------------------------------------------------------------------ */
 function OpportunityTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;
@@ -91,17 +91,18 @@ function OpportunityTooltip({ active, payload }) {
   const incumbencyLabel = d.incumbency_pct >= 75 ? 'Strong' : d.incumbency_pct >= 40 ? 'Moderate' : 'Weak';
   const incumbencyColor = d.incumbency_pct >= 75 ? 'text-red-400' : d.incumbency_pct >= 40 ? 'text-amber-400' : 'text-emerald-400';
   return (
-    <div className="rounded-lg bg-[#0d1b2a] border border-white/10 px-3 py-2.5 text-xs shadow-xl max-w-[280px]">
-      <p className="font-medium text-white mb-1 truncate">{FLAG[d.region] || ''} {d.buyer}</p>
-      <div className="space-y-0.5 text-slate-300">
-        <p>Est. value: <span className="text-white font-medium">{fmtVal(d.est_value_eur)}</span></p>
-        <p>Confidence: <span className="text-civant-teal font-medium">{d.confidence}%</span></p>
+    <div className="rounded-lg bg-[#0d1b2a] border border-white/10 px-3 py-2.5 text-xs shadow-xl max-w-[300px] z-50">
+      <p className="font-medium text-white mb-1.5">{FLAG[d.region] || ''} {d.buyer}</p>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-slate-300">
+        <span>Est. value</span><span className="text-white font-medium text-right">{fmtVal(d.est_value_eur)}</span>
+        <span>Confidence</span><span className="text-civant-teal font-medium text-right">{d.confidence}%</span>
+        <span>Window</span><span className="text-right">{d.dateLabel}</span>
+        <span>Incumbency</span><span className={`text-right font-medium ${incumbencyColor}`}>{incumbencyLabel} ({d.incumbency_pct}%)</span>
         {d.incumbent_name ? (
-          <p className="truncate">Incumbent: <span className="text-slate-200">{d.incumbent_name}</span></p>
+          <><span>Incumbent</span><span className="text-slate-200 text-right truncate max-w-[140px]">{d.incumbent_short}</span></>
         ) : null}
-        <p>Incumbency: <span className={incumbencyColor}>{incumbencyLabel} ({d.incumbency_pct}%)</span></p>
-        <p className="text-muted-foreground mt-1">{d.category}</p>
       </div>
+      <p className="text-muted-foreground mt-1.5">{d.category} &middot; Score: {d.opportunity_score}/100</p>
     </div>
   );
 }
@@ -113,8 +114,9 @@ export default function Home() {
   const [pulse, setPulse] = useState(null);
   const [feed, setFeed] = useState(null);
   const [pipeline, setPipeline] = useState(null);
-  const [opportunities, setOpportunities] = useState(null);
+  const [topOpps, setTopOpps] = useState(null);
   const [feedFilter, setFeedFilter] = useState('all');
+  const [oppHorizon, setOppHorizon] = useState('6m');
   const [scopeActive, setScopeActive] = useState(false);
   const [companyProfile, setCompanyProfile] = useState(null);
   const [scopeFilterTemporarilyDisabled, setScopeFilterTemporarilyDisabledState] = useState(false);
@@ -172,38 +174,38 @@ export default function Home() {
         supabase.rpc('get_home_pulse', { p_tenant_id: activeTenantId }),
         supabase.rpc('get_home_feed', { p_tenant_id: activeTenantId, p_limit: 30 }),
         supabase.rpc('get_home_pipeline_snapshot', { p_tenant_id: activeTenantId }),
-        supabase.rpc('get_home_opportunities', { p_tenant_id: activeTenantId, ...scopeParams, p_limit: 50 }),
+        supabase.rpc('get_home_top_opportunities', { p_tenant_id: activeTenantId, ...scopeParams, p_horizon: oppHorizon, p_limit: 10 }),
       ]);
       if (pulseRes.status === 'fulfilled' && !pulseRes.value.error) setPulse(pulseRes.value.data);
       if (feedRes.status === 'fulfilled' && !feedRes.value.error) setFeed(feedRes.value.data);
       if (pipelineRes.status === 'fulfilled' && !pipelineRes.value.error) setPipeline(pipelineRes.value.data);
-      if (oppsRes.status === 'fulfilled' && !oppsRes.value.error) setOpportunities(oppsRes.value.data);
+      if (oppsRes.status === 'fulfilled' && !oppsRes.value.error) setTopOpps(oppsRes.value.data);
     } catch (e) {
       console.error('Home load error:', e);
     } finally {
       setLoading(false);
     }
-  }, [activeTenantId, scopeFilterTemporarilyDisabled]);
+  }, [activeTenantId, scopeFilterTemporarilyDisabled, oppHorizon]);
 
   useEffect(() => {
     if (!isLoadingTenants && activeTenantId) loadData();
   }, [activeTenantId, isLoadingTenants, loadData]);
 
-  const scatterData = useMemo(() => {
-    if (!Array.isArray(opportunities)) return [];
-    return opportunities.map(o => ({
-      ...o,
-      // X axis: days from now
-      daysOut: Math.max(1, Math.round((new Date(o.expected_date) - new Date()) / 86400000)),
-      dateLabel: format(parseISO(o.expected_date), 'MMM d'),
-      // Y axis: estimated value (log-friendly)
-      value: o.est_value_eur || 0,
-      // Z axis (dot size): confidence
-      z: o.confidence || 40,
-      // Color: incumbency (green=weak/opportunity, red=strong/harder)
-      dotColor: o.incumbency_pct >= 75 ? 'hsl(0, 60%, 55%)' : o.incumbency_pct >= 40 ? 'hsl(38, 80%, 55%)' : 'hsl(174, 71%, 43%)',
-    }));
-  }, [opportunities]);
+  const barData = useMemo(() => {
+    if (!Array.isArray(topOpps)) return [];
+    return topOpps.map(o => {
+      // Truncate long buyer names
+      const shortBuyer = o.buyer.length > 28 ? o.buyer.slice(0, 26) + '...' : o.buyer;
+      const incumbentShort = o.incumbent_name && o.incumbent_name.length > 30 ? o.incumbent_name.slice(0, 28) + '...' : o.incumbent_name;
+      return {
+        ...o,
+        shortBuyer,
+        incumbent_short: incumbentShort,
+        dateLabel: format(parseISO(o.expected_date), 'MMM d'),
+        barColor: o.incumbency_pct >= 75 ? 'hsl(0, 60%, 55%)' : o.incumbency_pct >= 40 ? 'hsl(38, 80%, 55%)' : 'hsl(174, 71%, 43%)',
+      };
+    });
+  }, [topOpps]);
 
   const fmtValue = (v) => {
     if (!v || v <= 0) return '';
@@ -282,55 +284,51 @@ export default function Home() {
             ))}
           </div>
 
-          {/* Opportunity scatter chart */}
+          {/* Top opportunities chart */}
           <div className="px-4 py-3">
             <div className="flex items-center justify-between mb-2">
               <p className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
-                Opportunity Landscape{companyScopeFilteringActive ? <span className="text-civant-teal/60 ml-1.5 normal-case tracking-normal">Filtered by your scope</span> : null}
+                Top Opportunities{companyScopeFilteringActive ? <span className="text-civant-teal/60 ml-1.5 normal-case tracking-normal">Filtered by your scope</span> : null}
               </p>
-              <Link to="/forecast" className="text-[10px] text-civant-teal hover:underline">View forecast &rarr;</Link>
+              <div className="flex items-center gap-1">
+                {['1m', '6m', '1y'].map(h => (
+                  <button
+                    key={h}
+                    type="button"
+                    onClick={() => setOppHorizon(h)}
+                    className={`px-2 py-0.5 rounded text-[10px] transition-colors ${oppHorizon === h ? 'bg-civant-teal/20 text-civant-teal' : 'text-muted-foreground hover:text-slate-300'}`}
+                  >
+                    {h === '1m' ? '1 Month' : h === '6m' ? '6 Months' : '1 Year'}
+                  </button>
+                ))}
+              </div>
             </div>
-            {scatterData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={200}>
-                <ScatterChart margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
-                  <XAxis
-                    dataKey="daysOut"
-                    type="number"
-                    tick={{ fill: 'hsl(220,10%,50%)', fontSize: 10 }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(v) => {
-                      const d = new Date();
-                      d.setDate(d.getDate() + v);
-                      return format(d, 'MMM d');
-                    }}
-                    domain={['dataMin - 5', 'dataMax + 5']}
-                    name="Date"
-                  />
+            {barData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={barData.length * 38 + 10}>
+                <BarChart data={barData} layout="vertical" margin={{ top: 0, right: 10, bottom: 0, left: 0 }} barCategoryGap="20%">
+                  <XAxis type="number" hide domain={[0, 100]} />
                   <YAxis
-                    dataKey="value"
-                    type="number"
-                    tick={{ fill: 'hsl(220,10%,50%)', fontSize: 10 }}
+                    dataKey="shortBuyer"
+                    type="category"
+                    tick={{ fill: 'hsl(220,10%,65%)', fontSize: 10 }}
                     axisLine={false}
                     tickLine={false}
-                    tickFormatter={fmtValue}
-                    scale="log"
-                    domain={['auto', 'auto']}
-                    name="Est. value"
-                    width={55}
+                    width={160}
                   />
-                  <ZAxis dataKey="z" range={[40, 200]} name="Confidence" />
-                  <RechartsTooltip content={<OpportunityTooltip />} cursor={{ strokeDasharray: '3 3', stroke: 'rgba(255,255,255,0.1)' }} />
-                  <Scatter data={scatterData} cursor="pointer" onClick={(d) => {
-                    if (d?.buyer) {
-                      window.location.href = `/workbench/search?buyer=${encodeURIComponent(d.buyer)}`;
-                    }
-                  }}>
-                    {scatterData.map((entry, i) => (
-                      <Cell key={i} fill={entry.dotColor} fillOpacity={0.8} />
+                  <RechartsTooltip content={<OpportunityTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+                  <Bar
+                    dataKey="opportunity_score"
+                    radius={[0, 4, 4, 0]}
+                    cursor="pointer"
+                    onClick={(d) => {
+                      if (d?.buyer) window.location.href = `/workbench/search?buyer=${encodeURIComponent(d.buyer)}`;
+                    }}
+                  >
+                    {barData.map((entry, i) => (
+                      <Cell key={i} fill={entry.barColor} fillOpacity={0.85} />
                     ))}
-                  </Scatter>
-                </ScatterChart>
+                  </Bar>
+                </BarChart>
               </ResponsiveContainer>
             ) : (
               <div className="h-[200px] flex items-center justify-center text-sm text-muted-foreground">No opportunity data available</div>
@@ -340,7 +338,7 @@ export default function Home() {
               <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-civant-teal" />Weak incumbency</span>
               <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-amber-500" />Moderate</span>
               <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-red-500" />Strong incumbency</span>
-              <span className="ml-auto">Dot size = confidence</span>
+              <span className="ml-auto">Bar = opportunity score</span>
             </div>
           </div>
         </div>
