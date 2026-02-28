@@ -483,7 +483,7 @@ export default function TenderDetail() {
                 <Link to={createPageUrl('Search')}>
                     <Button className="mt-4">
                         <ArrowLeft className="h-4 w-4 mr-2" />
-                        Back to Search
+                        Back to Finder
                     </Button>
                 </Link>
             </div>
@@ -499,7 +499,7 @@ export default function TenderDetail() {
                         className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-card-foreground transition-colors"
                     >
                         <ArrowLeft className="h-4 w-4" />
-                        Back to Search
+                        Back to Finder
                     </Link>
 
                     <div className="flex items-center gap-2 md:ml-auto">
@@ -519,7 +519,7 @@ export default function TenderDetail() {
                             ) : (
                                 <Sparkles className="h-4 w-4" />
                             )}
-                            {enrichment ? 'Enriched' : 'AI Enrich'}
+                            {enrichment ? 'Enriched' : 'Civant Agent'}
                         </Button>
 
                         <DropdownMenu>

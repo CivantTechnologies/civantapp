@@ -304,7 +304,7 @@ function ProtectedRoutes() {
       <Route
         path="/tenderdetail"
         element={
-          <LayoutWrapper currentPageName="Home">
+          <LayoutWrapper currentPageName="Search">
             <Suspense fallback={<RouteLoader />}>
               <TenderDetailPage />
             </Suspense>
