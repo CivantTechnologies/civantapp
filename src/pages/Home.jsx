@@ -170,8 +170,8 @@ export default function Home() {
           <h2 className="text-sm font-medium text-muted-foreground mb-3">Operational Status</h2>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             {/* Active Submissions */}
-            <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-3.5">
-              <div className="flex items-center gap-2 mb-2">
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-3.5 text-center">
+              <div className="flex items-center justify-center gap-2 mb-2">
                 <FileText className="h-4 w-4 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">Active Submissions</span>
               </div>
@@ -186,8 +186,8 @@ export default function Home() {
             </div>
 
             {/* Clarification Windows */}
-            <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-3.5">
-              <div className="flex items-center gap-2 mb-2">
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-3.5 text-center">
+              <div className="flex items-center justify-center gap-2 mb-2">
                 <Clock className="h-4 w-4 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">Clarification Windows</span>
               </div>
@@ -204,8 +204,8 @@ export default function Home() {
             </div>
 
             {/* Awards Announced */}
-            <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-3.5">
-              <div className="flex items-center gap-2 mb-2">
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-3.5 text-center">
+              <div className="flex items-center justify-center gap-2 mb-2">
                 <Award className="h-4 w-4 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">Awards Announced</span>
               </div>
@@ -214,8 +214,8 @@ export default function Home() {
             </div>
 
             {/* Forecast Accuracy */}
-            <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-3.5">
-              <div className="flex items-center gap-2 mb-2">
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-3.5 text-center">
+              <div className="flex items-center justify-center gap-2 mb-2">
                 <TrendingUp className="h-4 w-4 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">Forecast Accuracy</span>
               </div>
