@@ -104,7 +104,7 @@ export default function Layout({ children, currentPageName }) {
         ]
       },
       {
-        name: 'Search',
+        name: 'Finder',
         page: 'Search',
         to: '/workbench/search',
         icon: Search,
