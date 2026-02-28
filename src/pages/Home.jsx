@@ -9,7 +9,7 @@ import {
   setCompanyScopeFilterTemporarilyDisabled
 } from '@/lib/companyScopeSession';
 import {
-  Loader2, ArrowRight, Users, Bell, Building2, Radio,
+  Loader2, ArrowRight, Users, Bell,
   TrendingUp, FileText, Clock, Award
 } from 'lucide-react';
 import { Page, PageBody } from '@/components/ui';
@@ -128,7 +128,6 @@ export default function Home() {
   }
 
   const opps = data?.opportunities || [];
-  const exposure = data?.exposure || {};
   const acc = pipeline?.accuracy || {};
   const ops = opsStatus || {};
   const activeBids = ops.active_bids || {};
@@ -303,23 +302,23 @@ export default function Home() {
             <section className="rounded-xl border border-white/[0.06] bg-white/[0.015] p-5">
               <h2 className="text-base font-semibold text-card-foreground mb-4">Tracking Snapshot</h2>
               <div className="space-y-3.5">
-                {[
-                  { icon: <Users className="h-3.5 w-3.5 text-muted-foreground" />, label: 'Competitors Tracked', value: 5 },
-                  { icon: <Bell className="h-3.5 w-3.5 text-muted-foreground" />, label: 'Opportunity Alerts', value: exposure.total_opportunities || 0, dot: 'bg-red-400' },
-                  { icon: <Building2 className="h-3.5 w-3.5 text-muted-foreground" />, label: 'Institutions Monitored', value: exposure.unique_incumbents || 0 },
-                  { icon: <Radio className="h-3.5 w-3.5 text-muted-foreground" />, label: 'Signals (7d)', value: activeBids.count || 0, dot: 'bg-civant-teal' },
-                ].map((row, i) => (
-                  <div key={i} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      {row.icon}
-                      <span className="text-[13px] text-slate-300">{row.label}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {row.dot ? <span className={`inline-block w-1.5 h-1.5 rounded-full ${row.dot}`} /> : null}
-                      <span className="text-base font-semibold text-card-foreground tabular-nums">{row.value}</span>
-                    </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-[13px] text-slate-300">Competitors Tracked</span>
                   </div>
-                ))}
+                  <span className="text-base font-semibold text-card-foreground tabular-nums">{ops.competitors_tracked || 0}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <Bell className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-[13px] text-slate-300">Alerts Triggered</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {(ops.alert_events_count || 0) > 0 ? <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400" /> : null}
+                    <span className="text-base font-semibold text-card-foreground tabular-nums">{ops.alert_events_count || 0}</span>
+                  </div>
+                </div>
               </div>
             </section>
 
