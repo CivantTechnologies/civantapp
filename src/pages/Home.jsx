@@ -168,7 +168,7 @@ export default function Home() {
         {/* ============================================================ */}
         {/*  PAGE HEADER                                                  */}
         {/* ============================================================ */}
-        <div className="flex items-end justify-between pb-2">
+        <div className="flex items-end justify-between pb-6">
           <div>
             <h1 className="text-4xl font-semibold tracking-tight text-card-foreground md:text-5xl">Command Centre</h1>
             <p className="text-base text-muted-foreground md:text-lg mt-1">Procurement intelligence across Ireland, France, and Spain</p>

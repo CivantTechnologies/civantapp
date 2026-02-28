@@ -481,9 +481,9 @@ export default function Predictions() {
 
   return (
     <Page className="space-y-8">
-      <div className="space-y-1 pb-2">
+      <div className="space-y-1 pb-6">
         <PageTitle>Forecast</PageTitle>
-        <p className="text-sm text-muted-foreground">{scopeContextLabel}</p>
+        <p className="text-base text-muted-foreground md:text-lg">{scopeContextLabel}</p>
       </div>
       <div className="rounded-xl bg-white/[0.01] px-3 py-3 space-y-2">
         {companyProfile && companyScopeFilteringActive ? (

@@ -704,7 +704,7 @@ export default function Search() {
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div className="pb-2">
+            <div className="pb-6">
                 <h1 className="text-4xl font-semibold tracking-tight text-card-foreground md:text-5xl">Search Tenders</h1>
                 <p className="text-base text-muted-foreground md:text-lg mt-1">Find procurement opportunities matching your criteria</p>
             </div>

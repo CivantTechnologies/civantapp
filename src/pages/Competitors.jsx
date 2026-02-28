@@ -1233,7 +1233,7 @@ export default function Competitors() {
       {!competitorId ? (
         <>
           <div className="space-y-4">
-            <div className="space-y-1 pb-2">
+            <div className="space-y-1 pb-6">
               <h1 className="text-4xl font-semibold tracking-tight text-card-foreground md:text-5xl">Competitors</h1>
               <p className="text-base text-muted-foreground md:text-lg">Competitive exposure portfolio</p>
             </div>
