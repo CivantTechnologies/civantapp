@@ -80,8 +80,8 @@ function HorizonTooltip({ active, payload }) {
   return (
     <div className="rounded-lg bg-[#0d1b2a] border border-white/10 px-3 py-2 text-xs shadow-xl">
       <p className="font-medium text-white mb-1">{d.label}</p>
-      <p className="text-slate-300">{d.count.toLocaleString()} forecasts</p>
-      <p className="text-muted-foreground">{d.high_conf} high confidence signals</p>
+      <p className="text-slate-300">{d.count.toLocaleString()} predictions</p>
+      <p className="text-muted-foreground">{d.high_conf} high confidence</p>
       <div className="flex gap-2 mt-1 text-muted-foreground">
         {d.fr > 0 && <span>{FLAG.FR} {d.fr}</span>}
         {d.es > 0 && <span>{FLAG.ES} {d.es}</span>}
@@ -187,8 +187,8 @@ export default function Home() {
         {/*  PAGE HEADER                                                  */}
         {/* ============================================================ */}
         <div className="pb-6">
-          <h1 className="text-4xl font-semibold tracking-tight text-card-foreground md:text-5xl">Panorama</h1>
-          <p className="text-base text-muted-foreground md:text-lg mt-1">Your procurement intelligence at a glance</p>
+          <h1 className="text-4xl font-semibold tracking-tight text-card-foreground md:text-5xl">Command Centre</h1>
+          <p className="text-base text-muted-foreground md:text-lg mt-1">Procurement intelligence across Ireland, France, and Spain</p>
         </div>
 
         {/* ============================================================ */}
@@ -200,7 +200,7 @@ export default function Home() {
             {[
               { val: (p.predictions_entering_window_7d || 0).toLocaleString(), label: 'Windows opening', accent: false },
               { val: (p.new_tenders_7d || 0).toLocaleString(), label: 'New tenders (7d)', accent: false },
-              { val: `${acc.rate || 0}%`, label: 'Forecast accuracy', accent: true },
+              { val: `${acc.rate || 0}%`, label: 'Accuracy', accent: true },
               { val: (p.hits_confirmed_30d || 0).toLocaleString(), label: 'Confirmed (30d)', accent: false },
               { val: (p.monitoring_total || 0).toLocaleString(), label: 'Monitoring', accent: false },
             ].map((s, i) => (
@@ -215,7 +215,7 @@ export default function Home() {
           <div className="px-4 py-3">
             <div className="flex items-center justify-between mb-2">
               <p className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
-                90-Day Forecast Horizon{scopeActive ? <span className="text-civant-teal/60 ml-1.5 normal-case tracking-normal">Filtered by your scope</span> : null}
+                90-Day Prediction Horizon{scopeActive ? <span className="text-civant-teal/60 ml-1.5 normal-case tracking-normal">Filtered by your scope</span> : null}
               </p>
               <Link to="/forecast" className="text-[10px] text-civant-teal hover:underline">View forecast &rarr;</Link>
             </div>
@@ -233,7 +233,7 @@ export default function Home() {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-[120px] flex items-center justify-center text-sm text-muted-foreground">No forecast data for the next 90 days</div>
+              <div className="h-[120px] flex items-center justify-center text-sm text-muted-foreground">No prediction data for the next 90 days</div>
             )}
           </div>
 
@@ -310,11 +310,11 @@ export default function Home() {
                 <span className="text-lg font-semibold text-card-foreground tabular-nums">&plusmn;{pi.median_timing_days || 0}d</span>
               </div>
               <div className="flex items-baseline justify-between">
-                <span className="text-[10px] text-civant-teal/70 uppercase tracking-wider">Forecast Accuracy</span>
+                <span className="text-[10px] text-civant-teal/70 uppercase tracking-wider">Accuracy</span>
                 <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Median timing</span>
               </div>
               <p className="text-[10px] text-muted-foreground mt-2">
-                {(acc.confirmed || 0).toLocaleString()} confirmed of {(acc.total_resolved || 0).toLocaleString()} resolved forecasts
+                {(acc.confirmed || 0).toLocaleString()} confirmed of {(acc.total_resolved || 0).toLocaleString()} resolved predictions
               </p>
             </div>
 
