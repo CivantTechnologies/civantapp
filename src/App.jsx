@@ -260,7 +260,7 @@ function ProtectedRoutes() {
       <Route
         path="/workbench/search"
         element={
-          <LayoutWrapper currentPageName="Home">
+          <LayoutWrapper currentPageName="Search">
             <Suspense fallback={<RouteLoader />}>
               <SearchPage />
             </Suspense>
