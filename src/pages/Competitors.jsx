@@ -1267,6 +1267,53 @@ export default function Competitors() {
             </div>
           </div>
 
+          <section className="space-y-3">
+            <h3 className="text-base font-semibold text-card-foreground">Tracked Competitors</h3>
+          <div className="grid gap-4">
+            {filteredCompetitors.length === 0 ? (
+              <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none">
+                <CardContent className="py-12 text-center">
+                  <Users className="mx-auto mb-4 h-12 w-12 text-slate-300" />
+                  <h3 className="mb-2 text-lg font-semibold text-slate-100">No competitors tracked yet</h3>
+                  <p className="mb-4 text-slate-400">Type a name above and press Enter to add your first competitor.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              filteredCompetitors.map((competitor) => (
+                <Card key={competitor.id} className="border border-white/[0.06] bg-white/[0.02] shadow-none transition-colors hover:bg-slate-900/60">
+                  <CardContent className="p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <h3 className="truncate text-lg font-semibold text-slate-100">{competitor.company_name}</h3>
+                        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                          {countryLabel(competitor.country) ? (
+                            <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{countryLabel(competitor.country)}</span>
+                          ) : null}
+                          {competitor.industry_sectors ? <span>{competitor.industry_sectors}</span> : null}
+                        </div>
+                        {competitor.notes ? <p className="text-sm text-slate-300">{competitor.notes}</p> : null}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-white/[0.1]"
+                          onClick={() => navigate(createPageUrl(`competitors/${competitor.id}`))}
+                        >
+                          Open Dossier
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleEdit(competitor)}><Edit2 className="h-4 w-4 text-slate-400" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(competitor.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+          </section>
+
           <CompetitiveExposureSnapshot
             loading={snapshotLoading}
             metrics={[
@@ -1318,52 +1365,6 @@ export default function Competitors() {
             )}
           </section>
 
-          <section className="space-y-3">
-            <h3 className="text-base font-semibold text-card-foreground">Tracked Competitors</h3>
-          <div className="grid gap-4">
-            {filteredCompetitors.length === 0 ? (
-              <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none">
-                <CardContent className="py-12 text-center">
-                  <Users className="mx-auto mb-4 h-12 w-12 text-slate-300" />
-                  <h3 className="mb-2 text-lg font-semibold text-slate-100">No competitors tracked yet</h3>
-                  <p className="mb-4 text-slate-400">Use the global + action to add competitors to your portfolio.</p>
-                </CardContent>
-              </Card>
-            ) : (
-              filteredCompetitors.map((competitor) => (
-                <Card key={competitor.id} className="border border-white/[0.06] bg-white/[0.02] shadow-none transition-colors hover:bg-slate-900/60">
-                  <CardContent className="p-5">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1 space-y-2">
-                        <h3 className="truncate text-lg font-semibold text-slate-100">{competitor.company_name}</h3>
-                        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                          {countryLabel(competitor.country) ? (
-                            <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{countryLabel(competitor.country)}</span>
-                          ) : null}
-                          {competitor.industry_sectors ? <span>{competitor.industry_sectors}</span> : null}
-                        </div>
-                        {competitor.notes ? <p className="text-sm text-slate-300">{competitor.notes}</p> : null}
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="border-white/[0.1]"
-                          onClick={() => navigate(createPageUrl(`competitors/${competitor.id}`))}
-                        >
-                          Open Dossier
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleEdit(competitor)}><Edit2 className="h-4 w-4 text-slate-400" /></Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(competitor.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </div>
-          </section>
         </>
       ) : selectedCompetitor ? (
         <CompetitorDossier
