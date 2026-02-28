@@ -658,8 +658,8 @@ export default function Reports() {
     <Page>
       <PageBody className="space-y-6">
         <div className="space-y-1 pb-2">
-          <h1 className="text-2xl font-semibold tracking-tight text-card-foreground">Reports</h1>
-          <p className="text-sm text-muted-foreground">Market intelligence, pipeline forecasts, and prediction accuracy</p>
+          <h1 className="text-4xl font-semibold tracking-tight text-card-foreground md:text-5xl">Reports</h1>
+          <p className="text-base text-muted-foreground md:text-lg">Market intelligence, pipeline forecasts, and prediction accuracy</p>
         </div>
 
         <Tabs defaultValue="market" className="space-y-4">

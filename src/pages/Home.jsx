@@ -170,8 +170,8 @@ export default function Home() {
         {/* ============================================================ */}
         <div className="flex items-end justify-between pb-2">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-card-foreground">Command Centre</h1>
-            <p className="text-sm text-muted-foreground mt-1">Procurement intelligence across Ireland, France, and Spain</p>
+            <h1 className="text-4xl font-semibold tracking-tight text-card-foreground md:text-5xl">Command Centre</h1>
+            <p className="text-base text-muted-foreground md:text-lg mt-1">Procurement intelligence across Ireland, France, and Spain</p>
           </div>
           <div className="flex items-center gap-2">
             <Link to="/workbench/search">

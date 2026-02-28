@@ -1234,8 +1234,8 @@ export default function Competitors() {
         <>
           <div className="space-y-4">
             <div className="space-y-1 pb-2">
-              <h1 className="text-2xl font-semibold tracking-tight text-card-foreground">Competitors</h1>
-              <p className="text-sm text-muted-foreground">Competitive exposure portfolio</p>
+              <h1 className="text-4xl font-semibold tracking-tight text-card-foreground md:text-5xl">Competitors</h1>
+              <p className="text-base text-muted-foreground md:text-lg">Competitive exposure portfolio</p>
             </div>
 
             <div className="max-w-md">
