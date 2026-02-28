@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import { useTenant } from '@/lib/tenant';
 import { supabase } from '@/lib/supabaseClient';
+import { civant } from '@/api/civantClient';
 import {
   isCompanyScopeFilterTemporarilyDisabled,
   setCompanyScopeFilterTemporarilyDisabled
@@ -132,11 +133,18 @@ export default function Home() {
     setLoading(true);
     try {
       // Load company profile for scope filtering
-      const { data: profile } = await supabase
-        .from('company_profiles')
-        .select('target_cpv_clusters,target_countries,company_scope_filter_enabled')
-        .eq('tenant_id', activeTenantId)
-        .maybeSingle();
+      let profile = null;
+      try {
+        const rows = await civant.entities.company_profiles.filter(
+          { tenant_id: activeTenantId },
+          '-updated_at',
+          1,
+          'target_cpv_clusters,target_countries,company_scope_filter_enabled'
+        );
+        profile = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+      } catch (e) {
+        console.error('Failed to load company profile:', e);
+      }
       setCompanyProfile(profile);
 
       const scopeEnabled = profile?.company_scope_filter_enabled !== false && !scopeFilterTemporarilyDisabled;
