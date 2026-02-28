@@ -1233,18 +1233,37 @@ export default function Competitors() {
       {!competitorId ? (
         <>
           <div className="space-y-4">
-            <div className="space-y-1 pb-6">
+            <div className="space-y-1 pb-2">
               <h1 className="text-4xl font-semibold tracking-tight text-card-foreground md:text-5xl">Competitors</h1>
               <p className="text-base text-muted-foreground md:text-lg">Competitive exposure portfolio</p>
             </div>
 
-            <div className="max-w-md">
+            <div className="max-w-md flex gap-2">
               <Input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search competitors"
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && search.trim()) {
+                    setEditingCompetitor(null);
+                    setFormData(prev => ({ ...prev, company_name: search.trim() }));
+                    setShowForm(true);
+                  }
+                }}
+                placeholder="Add a competitor by name..."
                 className="h-10 border-white/[0.08] bg-white/[0.02]"
               />
+              <Button
+                variant="outline"
+                className="h-10 shrink-0"
+                onClick={() => {
+                  setEditingCompetitor(null);
+                  resetForm();
+                  if (search.trim()) setFormData(prev => ({ ...prev, company_name: search.trim() }));
+                  setShowForm(true);
+                }}
+              >
+                + Add
+              </Button>
             </div>
           </div>
 
