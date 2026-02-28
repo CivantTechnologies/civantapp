@@ -3,6 +3,10 @@ import { Link } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import { useTenant } from '@/lib/tenant';
 import { supabase } from '@/lib/supabaseClient';
+import {
+  isCompanyScopeFilterTemporarilyDisabled,
+  setCompanyScopeFilterTemporarilyDisabled
+} from '@/lib/companyScopeSession';
 import HomePlatformFooter from '@/components/home/HomePlatformFooter';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip,
@@ -101,8 +105,27 @@ export default function Home() {
   const [horizon, setHorizon] = useState(null);
   const [feedFilter, setFeedFilter] = useState('all');
   const [scopeActive, setScopeActive] = useState(false);
+  const [companyProfile, setCompanyProfile] = useState(null);
+  const [scopeFilterTemporarilyDisabled, setScopeFilterTemporarilyDisabledState] = useState(false);
   const [loading, setLoading] = useState(true);
   const { activeTenantId, isLoadingTenants } = useTenant();
+
+  useEffect(() => {
+    setScopeFilterTemporarilyDisabledState(isCompanyScopeFilterTemporarilyDisabled(activeTenantId));
+  }, [activeTenantId]);
+
+  const persistedScopeFilterEnabled = companyProfile?.company_scope_filter_enabled !== false;
+  const companyScopeFilteringActive = persistedScopeFilterEnabled && !scopeFilterTemporarilyDisabled;
+
+  const clearScopeFilterTemporarily = useCallback(() => {
+    setCompanyScopeFilterTemporarilyDisabled(activeTenantId, true);
+    setScopeFilterTemporarilyDisabledState(true);
+  }, [activeTenantId]);
+
+  const restoreScopeFilter = useCallback(() => {
+    setCompanyScopeFilterTemporarilyDisabled(activeTenantId, false);
+    setScopeFilterTemporarilyDisabledState(false);
+  }, [activeTenantId]);
 
   const loadData = useCallback(async () => {
     if (!activeTenantId) return;
@@ -114,8 +137,9 @@ export default function Home() {
         .select('target_cpv_clusters,target_countries,company_scope_filter_enabled')
         .eq('tenant_id', activeTenantId)
         .maybeSingle();
+      setCompanyProfile(profile);
 
-      const scopeEnabled = profile?.company_scope_filter_enabled !== false;
+      const scopeEnabled = profile?.company_scope_filter_enabled !== false && !scopeFilterTemporarilyDisabled;
       const clusters = scopeEnabled && Array.isArray(profile?.target_cpv_clusters) && profile.target_cpv_clusters.length > 0
         ? profile.target_cpv_clusters : null;
       const countries = scopeEnabled && Array.isArray(profile?.target_countries) && profile.target_countries.length > 0
@@ -141,7 +165,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [activeTenantId]);
+  }, [activeTenantId, scopeFilterTemporarilyDisabled]);
 
   useEffect(() => {
     if (!isLoadingTenants && activeTenantId) loadData();
@@ -187,9 +211,24 @@ export default function Home() {
         {/*  PAGE HEADER                                                  */}
         {/* ============================================================ */}
         <div className="pb-6">
-          <h1 className="text-4xl font-semibold tracking-tight text-card-foreground md:text-5xl">Command Centre</h1>
-          <p className="text-base text-muted-foreground md:text-lg mt-1">Procurement intelligence across Ireland, France, and Spain</p>
+          <h1 className="text-4xl font-semibold tracking-tight text-card-foreground md:text-5xl">Panorama</h1>
+          <p className="text-base text-muted-foreground md:text-lg mt-1">Your procurement intelligence at a glance</p>
         </div>
+
+        {/* Scope filter strip */}
+        {companyProfile && companyScopeFilteringActive ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground -mt-3 mb-1">
+            <span>Filtered by Company Scope</span>
+            <Link to={createPageUrl('Company?tab=personalization')} className="text-civant-teal hover:underline">Edit scope</Link>
+            <button type="button" onClick={clearScopeFilterTemporarily} className="text-civant-teal hover:underline">Clear temporarily</button>
+          </div>
+        ) : null}
+        {companyProfile && persistedScopeFilterEnabled && scopeFilterTemporarilyDisabled ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground -mt-3 mb-1">
+            <span>Company scope filter temporarily cleared.</span>
+            <button type="button" onClick={restoreScopeFilter} className="text-civant-teal hover:underline">Turn back on</button>
+          </div>
+        ) : null}
 
         {/* ============================================================ */}
         {/*  HERO: Horizon Chart + Stats Ticker                          */}
@@ -215,7 +254,7 @@ export default function Home() {
           <div className="px-4 py-3">
             <div className="flex items-center justify-between mb-2">
               <p className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
-                90-Day Prediction Horizon{scopeActive ? <span className="text-civant-teal/60 ml-1.5 normal-case tracking-normal">Filtered by your scope</span> : null}
+                90-Day Forecast Horizon{companyScopeFilteringActive ? <span className="text-civant-teal/60 ml-1.5 normal-case tracking-normal">Filtered by your scope</span> : null}
               </p>
               <Link to="/forecast" className="text-[10px] text-civant-teal hover:underline">View forecast &rarr;</Link>
             </div>
