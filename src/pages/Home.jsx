@@ -10,7 +10,7 @@ import {
 } from '@/lib/companyScopeSession';
 import {
   Loader2, ArrowRight, Users, Bell, Building2, Radio,
-  TrendingUp, UserPlus, RefreshCw, FileText
+  TrendingUp, FileText, Clock, Award
 } from 'lucide-react';
 import { Page, PageBody } from '@/components/ui';
 import { parseISO, formatDistanceToNow } from 'date-fns';
@@ -33,16 +33,12 @@ const windowLabel = (dateStr) => {
   return `Q${q} ${d.getFullYear()}`;
 };
 
-// Fit: based on opportunity_score. Green = High, Amber = Strong, Red = Moderate
-const fitDot = (score) => score >= 70
-  ? 'bg-emerald-400' : score >= 55
-  ? 'bg-amber-400' : 'bg-red-400';
+// Fit: green = high, amber = strong, red = moderate
+const fitDot = (score) => score >= 70 ? 'bg-emerald-400' : score >= 55 ? 'bg-amber-400' : 'bg-red-400';
 const fitTip = (score) => score >= 70 ? 'High fit' : score >= 55 ? 'Strong fit' : 'Moderate fit';
 
-// Lock-in: based on incumbency_pct. Green = Low, Amber = Medium, Red = High
-const lockDot = (pct) => pct >= 70
-  ? 'bg-red-400' : pct >= 35
-  ? 'bg-amber-400' : 'bg-emerald-400';
+// Lock-in: green = low (opportunity), amber = medium, red = high (entrenched)
+const lockDot = (pct) => pct >= 70 ? 'bg-red-400' : pct >= 35 ? 'bg-amber-400' : 'bg-emerald-400';
 const lockTip = (pct) => pct >= 70 ? 'High lock-in' : pct >= 35 ? 'Medium lock-in' : 'Low lock-in';
 
 /* ------------------------------------------------------------------ */
@@ -50,7 +46,7 @@ const lockTip = (pct) => pct >= 70 ? 'High lock-in' : pct >= 35 ? 'Medium lock-i
 /* ------------------------------------------------------------------ */
 export default function Home() {
   const [data, setData] = useState(null);
-  const [pulse, setPulse] = useState(null);
+  const [opsStatus, setOpsStatus] = useState(null);
   const [pipeline, setPipeline] = useState(null);
   const [feed, setFeed] = useState(null);
   const [companyProfile, setCompanyProfile] = useState(null);
@@ -100,14 +96,14 @@ export default function Home() {
       if (clusters) scopeParams.p_cpv_clusters = clusters;
       if (countries) scopeParams.p_countries = countries;
 
-      const [oppsRes, pulseRes, pipelineRes, feedRes] = await Promise.allSettled([
+      const [oppsRes, opsRes, pipelineRes, feedRes] = await Promise.allSettled([
         supabase.rpc('get_home_top_opportunities', { p_tenant_id: activeTenantId, ...scopeParams, p_horizon: '6m', p_limit: 5 }),
-        supabase.rpc('get_home_pulse', { p_tenant_id: activeTenantId }),
+        supabase.rpc('get_operational_status', { p_tenant_id: activeTenantId }),
         supabase.rpc('get_home_pipeline_snapshot', { p_tenant_id: activeTenantId }),
         supabase.rpc('get_home_feed', { p_tenant_id: activeTenantId, p_limit: 6 }),
       ]);
       if (oppsRes.status === 'fulfilled' && !oppsRes.value.error) setData(oppsRes.value.data);
-      if (pulseRes.status === 'fulfilled' && !pulseRes.value.error) setPulse(pulseRes.value.data);
+      if (opsRes.status === 'fulfilled' && !opsRes.value.error) setOpsStatus(opsRes.value.data);
       if (pipelineRes.status === 'fulfilled' && !pipelineRes.value.error) setPipeline(pipelineRes.value.data);
       if (feedRes.status === 'fulfilled' && !feedRes.value.error) setFeed(feedRes.value.data);
     } catch (e) {
@@ -134,8 +130,9 @@ export default function Home() {
   const opps = data?.opportunities || [];
   const exposure = data?.exposure || {};
   const acc = pipeline?.accuracy || {};
-  const p = pulse || {};
-  const tw = pipeline?.this_week || {};
+  const ops = opsStatus || {};
+  const activeBids = ops.active_bids || {};
+  const questionsOpen = ops.questions_open || {};
   const feedItems = (feed || []).slice(0, 4);
 
   return (
@@ -167,48 +164,61 @@ export default function Home() {
         </div>
 
         {/* ============================================================ */}
-        {/*  OPERATIONAL STATUS STRIP                                    */}
+        {/*  OPERATIONAL STATUS                                          */}
         {/* ============================================================ */}
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          {[
-            {
-              icon: <Radio className="h-4 w-4 text-muted-foreground" />,
-              label: 'Windows Opening',
-              value: p.predictions_entering_window_7d || 0,
-              sub: 'This week',
-              subColor: 'text-civant-teal',
-            },
-            {
-              icon: <FileText className="h-4 w-4 text-muted-foreground" />,
-              label: 'New Tenders',
-              value: p.new_tenders_7d || 0,
-              sub: 'Last 7 days',
-              subColor: 'text-civant-teal',
-            },
-            {
-              icon: <Bell className="h-4 w-4 text-muted-foreground" />,
-              label: 'Signals Confirmed',
-              value: p.hits_confirmed_30d || 0,
-              sub: 'Last 30 days',
-              subColor: 'text-civant-teal',
-            },
-            {
-              icon: <TrendingUp className="h-4 w-4 text-muted-foreground" />,
-              label: 'Forecast Accuracy',
-              value: `${acc.rate || 0}%`,
-              sub: `\u00B1${pipeline?.median_timing_days || 0}d timing`,
-              subColor: 'text-civant-teal',
-            },
-          ].map((card, i) => (
-            <div key={i} className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-3.5">
+        <div>
+          <h2 className="text-sm font-medium text-muted-foreground mb-3">Operational Status</h2>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            {/* Active Submissions */}
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-3.5">
               <div className="flex items-center gap-2 mb-2">
-                {card.icon}
-                <span className="text-xs text-muted-foreground">{card.label}</span>
+                <FileText className="h-4 w-4 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Active Submissions</span>
               </div>
-              <p className="text-2xl font-semibold text-card-foreground tabular-nums leading-none">{typeof card.value === 'number' ? card.value.toLocaleString() : card.value}</p>
-              <p className={`text-[11px] mt-1 ${card.subColor}`}>{card.sub}</p>
+              <p className="text-2xl font-semibold text-card-foreground tabular-nums leading-none">{activeBids.count || 0}</p>
+              {activeBids.next_deadline_days != null && activeBids.next_deadline_days > 0 ? (
+                <p className="text-[11px] text-amber-400 mt-1">{activeBids.next_deadline_days} days to next deadline</p>
+              ) : activeBids.count > 0 ? (
+                <p className="text-[11px] text-civant-teal mt-1">All on track</p>
+              ) : (
+                <p className="text-[11px] text-muted-foreground mt-1">No active bids</p>
+              )}
             </div>
-          ))}
+
+            {/* Questions Window */}
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-3.5">
+              <div className="flex items-center gap-2 mb-2">
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Questions Window Open</span>
+              </div>
+              <p className="text-2xl font-semibold text-card-foreground tabular-nums leading-none">{questionsOpen.count || 0}</p>
+              {questionsOpen.next_close_days != null && questionsOpen.next_close_days > 0 ? (
+                <p className="text-[11px] text-civant-teal mt-1">Closes in {questionsOpen.next_close_days} days</p>
+              ) : (
+                <p className="text-[11px] text-muted-foreground mt-1">No open windows</p>
+              )}
+            </div>
+
+            {/* Awards Announced */}
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-3.5">
+              <div className="flex items-center gap-2 mb-2">
+                <Award className="h-4 w-4 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Awards Announced</span>
+              </div>
+              <p className="text-2xl font-semibold text-card-foreground tabular-nums leading-none">{(ops.awards_30d || 0).toLocaleString()}</p>
+              <p className="text-[11px] text-civant-teal mt-1">Last 30 days</p>
+            </div>
+
+            {/* Forecast Accuracy */}
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-3.5">
+              <div className="flex items-center gap-2 mb-2">
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Forecast Accuracy</span>
+              </div>
+              <p className="text-2xl font-semibold text-card-foreground tabular-nums leading-none">{acc.rate || 0}%</p>
+              <p className="text-[11px] text-civant-teal mt-1">&plusmn;{pipeline?.median_timing_days || 0}d median timing</p>
+            </div>
+          </div>
         </div>
 
         {/* ============================================================ */}
@@ -216,9 +226,7 @@ export default function Home() {
         {/* ============================================================ */}
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_300px]">
 
-          {/* ---------------------------------------------------------- */}
-          {/*  LEFT: RUNWAY OPPORTUNITIES                                 */}
-          {/* ---------------------------------------------------------- */}
+          {/* LEFT: RUNWAY OPPORTUNITIES */}
           <section className="rounded-xl border border-white/[0.06] bg-white/[0.015] p-5">
             <div className="flex items-start justify-between mb-1">
               <div>
@@ -235,7 +243,7 @@ export default function Home() {
 
             {opps.length > 0 ? (
               <div className="mt-4">
-                {/* Table header */}
+                {/* Header */}
                 <div className="grid grid-cols-[1fr_80px_80px_32px_32px_88px] gap-3 pb-2 border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-muted-foreground">
                   <span>Buyer</span>
                   <span>Window</span>
@@ -251,29 +259,18 @@ export default function Home() {
                     key={opp.prediction_id || i}
                     className="grid grid-cols-[1fr_80px_80px_32px_32px_88px] gap-3 py-3 items-center border-b border-white/[0.04] last:border-0 group"
                   >
-                    {/* Buyer */}
                     <div className="min-w-0 flex items-center gap-2.5">
                       <span className="text-sm shrink-0">{FLAG[opp.region] || ''}</span>
                       <span className="text-[13px] text-card-foreground truncate">{opp.buyer}</span>
                     </div>
-
-                    {/* Window */}
                     <span className="text-[13px] text-muted-foreground tabular-nums">{windowLabel(opp.expected_date)}</span>
-
-                    {/* Value */}
                     <span className="text-[13px] font-semibold text-card-foreground tabular-nums">{fmtValue(opp.est_value_eur)}</span>
-
-                    {/* Fit dot */}
                     <div className="flex justify-center" title={fitTip(opp.opportunity_score)}>
                       <span className={`inline-block w-2.5 h-2.5 rounded-full ${fitDot(opp.opportunity_score)}`} />
                     </div>
-
-                    {/* Lock-in dot */}
                     <div className="flex justify-center" title={lockTip(opp.incumbency_pct)}>
                       <span className={`inline-block w-2.5 h-2.5 rounded-full ${lockDot(opp.incumbency_pct)}`} />
                     </div>
-
-                    {/* Action */}
                     <Link
                       to={`/workbench/search?buyer=${encodeURIComponent(opp.buyer)}`}
                       className="text-[11px] font-medium text-civant-teal border border-civant-teal/25 rounded-md px-2.5 py-1 text-center hover:bg-civant-teal/10 transition-colors"
@@ -295,9 +292,7 @@ export default function Home() {
             )}
           </section>
 
-          {/* ---------------------------------------------------------- */}
-          {/*  RIGHT COLUMN                                               */}
-          {/* ---------------------------------------------------------- */}
+          {/* RIGHT COLUMN */}
           <div className="space-y-5">
 
             {/* TRACKING SNAPSHOT */}
@@ -308,7 +303,7 @@ export default function Home() {
                   { icon: <Users className="h-3.5 w-3.5 text-muted-foreground" />, label: 'Competitors Tracked', value: 5 },
                   { icon: <Bell className="h-3.5 w-3.5 text-muted-foreground" />, label: 'Opportunity Alerts', value: exposure.total_opportunities || 0, dot: 'bg-red-400' },
                   { icon: <Building2 className="h-3.5 w-3.5 text-muted-foreground" />, label: 'Institutions Monitored', value: exposure.unique_incumbents || 0 },
-                  { icon: <Radio className="h-3.5 w-3.5 text-muted-foreground" />, label: 'Signals (7d)', value: p.hits_confirmed_30d || 0, dot: 'bg-civant-teal' },
+                  { icon: <Radio className="h-3.5 w-3.5 text-muted-foreground" />, label: 'Signals (7d)', value: activeBids.count || 0, dot: 'bg-civant-teal' },
                 ].map((row, i) => (
                   <div key={i} className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
