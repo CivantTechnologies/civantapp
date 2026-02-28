@@ -88,7 +88,7 @@ export default function Layout({ children, currentPageName }) {
   const navItems = useMemo(() => {
     const base = [
       {
-        name: 'Home',
+        name: 'Panorama',
         page: 'Home',
         to: '/home',
         icon: LayoutDashboard,
