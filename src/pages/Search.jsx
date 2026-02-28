@@ -756,7 +756,7 @@ export default function Search() {
                             className="bg-civant-teal text-slate-950 hover:bg-civant-teal/90"
                         >
                             <SearchIcon className="h-4 w-4 mr-2" />
-                            Search
+                            Find
                         </Button>
                         <Button
                             type="button"
@@ -769,7 +769,7 @@ export default function Search() {
                         </Button>
                     </div>
                     {hasPendingFilterChanges ? (
-                        <p className="mt-2 text-xs text-amber-300">You changed filters. Click Search to refresh results.</p>
+                        <p className="mt-2 text-xs text-amber-300">You changed filters. Click Find to refresh results.</p>
                     ) : null}
                     
                     {/* Expanded Filters */}
