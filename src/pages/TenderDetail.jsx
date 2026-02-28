@@ -675,13 +675,12 @@ export default function TenderDetail() {
                             </div>
                             <div>
                                 <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Submission deadline</label>
-                                    <input
-                                        type="date"
-                                        value={bidSubmissionDate}
-                                        onChange={(e) => setBidSubmissionDate(e.target.value)}
-                                        className="w-full rounded-md border border-white/[0.08] bg-white/[0.02] px-3 py-1.5 text-sm text-card-foreground"
-                                    />
-                                </div>
+                                <input
+                                    type="date"
+                                    value={bidSubmissionDate}
+                                    onChange={(e) => setBidSubmissionDate(e.target.value)}
+                                    className="w-full rounded-md border border-white/[0.08] bg-white/[0.02] px-3 py-1.5 text-sm text-card-foreground"
+                                />
                             </div>
                             <div>
                                 <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Notes</label>
