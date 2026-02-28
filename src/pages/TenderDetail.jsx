@@ -1,5 +1,6 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { civant } from '@/api/civantClient';
+import { supabase } from '@/lib/supabaseClient';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import { useTenant } from '@/lib/tenant';
@@ -106,6 +107,12 @@ export default function TenderDetail() {
     const [enrichment, setEnrichment] = useState(null);
     const [enriching, setEnriching] = useState(false);
     const [canonicalCopied, setCanonicalCopied] = useState(false);
+    const [bidTracking, setBidTracking] = useState(null);
+    const [bidLoading, setBidLoading] = useState(false);
+    const [bidFormOpen, setBidFormOpen] = useState(false);
+    const [bidClarificationDate, setBidClarificationDate] = useState('');
+    const [bidSubmissionDate, setBidSubmissionDate] = useState('');
+    const [bidNotes, setBidNotes] = useState('');
     const { activeTenantId, isLoadingTenants } = useTenant();
 
     const urlParams = new URLSearchParams(window.location.search);
@@ -384,6 +391,77 @@ export default function TenderDetail() {
         }
     };
 
+    // ── Bid Tracking ──────────────────────────────────────────────
+    const loadBidTracking = useCallback(async () => {
+        if (!activeTenantId || !tenderId) return;
+        try {
+            const { data } = await supabase
+                .from('bid_tracking')
+                .select('*')
+                .eq('tenant_id', activeTenantId)
+                .eq('tender_id', tenderId)
+                .maybeSingle();
+            setBidTracking(data || null);
+            if (data) {
+                setBidClarificationDate(data.clarification_deadline ? data.clarification_deadline.slice(0, 10) : '');
+                setBidSubmissionDate(data.submission_deadline ? data.submission_deadline.slice(0, 10) : '');
+                setBidNotes(data.notes || '');
+                setBidFormOpen(true);
+            }
+        } catch (e) { console.error('Bid tracking load error:', e); }
+    }, [activeTenantId, tenderId]);
+
+    useEffect(() => {
+        if (activeTenantId && tenderId) loadBidTracking();
+    }, [activeTenantId, tenderId, loadBidTracking]);
+
+    const handleToggleBid = async () => {
+        if (!activeTenantId || !tenderId) return;
+        setBidLoading(true);
+        try {
+            if (bidTracking) {
+                await supabase.from('bid_tracking').delete().eq('id', bidTracking.id);
+                setBidTracking(null);
+                setBidFormOpen(false);
+                setBidClarificationDate('');
+                setBidSubmissionDate('');
+                setBidNotes('');
+            } else {
+                const row = {
+                    tenant_id: activeTenantId,
+                    tender_id: tenderId,
+                    buyer_name: tender?.buyer_name || null,
+                    tender_title: tender?.title || null,
+                    country: tender?.country || null,
+                    estimated_value: tender?.estimated_value_eur || null,
+                    submission_deadline: tender?.deadline_date || null,
+                    status: 'active',
+                };
+                const { data } = await supabase.from('bid_tracking').upsert(row, { onConflict: 'tenant_id,tender_id' }).select().single();
+                setBidTracking(data);
+                setBidFormOpen(true);
+                if (data?.submission_deadline) setBidSubmissionDate(data.submission_deadline.slice(0, 10));
+            }
+        } catch (e) { console.error('Bid toggle error:', e); }
+        finally { setBidLoading(false); }
+    };
+
+    const handleSaveBidDates = async () => {
+        if (!bidTracking) return;
+        setBidLoading(true);
+        try {
+            const updates = {
+                clarification_deadline: bidClarificationDate || null,
+                submission_deadline: bidSubmissionDate || null,
+                notes: bidNotes || null,
+                updated_at: new Date().toISOString(),
+            };
+            const { data } = await supabase.from('bid_tracking').update(updates).eq('id', bidTracking.id).select().single();
+            setBidTracking(data);
+        } catch (e) { console.error('Bid save error:', e); }
+        finally { setBidLoading(false); }
+    };
+
     if (loading) {
         return (
             <div className="flex items-center justify-center h-64">
@@ -546,6 +624,71 @@ export default function TenderDetail() {
                 </div>
 
                 <div className="h-px bg-gradient-to-r from-transparent via-border/80 to-transparent" />
+
+                {/* ── Bid Tracking Toggle ── */}
+                <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-3">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <span className={`inline-block w-2.5 h-2.5 rounded-full ${bidTracking ? 'bg-civant-teal' : 'bg-white/[0.08]'}`} />
+                            <span className="text-sm text-card-foreground font-medium">Are you bidding on this?</span>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handleToggleBid}
+                            disabled={bidLoading}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                                bidTracking ? 'bg-civant-teal' : 'bg-white/[0.08]'
+                            }`}
+                        >
+                            <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
+                                bidTracking ? 'translate-x-6' : 'translate-x-1'
+                            }`} />
+                        </button>
+                    </div>
+
+                    {bidFormOpen && bidTracking ? (
+                        <div className="mt-4 pt-3 border-t border-white/[0.04] space-y-3">
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                <div>
+                                    <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Clarification deadline</label>
+                                    <input
+                                        type="date"
+                                        value={bidClarificationDate}
+                                        onChange={(e) => setBidClarificationDate(e.target.value)}
+                                        className="w-full rounded-md border border-white/[0.08] bg-white/[0.02] px-3 py-1.5 text-sm text-card-foreground"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Submission deadline</label>
+                                    <input
+                                        type="date"
+                                        value={bidSubmissionDate}
+                                        onChange={(e) => setBidSubmissionDate(e.target.value)}
+                                        className="w-full rounded-md border border-white/[0.08] bg-white/[0.02] px-3 py-1.5 text-sm text-card-foreground"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Notes</label>
+                                <input
+                                    type="text"
+                                    value={bidNotes}
+                                    onChange={(e) => setBidNotes(e.target.value)}
+                                    placeholder="Internal notes about this bid..."
+                                    className="w-full rounded-md border border-white/[0.08] bg-white/[0.02] px-3 py-1.5 text-sm text-card-foreground placeholder:text-muted-foreground"
+                                />
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleSaveBidDates}
+                                disabled={bidLoading}
+                                className="text-xs font-medium text-civant-teal border border-civant-teal/25 rounded-md px-3 py-1.5 hover:bg-civant-teal/10 transition-colors disabled:opacity-50"
+                            >
+                                {bidLoading ? 'Saving...' : 'Save'}
+                            </button>
+                        </div>
+                    ) : null}
+                </div>
             </header>
 
             {/* AI Enrichment Panel */}
