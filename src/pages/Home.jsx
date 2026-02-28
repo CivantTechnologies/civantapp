@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import { useTenant } from '@/lib/tenant';
 import { supabase } from '@/lib/supabaseClient';
@@ -10,7 +10,7 @@ import {
 } from 'recharts';
 import {
   Zap, FileText, Target, CheckCircle2, ArrowRight,
-  Loader2, Calendar, Search, TrendingUp
+  Loader2, Calendar
 } from 'lucide-react';
 import { Page, PageBody, Card, CardContent, Button } from '@/components/ui';
 import { formatDistanceToNow, format, parseISO } from 'date-fns';
@@ -102,7 +102,6 @@ export default function Home() {
   const [feedFilter, setFeedFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const { activeTenantId, isLoadingTenants } = useTenant();
-  const navigate = useNavigate();
 
   const loadData = useCallback(async () => {
     if (!activeTenantId) return;
@@ -168,71 +167,44 @@ export default function Home() {
         {/* ============================================================ */}
         {/*  PAGE HEADER                                                  */}
         {/* ============================================================ */}
-        <div className="flex items-end justify-between pb-6">
-          <div>
-            <h1 className="text-4xl font-semibold tracking-tight text-card-foreground md:text-5xl">Command Centre</h1>
-            <p className="text-base text-muted-foreground md:text-lg mt-1">Procurement intelligence across Ireland, France, and Spain</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link to="/workbench/search">
-              <Button variant="outline" size="sm" className="text-[11px] border-white/[0.06] hover:border-civant-teal/20 gap-1.5">
-                <Search className="h-3 w-3" /> Search
-              </Button>
-            </Link>
-            <Link to="/reports">
-              <Button variant="outline" size="sm" className="text-[11px] border-white/[0.06] hover:border-civant-teal/20 gap-1.5">
-                <TrendingUp className="h-3 w-3" /> Reports
-              </Button>
-            </Link>
-          </div>
+        <div className="pb-6">
+          <h1 className="text-4xl font-semibold tracking-tight text-card-foreground md:text-5xl">Command Centre</h1>
+          <p className="text-base text-muted-foreground md:text-lg mt-1">Procurement intelligence across Ireland, France, and Spain</p>
         </div>
 
         {/* ============================================================ */}
         {/*  HERO: Horizon Chart + Stats Ticker                          */}
         {/* ============================================================ */}
         <div className="rounded-2xl border border-white/[0.06] bg-gradient-to-br from-white/[0.02] to-transparent overflow-hidden">
-          {/* Stats ticker - single row, compact */}
-          <div className="flex items-center gap-6 px-5 pt-4 pb-2 overflow-x-auto">
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className="text-xl font-semibold text-card-foreground tabular-nums">{(p.predictions_entering_window_7d || 0).toLocaleString()}</span>
-              <span className="text-[10px] text-muted-foreground leading-tight max-w-[80px]">windows opening this week</span>
-            </div>
-            <div className="w-px h-6 bg-white/[0.06]" />
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className="text-xl font-semibold text-card-foreground tabular-nums">{(p.new_tenders_7d || 0).toLocaleString()}</span>
-              <span className="text-[10px] text-muted-foreground leading-tight max-w-[80px]">new tenders this week</span>
-            </div>
-            <div className="w-px h-6 bg-white/[0.06]" />
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className="text-xl font-semibold text-civant-teal tabular-nums">{acc.rate || 0}%</span>
-              <span className="text-[10px] text-muted-foreground leading-tight max-w-[80px]">prediction accuracy</span>
-            </div>
-            <div className="w-px h-6 bg-white/[0.06]" />
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className="text-xl font-semibold text-card-foreground tabular-nums">{(p.hits_confirmed_30d || 0).toLocaleString()}</span>
-              <span className="text-[10px] text-muted-foreground leading-tight max-w-[80px]">confirmed this month</span>
-            </div>
-            <div className="w-px h-6 bg-white/[0.06]" />
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className="text-xl font-semibold text-card-foreground tabular-nums">{(p.monitoring_total || 0).toLocaleString()}</span>
-              <span className="text-[10px] text-muted-foreground leading-tight max-w-[80px]">monitoring</span>
-            </div>
+          {/* Stats grid - responsive, no overflow */}
+          <div className="grid grid-cols-3 gap-px bg-white/[0.04] md:grid-cols-5">
+            {[
+              { val: (p.predictions_entering_window_7d || 0).toLocaleString(), label: 'Windows opening', accent: false },
+              { val: (p.new_tenders_7d || 0).toLocaleString(), label: 'New tenders (7d)', accent: false },
+              { val: `${acc.rate || 0}%`, label: 'Accuracy', accent: true },
+              { val: (p.hits_confirmed_30d || 0).toLocaleString(), label: 'Confirmed (30d)', accent: false },
+              { val: (p.monitoring_total || 0).toLocaleString(), label: 'Monitoring', accent: false },
+            ].map((s, i) => (
+              <div key={i} className="bg-[hsl(223,47%,11%)] px-4 py-3 text-center">
+                <p className={`text-lg font-semibold tabular-nums md:text-xl ${s.accent ? 'text-civant-teal' : 'text-card-foreground'}`}>{s.val}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">{s.label}</p>
+              </div>
+            ))}
           </div>
 
           {/* Horizon chart */}
-          <div className="px-2 pb-2">
-            <div className="flex items-center justify-between px-3 mb-1">
+          <div className="px-4 py-3">
+            <div className="flex items-center justify-between mb-2">
               <p className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground">90-Day Prediction Horizon</p>
               <Link to="/forecast" className="text-[10px] text-civant-teal hover:underline">View forecast &rarr;</Link>
             </div>
             {chartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={140}>
-                <BarChart data={chartData} margin={{ top: 4, right: 12, bottom: 0, left: 12 }}
-                  onClick={(e) => { if (e?.activePayload?.[0]) navigate('/forecast'); }}>
+              <ResponsiveContainer width="100%" height={120}>
+                <BarChart data={chartData} margin={{ top: 0, right: 0, bottom: 0, left: 0 }} barCategoryGap="30%">
                   <XAxis dataKey="label" tick={{ fill: 'hsl(220,10%,50%)', fontSize: 10 }} axisLine={false} tickLine={false} />
                   <YAxis hide />
                   <RechartsTooltip content={<HorizonTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-                  <Bar dataKey="count" radius={[4, 4, 0, 0]} cursor="pointer">
+                  <Bar dataKey="count" radius={[3, 3, 0, 0]} maxBarSize={48} cursor="pointer">
                     {chartData.map((entry, i) => (
                       <Cell key={i} fill={entry.barColor} />
                     ))}
@@ -240,19 +212,20 @@ export default function Home() {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-[140px] flex items-center justify-center text-sm text-muted-foreground">No prediction data for the next 90 days</div>
+              <div className="h-[120px] flex items-center justify-center text-sm text-muted-foreground">No prediction data for the next 90 days</div>
             )}
-            {/* Category chips */}
-            {horizon?.categories?.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5 px-3 pb-3 pt-1">
-                {horizon.categories.map((c, i) => (
-                  <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-white/[0.04] text-muted-foreground border border-white/[0.04]">
-                    {c.category} <span className="text-civant-teal/70 tabular-nums">{c.cnt.toLocaleString()}</span>
-                  </span>
-                ))}
-              </div>
-            ) : null}
           </div>
+
+          {/* Category chips */}
+          {horizon?.categories?.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5 px-4 pb-3">
+              {horizon.categories.map((c, i) => (
+                <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-white/[0.04] text-muted-foreground border border-white/[0.04]">
+                  {c.category} <span className="text-civant-teal/70 tabular-nums">{c.cnt.toLocaleString()}</span>
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         {/* ============================================================ */}
