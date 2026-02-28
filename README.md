@@ -28,6 +28,31 @@ VITE_CIVANT_APP_BASE_URL=https://my-to-do-list-81bfaad7.civant.app
 
 Run the app: `npm run dev`
 
+## iPhone App (Monorepo)
+
+Mobile app lives in `/apps/mobile` (Expo + React Native).
+
+1. Install mobile dependencies:
+   - `cd apps/mobile && npm install`
+2. Add env file:
+   - `cp .env.example .env`
+   - set:
+     - `EXPO_PUBLIC_API_BASE_URL`
+     - `EXPO_PUBLIC_SUPABASE_URL`
+     - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+3. Run on iPhone Simulator:
+   - from repo root: `npm run mobile:ios`
+
+Useful root commands:
+- `npm run mobile:start`
+- `npm run mobile:ios`
+- `npm run mobile:typecheck`
+
+Push endpoints:
+- `POST /api/mobile/push/register` (authenticated device token upsert)
+- `POST /api/mobile/push/dispatch` (internal-token-only remote push dispatch)
+  - requires one of: `CIVANT_INTERNAL_FUNCTION_TOKEN`, `CIVANT_INTERNAL_CRON_TOKEN`, `INTERNAL_FUNCTION_TOKEN`
+
 **Publish your changes**
 
 Open [Civant.com](http://Civant.com) and click on Publish.

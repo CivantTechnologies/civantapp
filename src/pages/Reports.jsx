@@ -657,9 +657,9 @@ export default function Reports() {
   return (
     <Page>
       <PageBody className="space-y-6">
-        <div className="space-y-1">
-          <h1 className="text-lg font-semibold text-card-foreground">Reports</h1>
-          <p className="text-xs text-muted-foreground">Market intelligence, pipeline forecasts, and prediction accuracy</p>
+        <div className="space-y-1 pb-2">
+          <h1 className="text-2xl font-semibold tracking-tight text-card-foreground">Reports</h1>
+          <p className="text-sm text-muted-foreground">Market intelligence, pipeline forecasts, and prediction accuracy</p>
         </div>
 
         <Tabs defaultValue="market" className="space-y-4">

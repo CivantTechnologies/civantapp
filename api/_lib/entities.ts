@@ -88,6 +88,7 @@ const TENANT_SCOPED_TABLES = new Set([
   'Competitors',
   'Alerts',
   'AlertEvents',
+  'mobile_push_subscriptions',
   'payload_offload_failures',
   'payload_offload_state'
 ]);

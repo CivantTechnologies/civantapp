@@ -481,7 +481,7 @@ export default function Predictions() {
 
   return (
     <Page className="space-y-8">
-      <div className="space-y-1">
+      <div className="space-y-1 pb-2">
         <PageTitle>Forecast</PageTitle>
         <p className="text-sm text-muted-foreground">{scopeContextLabel}</p>
       </div>
@@ -834,6 +834,7 @@ export default function Predictions() {
             {filtered.length > FORECAST_PAGE_SIZE ? (() => {
               const totalPages = Math.ceil(filtered.length / FORECAST_PAGE_SIZE);
               const getPageNumbers = () => {
+                /** @type {(number | '...')[]} */
                 const pages = [];
                 if (totalPages <= 7) {
                   for (let i = 1; i <= totalPages; i++) pages.push(i);
@@ -850,11 +851,14 @@ export default function Predictions() {
                 <div className="flex flex-col items-center gap-2 pt-3 border-t border-white/[0.06]">
                   <div className="flex items-center gap-1">
                     {forecastPage > 1 ? (<button type="button" onClick={() => setForecastPage((p) => p - 1)} className="px-2 py-1 text-xs text-cyan-300 hover:text-cyan-200 hover:bg-white/[0.04] rounded">&lsaquo;</button>) : null}
-                    {getPageNumbers().map((p, i) => p === '...' ? (
-                      <span key={`ellipsis-${i}`} className="px-1 text-xs text-muted-foreground">&hellip;</span>
-                    ) : (
-                      <button key={p} type="button" onClick={() => setForecastPage(p)} className={`px-2.5 py-1 text-xs rounded ${p === forecastPage ? 'bg-cyan-500/20 text-cyan-300 font-medium' : 'text-muted-foreground hover:text-cyan-200 hover:bg-white/[0.04]'}`}>{p}</button>
-                    ))}
+                    {getPageNumbers().map((p, i) => {
+                      if (p === '...') {
+                        return <span key={`ellipsis-${i}`} className="px-1 text-xs text-muted-foreground">&hellip;</span>;
+                      }
+                      return (
+                        <button key={p} type="button" onClick={() => setForecastPage(p)} className={`px-2.5 py-1 text-xs rounded ${p === forecastPage ? 'bg-cyan-500/20 text-cyan-300 font-medium' : 'text-muted-foreground hover:text-cyan-200 hover:bg-white/[0.04]'}`}>{p}</button>
+                      );
+                    })}
                     {forecastPage < totalPages ? (<button type="button" onClick={() => setForecastPage((p) => p + 1)} className="px-2 py-1 text-xs text-cyan-300 hover:text-cyan-200 hover:bg-white/[0.04] rounded">&rsaquo;</button>) : null}
                   </div>
                   <p className="text-xs text-muted-foreground">{filtered.length} forecasts</p>

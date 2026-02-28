@@ -24,6 +24,9 @@
     "import:placsp:block:pause": "node scripts/placsp-block-manager.mjs pause",
     "import:placsp:block:stop": "node scripts/placsp-block-manager.mjs stop",
     "import:placsp:block:restart": "node scripts/placsp-block-manager.mjs restart",
+    "mobile:start": "npm --prefix apps/mobile run start",
+    "mobile:ios": "npm --prefix apps/mobile run ios",
+    "mobile:typecheck": "npm --prefix apps/mobile run typecheck",
     "preview": "vite preview"
   },
   "dependencies": {

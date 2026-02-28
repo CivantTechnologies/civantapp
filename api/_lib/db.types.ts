@@ -170,6 +170,40 @@ export type ApiDatabase = {
           created_at?: string | null;
         }
       >;
+      mobile_push_subscriptions: TableDef<
+        {
+          id: string;
+          tenant_id: string;
+          user_id: string;
+          user_email: string | null;
+          device_id: string;
+          platform: string;
+          expo_push_token: string | null;
+          app_version: string | null;
+          enabled: boolean;
+          last_seen_at: string | null;
+          last_notified_on: string | null;
+          last_error: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+        },
+        {
+          id?: string;
+          tenant_id: string;
+          user_id: string;
+          user_email?: string | null;
+          device_id: string;
+          platform: string;
+          expo_push_token?: string | null;
+          app_version?: string | null;
+          enabled?: boolean;
+          last_seen_at?: string | null;
+          last_notified_on?: string | null;
+          last_error?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        }
+      >;
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
