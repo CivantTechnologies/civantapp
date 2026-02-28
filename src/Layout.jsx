@@ -631,7 +631,7 @@ export default function Layout({ children, currentPageName }) {
         civant-motion-standard transition-transform lg:translate-x-0
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        <div className="flex h-full flex-col overflow-visible">
+        <div className="flex h-full flex-col overflow-hidden">
           <div className="space-y-4 px-2 py-4">
             <div className="space-y-1 sm:hidden">
               <label className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Workspace</label>
@@ -650,7 +650,7 @@ export default function Layout({ children, currentPageName }) {
               </div>
             </div>
 
-            <nav className="space-y-1 overflow-x-visible overflow-y-hidden">
+            <nav className="space-y-1 overflow-hidden">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = Array.isArray(item.matches) && item.matches.includes(currentPageName);
