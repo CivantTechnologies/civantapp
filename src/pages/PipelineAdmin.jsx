@@ -124,7 +124,7 @@ export default function PipelineAdmin() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-100">Pipeline Admin</h1>
-          <p className="text-slate-400 mt-1">Ingestion runs, review queue, and prediction evidence</p>
+          <p className="text-slate-400 mt-1">Ingestion runs, review queue, and forecast evidence</p>
         </div>
         <Button variant="outline" onClick={loadData}>
           <RefreshCw className="h-4 w-4 mr-2" />
@@ -183,7 +183,7 @@ export default function PipelineAdmin() {
       )}
 
       <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
-        <CardHeader><CardTitle>Prediction Lifecycle Statuses</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Forecast Lifecycle Statuses</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-3">
           {Object.keys(lifecycleSummary).length === 0 && (
             <p className="text-slate-400 text-sm col-span-full">No lifecycle rows yet.</p>
@@ -265,7 +265,7 @@ export default function PipelineAdmin() {
       </Card>
 
       <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
-        <CardHeader><CardTitle>Prediction Reconciliation Queue</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Forecast Reconciliation Queue</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           {lifecycleQueue.length === 0 && <p className="text-slate-400">No lifecycle candidates pending review.</p>}
           {lifecycleQueue.map((item) => (
@@ -321,7 +321,7 @@ export default function PipelineAdmin() {
 
           {selectedPrediction && (
             <div className="rounded-lg border border-civant-teal/40 bg-civant-teal/10 p-3">
-              <p className="font-medium text-civant-teal">Selected prediction: {selectedPrediction.id}</p>
+              <p className="font-medium text-civant-teal">Selected forecast: {selectedPrediction.id}</p>
               <pre className="mt-2 text-xs bg-civant-navy/80 border border-civant-border rounded p-2 overflow-x-auto text-slate-200">{pretty(selectedPrediction.confidence_breakdown)}</pre>
               <pre className="mt-2 text-xs bg-civant-navy/80 border border-civant-border rounded p-2 overflow-x-auto text-slate-200">{pretty(selectedPrediction.evidence)}</pre>
             </div>

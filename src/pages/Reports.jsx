@@ -411,7 +411,7 @@ function PipelineReport({ tenantId }) {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Card className="border border-white/[0.05] bg-white/[0.015] shadow-none">
           <CardContent className="p-4">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Total Predictions</p>
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Total Forecasts</p>
             <p className="text-2xl font-semibold text-card-foreground tabular-nums">{s.total_predictions?.toLocaleString()}</p>
           </CardContent>
         </Card>
@@ -632,7 +632,7 @@ function ValidationReport({ tenantId }) {
       ) : null}
 
       <p className="text-[10px] text-muted-foreground text-center">
-        {data.pending?.toLocaleString()} predictions currently monitoring, awaiting future validation
+        {data.pending?.toLocaleString()} forecasts currently monitoring, awaiting validation
       </p>
     </div>
   );
@@ -659,7 +659,7 @@ export default function Reports() {
       <PageBody className="space-y-6">
         <div className="space-y-1 pb-6">
           <h1 className="text-4xl font-semibold tracking-tight text-card-foreground md:text-5xl">Reports</h1>
-          <p className="text-base text-muted-foreground md:text-lg">Market intelligence, pipeline forecasts, and prediction accuracy</p>
+          <p className="text-base text-muted-foreground md:text-lg">Market intelligence, pipeline forecasts, and forecast accuracy</p>
         </div>
 
         <Tabs defaultValue="market" className="space-y-4">
@@ -671,7 +671,7 @@ export default function Reports() {
               <Target className="h-3.5 w-3.5 mr-1.5" /> Pipeline
             </TabsTrigger>
             <TabsTrigger value="validation" className="text-xs data-[state=active]:bg-white/[0.06]">
-              <TrendingUp className="h-3.5 w-3.5 mr-1.5" /> Prediction Accuracy
+              <TrendingUp className="h-3.5 w-3.5 mr-1.5" /> Forecast Accuracy
             </TabsTrigger>
           </TabsList>
 

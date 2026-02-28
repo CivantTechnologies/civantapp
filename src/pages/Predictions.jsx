@@ -589,7 +589,7 @@ export default function Predictions() {
               <div className="rounded-lg bg-emerald-500/[0.08] border border-emerald-500/20 px-3 py-2.5">
                 <p className="text-[10px] uppercase tracking-wider text-emerald-400/80">Mature Markets</p>
                 <p className="text-2xl font-bold text-emerald-400">{'>'}{Math.floor(bestCountryAccuracy / 5) * 5}%</p>
-                <p className="text-[10px] text-muted-foreground">IE &amp; ES resolved predictions</p>
+                <p className="text-[10px] text-muted-foreground">IE &amp; ES resolved forecasts</p>
               </div>
               ) : null}
               <div className="rounded-lg bg-white/[0.03] px-3 py-2.5">
@@ -611,7 +611,7 @@ export default function Predictions() {
                   <span className="text-[10px] text-muted-foreground">({c.confirmed?.toLocaleString()} confirmed)</span>
                 </div>
               ))}
-              <span className="text-[10px] text-muted-foreground/50 ml-auto">{validationStats.pending?.toLocaleString()} predictions awaiting future validation</span>
+              <span className="text-[10px] text-muted-foreground/50 ml-auto">{validationStats.pending?.toLocaleString()} forecasts awaiting validation</span>
             </div>
           </div>
           );

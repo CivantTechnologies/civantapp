@@ -562,7 +562,7 @@ export default function Insights() {
                             </div>
                         )}
 
-                        {/* Predictions with Confidence Intervals */}
+                        {/* Forecasts with Confidence Intervals */}
                         {aiAnalysis.predictions && aiAnalysis.predictions.length > 0 && (
                             <div>
                                 <h4 className="text-sm font-semibold text-slate-100 mb-3 flex items-center gap-2">
