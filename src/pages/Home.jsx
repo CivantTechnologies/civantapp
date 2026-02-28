@@ -100,6 +100,7 @@ export default function Home() {
   const [pipeline, setPipeline] = useState(null);
   const [horizon, setHorizon] = useState(null);
   const [feedFilter, setFeedFilter] = useState('all');
+  const [scopeActive, setScopeActive] = useState(false);
   const [loading, setLoading] = useState(true);
   const { activeTenantId, isLoadingTenants } = useTenant();
 
@@ -107,11 +108,29 @@ export default function Home() {
     if (!activeTenantId) return;
     setLoading(true);
     try {
+      // Load company profile for scope filtering
+      const { data: profile } = await supabase
+        .from('company_profiles')
+        .select('target_cpv_clusters,target_countries,company_scope_filter_enabled')
+        .eq('tenant_id', activeTenantId)
+        .maybeSingle();
+
+      const scopeEnabled = profile?.company_scope_filter_enabled !== false;
+      const clusters = scopeEnabled && Array.isArray(profile?.target_cpv_clusters) && profile.target_cpv_clusters.length > 0
+        ? profile.target_cpv_clusters : null;
+      const countries = scopeEnabled && Array.isArray(profile?.target_countries) && profile.target_countries.length > 0
+        ? profile.target_countries : null;
+      setScopeActive(clusters !== null || countries !== null);
+
+      const horizonParams = { p_tenant_id: activeTenantId };
+      if (clusters) horizonParams.p_cpv_clusters = clusters;
+      if (countries) horizonParams.p_countries = countries;
+
       const [pulseRes, feedRes, pipelineRes, horizonRes] = await Promise.allSettled([
         supabase.rpc('get_home_pulse', { p_tenant_id: activeTenantId }),
         supabase.rpc('get_home_feed', { p_tenant_id: activeTenantId, p_limit: 30 }),
         supabase.rpc('get_home_pipeline_snapshot', { p_tenant_id: activeTenantId }),
-        supabase.rpc('get_home_horizon', { p_tenant_id: activeTenantId }),
+        supabase.rpc('get_home_horizon', horizonParams),
       ]);
       if (pulseRes.status === 'fulfilled' && !pulseRes.value.error) setPulse(pulseRes.value.data);
       if (feedRes.status === 'fulfilled' && !feedRes.value.error) setFeed(feedRes.value.data);
@@ -195,7 +214,9 @@ export default function Home() {
           {/* Horizon chart */}
           <div className="px-4 py-3">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground">90-Day Prediction Horizon</p>
+              <p className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+                90-Day Prediction Horizon{scopeActive ? <span className="text-civant-teal/60 ml-1.5 normal-case tracking-normal">Filtered by your scope</span> : null}
+              </p>
               <Link to="/forecast" className="text-[10px] text-civant-teal hover:underline">View forecast &rarr;</Link>
             </div>
             {chartData.length > 0 ? (
