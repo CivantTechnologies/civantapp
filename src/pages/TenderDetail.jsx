@@ -111,6 +111,7 @@ export default function TenderDetail() {
     const [bidLoading, setBidLoading] = useState(false);
     const [bidFormOpen, setBidFormOpen] = useState(false);
     const [bidClarificationDate, setBidClarificationDate] = useState('');
+    const [bidClarificationOpenDate, setBidClarificationOpenDate] = useState('');
     const [bidSubmissionDate, setBidSubmissionDate] = useState('');
     const [bidNotes, setBidNotes] = useState('');
     const { activeTenantId, isLoadingTenants } = useTenant();
@@ -403,6 +404,7 @@ export default function TenderDetail() {
                 .maybeSingle();
             setBidTracking(data || null);
             if (data) {
+                setBidClarificationOpenDate(data.clarification_open_date ? data.clarification_open_date.slice(0, 10) : '');
                 setBidClarificationDate(data.clarification_deadline ? data.clarification_deadline.slice(0, 10) : '');
                 setBidSubmissionDate(data.submission_deadline ? data.submission_deadline.slice(0, 10) : '');
                 setBidNotes(data.notes || '');
@@ -423,6 +425,7 @@ export default function TenderDetail() {
                 await supabase.from('bid_tracking').delete().eq('id', bidTracking.id);
                 setBidTracking(null);
                 setBidFormOpen(false);
+                setBidClarificationOpenDate('');
                 setBidClarificationDate('');
                 setBidSubmissionDate('');
                 setBidNotes('');
@@ -451,6 +454,7 @@ export default function TenderDetail() {
         setBidLoading(true);
         try {
             const updates = {
+                clarification_open_date: bidClarificationOpenDate || null,
                 clarification_deadline: bidClarificationDate || null,
                 submission_deadline: bidSubmissionDate || null,
                 notes: bidNotes || null,
@@ -648,9 +652,19 @@ export default function TenderDetail() {
 
                     {bidFormOpen && bidTracking ? (
                         <div className="mt-4 pt-3 border-t border-white/[0.04] space-y-3">
+                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Clarification Window</p>
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                 <div>
-                                    <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Clarification deadline</label>
+                                    <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Opens</label>
+                                    <input
+                                        type="date"
+                                        value={bidClarificationOpenDate}
+                                        onChange={(e) => setBidClarificationOpenDate(e.target.value)}
+                                        className="w-full rounded-md border border-white/[0.08] bg-white/[0.02] px-3 py-1.5 text-sm text-card-foreground"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Closes</label>
                                     <input
                                         type="date"
                                         value={bidClarificationDate}
@@ -658,8 +672,9 @@ export default function TenderDetail() {
                                         className="w-full rounded-md border border-white/[0.08] bg-white/[0.02] px-3 py-1.5 text-sm text-card-foreground"
                                     />
                                 </div>
-                                <div>
-                                    <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Submission deadline</label>
+                            </div>
+                            <div>
+                                <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Submission deadline</label>
                                     <input
                                         type="date"
                                         value={bidSubmissionDate}

@@ -132,7 +132,7 @@ export default function Home() {
   const acc = pipeline?.accuracy || {};
   const ops = opsStatus || {};
   const activeBids = ops.active_bids || {};
-  const questionsOpen = ops.questions_open || {};
+  const clar = ops.clarification_windows || {};
   const feedItems = (feed || []).slice(0, 4);
 
   return (
@@ -185,17 +185,21 @@ export default function Home() {
               )}
             </div>
 
-            {/* Questions Window */}
+            {/* Clarification Windows */}
             <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-3.5">
               <div className="flex items-center gap-2 mb-2">
                 <Clock className="h-4 w-4 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">Questions Window Open</span>
+                <span className="text-xs text-muted-foreground">Clarification Windows</span>
               </div>
-              <p className="text-2xl font-semibold text-card-foreground tabular-nums leading-none">{questionsOpen.count || 0}</p>
-              {questionsOpen.next_close_days != null && questionsOpen.next_close_days > 0 ? (
-                <p className="text-[11px] text-civant-teal mt-1">Closes in {questionsOpen.next_close_days} days</p>
+              <p className="text-2xl font-semibold text-card-foreground tabular-nums leading-none">
+                {(clar.open_count || 0) + (clar.upcoming_count || 0)}
+              </p>
+              {clar.open_count > 0 && clar.next_close_days != null ? (
+                <p className="text-[11px] text-amber-400 mt-1">{clar.open_count} open, closest closes in {clar.next_close_days}d</p>
+              ) : clar.upcoming_count > 0 && clar.next_open_days != null ? (
+                <p className="text-[11px] text-civant-teal mt-1">Next opens in {clar.next_open_days} days</p>
               ) : (
-                <p className="text-[11px] text-muted-foreground mt-1">No open windows</p>
+                <p className="text-[11px] text-muted-foreground mt-1">No active windows</p>
               )}
             </div>
 
