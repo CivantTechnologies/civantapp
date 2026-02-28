@@ -8,9 +8,12 @@ import {
   isCompanyScopeFilterTemporarilyDisabled,
   setCompanyScopeFilterTemporarilyDisabled
 } from '@/lib/companyScopeSession';
-import { Loader2 } from 'lucide-react';
+import {
+  Loader2, ArrowRight, Users, Bell, Building2, Radio,
+  TrendingUp, UserPlus, RefreshCw, FileText
+} from 'lucide-react';
 import { Page, PageBody } from '@/components/ui';
-import { parseISO } from 'date-fns';
+import { parseISO, formatDistanceToNow } from 'date-fns';
 
 const FLAG = { IE: '\u{1F1EE}\u{1F1EA}', FR: '\u{1F1EB}\u{1F1F7}', ES: '\u{1F1EA}\u{1F1F8}' };
 
@@ -24,41 +27,23 @@ const fmtValue = (v) => {
   return `\u20AC${v.toLocaleString()}`;
 };
 
-const fitLabel = (score) => score >= 70 ? 'High' : score >= 55 ? 'Strong' : 'Moderate';
-const fitColor = (score) => score >= 70
-  ? 'bg-civant-teal/15 text-civant-teal border-civant-teal/20'
-  : score >= 55
-    ? 'bg-civant-teal/10 text-civant-teal/80 border-civant-teal/15'
-    : 'bg-white/[0.04] text-muted-foreground border-white/[0.06]';
-
 const windowLabel = (dateStr) => {
   const d = parseISO(dateStr);
   const q = Math.ceil((d.getMonth() + 1) / 3);
   return `Q${q} ${d.getFullYear()}`;
 };
 
-/* ------------------------------------------------------------------ */
-/*  Static tips (rotate weekly via date seed)                          */
-/* ------------------------------------------------------------------ */
-const ALL_TIPS = [
-  'Engage buyers at least 6 months before renewal windows open.',
-  'Framework incumbents retain contracts 68% of the time. Build early differentiation.',
-  'Budget increases in Facilities & Maintenance cluster suggest Q2 expansion.',
-  'Low lock-in windows are your highest-leverage pursuit targets.',
-  'Multi-lot frameworks often split across 3+ suppliers. Position for Lot 2.',
-  'Irish public bodies publish PIN notices 40 days before formal tenders on average.',
-  'French BOAMP notices give a 52-day average lead time from publication to deadline.',
-  'Track repeat buyers. 73% of procurement officers re-tender with the same scope.',
-  'Spanish PLACSP tenders above \u20AC140K require 30+ day submission windows.',
-];
+// Fit: based on opportunity_score. Green = High, Amber = Strong, Red = Moderate
+const fitDot = (score) => score >= 70
+  ? 'bg-emerald-400' : score >= 55
+  ? 'bg-amber-400' : 'bg-red-400';
+const fitTip = (score) => score >= 70 ? 'High fit' : score >= 55 ? 'Strong fit' : 'Moderate fit';
 
-function getTips() {
-  const weekSeed = Math.floor(Date.now() / (7 * 86400000));
-  const start = (weekSeed * 3) % ALL_TIPS.length;
-  const tips = [];
-  for (let i = 0; i < 3; i++) tips.push(ALL_TIPS[(start + i) % ALL_TIPS.length]);
-  return tips;
-}
+// Lock-in: based on incumbency_pct. Green = Low, Amber = Medium, Red = High
+const lockDot = (pct) => pct >= 70
+  ? 'bg-red-400' : pct >= 35
+  ? 'bg-amber-400' : 'bg-emerald-400';
+const lockTip = (pct) => pct >= 70 ? 'High lock-in' : pct >= 35 ? 'Medium lock-in' : 'Low lock-in';
 
 /* ------------------------------------------------------------------ */
 /*  Main                                                               */
@@ -67,6 +52,7 @@ export default function Home() {
   const [data, setData] = useState(null);
   const [pulse, setPulse] = useState(null);
   const [pipeline, setPipeline] = useState(null);
+  const [feed, setFeed] = useState(null);
   const [companyProfile, setCompanyProfile] = useState(null);
   const [scopeFilterTemporarilyDisabled, setScopeFilterTemporarilyDisabledState] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -114,14 +100,16 @@ export default function Home() {
       if (clusters) scopeParams.p_cpv_clusters = clusters;
       if (countries) scopeParams.p_countries = countries;
 
-      const [oppsRes, pulseRes, pipelineRes] = await Promise.allSettled([
+      const [oppsRes, pulseRes, pipelineRes, feedRes] = await Promise.allSettled([
         supabase.rpc('get_home_top_opportunities', { p_tenant_id: activeTenantId, ...scopeParams, p_horizon: '6m', p_limit: 5 }),
         supabase.rpc('get_home_pulse', { p_tenant_id: activeTenantId }),
         supabase.rpc('get_home_pipeline_snapshot', { p_tenant_id: activeTenantId }),
+        supabase.rpc('get_home_feed', { p_tenant_id: activeTenantId, p_limit: 6 }),
       ]);
       if (oppsRes.status === 'fulfilled' && !oppsRes.value.error) setData(oppsRes.value.data);
       if (pulseRes.status === 'fulfilled' && !pulseRes.value.error) setPulse(pulseRes.value.data);
       if (pipelineRes.status === 'fulfilled' && !pipelineRes.value.error) setPipeline(pipelineRes.value.data);
+      if (feedRes.status === 'fulfilled' && !feedRes.value.error) setFeed(feedRes.value.data);
     } catch (e) {
       console.error('Panorama load error:', e);
     } finally {
@@ -132,8 +120,6 @@ export default function Home() {
   useEffect(() => {
     if (!isLoadingTenants && activeTenantId) loadData();
   }, [activeTenantId, isLoadingTenants, loadData]);
-
-  const tips = getTips();
 
   if (loading || isLoadingTenants) {
     return (
@@ -148,6 +134,9 @@ export default function Home() {
   const opps = data?.opportunities || [];
   const exposure = data?.exposure || {};
   const acc = pipeline?.accuracy || {};
+  const p = pulse || {};
+  const tw = pipeline?.this_week || {};
+  const feedItems = (feed || []).slice(0, 4);
 
   return (
     <Page>
@@ -178,141 +167,186 @@ export default function Home() {
         </div>
 
         {/* ============================================================ */}
-        {/*  MAIN GRID: Left (Runway + Exposure) | Right (Tips + Trust)  */}
+        {/*  OPERATIONAL STATUS STRIP                                    */}
         {/* ============================================================ */}
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_320px]">
-
-          {/* ---------------------------------------------------------- */}
-          {/*  LEFT COLUMN                                                */}
-          {/* ---------------------------------------------------------- */}
-          <div className="space-y-5">
-
-            {/* RUNWAY OPPORTUNITIES */}
-            <section className="rounded-xl border border-white/[0.06] bg-white/[0.015] p-5">
-              <h2 className="text-lg font-semibold text-card-foreground">Runway Opportunities</h2>
-              <p className="text-sm text-muted-foreground mt-0.5 mb-5">Best-fit renewal windows within your tracked scope.</p>
-
-              {opps.length > 0 ? (
-                <div>
-                  {/* Table header */}
-                  <div className="grid grid-cols-[1fr_88px_88px_96px_64px_80px] gap-3 pb-2 border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-muted-foreground">
-                    <span>Buyer</span>
-                    <span>Window</span>
-                    <span>Est. Value</span>
-                    <span>Win Probability</span>
-                    <span>Fit</span>
-                    <span />
-                  </div>
-
-                  {/* Table rows */}
-                  {opps.map((opp, i) => (
-                    <div
-                      key={opp.prediction_id || i}
-                      className="grid grid-cols-[1fr_88px_88px_96px_64px_80px] gap-3 py-3.5 items-center border-b border-white/[0.04] last:border-0 group"
-                    >
-                      {/* Buyer */}
-                      <div className="min-w-0 flex items-center gap-2">
-                        <span className="text-sm shrink-0">{FLAG[opp.region] || ''}</span>
-                        <span className="text-[13px] text-card-foreground truncate font-medium">{opp.buyer}</span>
-                      </div>
-
-                      {/* Window */}
-                      <span className="text-[13px] text-muted-foreground tabular-nums">{windowLabel(opp.expected_date)}</span>
-
-                      {/* Est. Value */}
-                      <span className="text-[13px] font-semibold text-card-foreground tabular-nums">{fmtValue(opp.est_value_eur)}</span>
-
-                      {/* Win Probability */}
-                      <span className="text-[13px] text-card-foreground tabular-nums">{opp.confidence}%</span>
-
-                      {/* Fit */}
-                      <span className={`text-[10px] font-medium px-2 py-0.5 rounded border inline-flex items-center justify-center ${fitColor(opp.opportunity_score)}`}>
-                        {fitLabel(opp.opportunity_score)}
-                      </span>
-
-                      {/* CTA */}
-                      <Link
-                        to={`/workbench/search?buyer=${encodeURIComponent(opp.buyer)}`}
-                        className="text-[11px] text-muted-foreground border border-white/[0.08] rounded px-2.5 py-1 text-center hover:border-civant-teal/30 hover:text-civant-teal transition-colors"
-                      >
-                        Prepare Now
-                      </Link>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground py-6 text-center">No high-fit opportunities in this timeframe.</p>
-              )}
-            </section>
-
-            {/* COMPETITIVE EXPOSURE */}
-            <section className="rounded-xl border border-white/[0.06] bg-white/[0.015] p-5">
-              <h2 className="text-lg font-semibold text-card-foreground mb-3">Competitive Exposure</h2>
-              <div className="space-y-2.5">
-                {exposure.total_value_eur > 0 ? (
-                  <div className="flex items-start gap-2.5">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/40 mt-1.5 shrink-0" />
-                    <p className="text-[13px] text-slate-300 leading-relaxed">
-                      <span className="font-semibold text-card-foreground">{fmtValue(exposure.total_value_eur)}</span> competitor exposure in the next 12 months.
-                    </p>
-                  </div>
-                ) : null}
-                {exposure.low_lockin_count > 0 ? (
-                  <div className="flex items-start gap-2.5">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/40 mt-1.5 shrink-0" />
-                    <p className="text-[13px] text-slate-300 leading-relaxed">
-                      {exposure.low_lockin_count} renewal windows with low incumbent lock-in.
-                    </p>
-                  </div>
-                ) : null}
-                {exposure.unique_incumbents > 3 ? (
-                  <div className="flex items-start gap-2.5">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/40 mt-1.5 shrink-0" />
-                    <p className="text-[13px] text-slate-300 leading-relaxed">
-                      Concentration risk emerging at {exposure.unique_incumbents} institutions.
-                    </p>
-                  </div>
-                ) : null}
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {[
+            {
+              icon: <Radio className="h-4 w-4 text-muted-foreground" />,
+              label: 'Windows Opening',
+              value: p.predictions_entering_window_7d || 0,
+              sub: 'This week',
+              subColor: 'text-civant-teal',
+            },
+            {
+              icon: <FileText className="h-4 w-4 text-muted-foreground" />,
+              label: 'New Tenders',
+              value: p.new_tenders_7d || 0,
+              sub: 'Last 7 days',
+              subColor: 'text-civant-teal',
+            },
+            {
+              icon: <Bell className="h-4 w-4 text-muted-foreground" />,
+              label: 'Signals Confirmed',
+              value: p.hits_confirmed_30d || 0,
+              sub: 'Last 30 days',
+              subColor: 'text-civant-teal',
+            },
+            {
+              icon: <TrendingUp className="h-4 w-4 text-muted-foreground" />,
+              label: 'Forecast Accuracy',
+              value: `${acc.rate || 0}%`,
+              sub: `\u00B1${pipeline?.median_timing_days || 0}d timing`,
+              subColor: 'text-civant-teal',
+            },
+          ].map((card, i) => (
+            <div key={i} className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-3.5">
+              <div className="flex items-center gap-2 mb-2">
+                {card.icon}
+                <span className="text-xs text-muted-foreground">{card.label}</span>
               </div>
-            </section>
-          </div>
+              <p className="text-2xl font-semibold text-card-foreground tabular-nums leading-none">{typeof card.value === 'number' ? card.value.toLocaleString() : card.value}</p>
+              <p className={`text-[11px] mt-1 ${card.subColor}`}>{card.sub}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* ============================================================ */}
+        {/*  MAIN GRID                                                   */}
+        {/* ============================================================ */}
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_300px]">
+
+          {/* ---------------------------------------------------------- */}
+          {/*  LEFT: RUNWAY OPPORTUNITIES                                 */}
+          {/* ---------------------------------------------------------- */}
+          <section className="rounded-xl border border-white/[0.06] bg-white/[0.015] p-5">
+            <div className="flex items-start justify-between mb-1">
+              <div>
+                <h2 className="text-lg font-semibold text-card-foreground">Runway Opportunities</h2>
+                <p className="text-sm text-muted-foreground mt-0.5">Top match renewal windows</p>
+              </div>
+              <Link
+                to="/forecast"
+                className="flex items-center gap-1.5 text-xs text-muted-foreground border border-white/[0.08] rounded-lg px-3 py-1.5 hover:border-civant-teal/30 hover:text-civant-teal transition-colors shrink-0"
+              >
+                View All Opportunities <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
+
+            {opps.length > 0 ? (
+              <div className="mt-4">
+                {/* Table header */}
+                <div className="grid grid-cols-[1fr_80px_80px_32px_32px_88px] gap-3 pb-2 border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <span>Buyer</span>
+                  <span>Window</span>
+                  <span>Value</span>
+                  <span className="text-center" title="Fit level">Fit</span>
+                  <span className="text-center" title="Incumbent lock-in">Lock</span>
+                  <span>Action</span>
+                </div>
+
+                {/* Rows */}
+                {opps.map((opp, i) => (
+                  <div
+                    key={opp.prediction_id || i}
+                    className="grid grid-cols-[1fr_80px_80px_32px_32px_88px] gap-3 py-3 items-center border-b border-white/[0.04] last:border-0 group"
+                  >
+                    {/* Buyer */}
+                    <div className="min-w-0 flex items-center gap-2.5">
+                      <span className="text-sm shrink-0">{FLAG[opp.region] || ''}</span>
+                      <span className="text-[13px] text-card-foreground truncate">{opp.buyer}</span>
+                    </div>
+
+                    {/* Window */}
+                    <span className="text-[13px] text-muted-foreground tabular-nums">{windowLabel(opp.expected_date)}</span>
+
+                    {/* Value */}
+                    <span className="text-[13px] font-semibold text-card-foreground tabular-nums">{fmtValue(opp.est_value_eur)}</span>
+
+                    {/* Fit dot */}
+                    <div className="flex justify-center" title={fitTip(opp.opportunity_score)}>
+                      <span className={`inline-block w-2.5 h-2.5 rounded-full ${fitDot(opp.opportunity_score)}`} />
+                    </div>
+
+                    {/* Lock-in dot */}
+                    <div className="flex justify-center" title={lockTip(opp.incumbency_pct)}>
+                      <span className={`inline-block w-2.5 h-2.5 rounded-full ${lockDot(opp.incumbency_pct)}`} />
+                    </div>
+
+                    {/* Action */}
+                    <Link
+                      to={`/workbench/search?buyer=${encodeURIComponent(opp.buyer)}`}
+                      className="text-[11px] font-medium text-civant-teal border border-civant-teal/25 rounded-md px-2.5 py-1 text-center hover:bg-civant-teal/10 transition-colors"
+                    >
+                      View Details
+                    </Link>
+                  </div>
+                ))}
+
+                {/* Legend */}
+                <div className="flex items-center gap-4 mt-3 text-[9px] text-muted-foreground">
+                  <span className="flex items-center gap-1"><span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400" /> High</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400" /> Medium</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400" /> Low / Risk</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground py-8 text-center mt-4">No high-fit opportunities in this timeframe.</p>
+            )}
+          </section>
 
           {/* ---------------------------------------------------------- */}
           {/*  RIGHT COLUMN                                               */}
           {/* ---------------------------------------------------------- */}
           <div className="space-y-5">
 
-            {/* TODAY'S TENDER TIPS */}
+            {/* TRACKING SNAPSHOT */}
             <section className="rounded-xl border border-white/[0.06] bg-white/[0.015] p-5">
-              <h2 className="text-lg font-semibold text-card-foreground mb-4">Today's Tender Tips</h2>
-              <div className="space-y-4">
-                {tips.map((tip, i) => (
-                  <div key={i} className="flex items-start gap-2.5">
-                    <span className="inline-block w-2 h-2 rounded-full bg-civant-teal mt-1 shrink-0" />
-                    <p className="text-[13px] text-slate-300 leading-relaxed">{tip}</p>
+              <h2 className="text-base font-semibold text-card-foreground mb-4">Tracking Snapshot</h2>
+              <div className="space-y-3.5">
+                {[
+                  { icon: <Users className="h-3.5 w-3.5 text-muted-foreground" />, label: 'Competitors Tracked', value: 5 },
+                  { icon: <Bell className="h-3.5 w-3.5 text-muted-foreground" />, label: 'Opportunity Alerts', value: exposure.total_opportunities || 0, dot: 'bg-red-400' },
+                  { icon: <Building2 className="h-3.5 w-3.5 text-muted-foreground" />, label: 'Institutions Monitored', value: exposure.unique_incumbents || 0 },
+                  { icon: <Radio className="h-3.5 w-3.5 text-muted-foreground" />, label: 'Signals (7d)', value: p.hits_confirmed_30d || 0, dot: 'bg-civant-teal' },
+                ].map((row, i) => (
+                  <div key={i} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      {row.icon}
+                      <span className="text-[13px] text-slate-300">{row.label}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {row.dot ? <span className={`inline-block w-1.5 h-1.5 rounded-full ${row.dot}`} /> : null}
+                      <span className="text-base font-semibold text-card-foreground tabular-nums">{row.value}</span>
+                    </div>
                   </div>
                 ))}
               </div>
             </section>
 
-            {/* TRUST */}
+            {/* LATEST STRATEGIC CHANGES */}
             <section className="rounded-xl border border-white/[0.06] bg-white/[0.015] p-5">
-              <h2 className="text-lg font-semibold text-card-foreground mb-3">Trust</h2>
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-civant-teal text-sm">&#9670;</span>
-                    <span className="text-[13px] text-slate-300">Accuracy</span>
-                  </div>
-                  <span className="text-lg font-semibold text-card-foreground tabular-nums">{acc.rate || 0}%</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-civant-teal text-sm">&#9670;</span>
-                    <span className="text-[13px] text-slate-300">Median timing</span>
-                  </div>
-                  <span className="text-lg font-semibold text-civant-teal tabular-nums">&plusmn;{pipeline?.median_timing_days || 0}d</span>
-                </div>
+              <h2 className="text-base font-semibold text-card-foreground mb-4">Latest Strategic Changes</h2>
+              <div className="space-y-4">
+                {feedItems.length > 0 ? feedItems.map((item, i) => {
+                  const isConfirmed = item.event_type === 'hit_confirmed';
+                  const isOpening = item.event_type === 'window_opening';
+                  const dotColor = isConfirmed ? 'bg-emerald-400' : isOpening ? 'bg-civant-teal' : 'bg-amber-400';
+                  const label = isConfirmed ? 'Signal Confirmed' : isOpening ? 'Window Opening' : 'Tender Published';
+                  return (
+                    <div key={`${item.event_type}-${item.ref_id}-${i}`} className="flex items-start gap-2.5">
+                      <span className={`inline-block w-2 h-2 rounded-full ${dotColor} mt-1 shrink-0`} />
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-medium text-card-foreground leading-snug">{label}</p>
+                        <p className="text-[11px] text-muted-foreground truncate">
+                          {FLAG[item.country] || ''} {item.buyer_name || item.title || '-'}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }) : (
+                  <p className="text-[13px] text-muted-foreground">No recent changes.</p>
+                )}
               </div>
             </section>
           </div>
@@ -321,8 +355,12 @@ export default function Home() {
         {/* ============================================================ */}
         {/*  FOOTER                                                      */}
         {/* ============================================================ */}
-        <footer className="flex items-center justify-between text-[11px] text-muted-foreground pt-2">
-          <span>Last data refresh: <span className="text-slate-400">live</span></span>
+        <footer className="border-t border-white/[0.04] pt-4 flex flex-wrap items-center justify-between text-[11px] text-muted-foreground">
+          <div className="flex items-center gap-4">
+            <span>Accuracy <span className="text-slate-300 font-medium tabular-nums">{acc.rate || 0}%</span></span>
+            <span>Timing <span className="text-civant-teal font-medium tabular-nums">&plusmn;{pipeline?.median_timing_days || 0}d</span></span>
+            <span>Data: <span className="text-slate-400">live</span></span>
+          </div>
           <div className="flex items-center gap-4">
             <Link to={createPageUrl('Company?section=support')} className="hover:text-slate-300">Support</Link>
             <Link to={createPageUrl('Company?section=legal')} className="text-civant-teal hover:underline">Privacy / Legal</Link>
