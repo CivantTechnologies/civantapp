@@ -187,8 +187,8 @@ export default function Home() {
         {/*  PAGE HEADER                                                  */}
         {/* ============================================================ */}
         <div className="pb-6">
-          <h1 className="text-4xl font-semibold tracking-tight text-card-foreground md:text-5xl">Command Centre</h1>
-          <p className="text-base text-muted-foreground md:text-lg mt-1">Procurement intelligence across Ireland, France, and Spain</p>
+          <h1 className="text-4xl font-semibold tracking-tight text-card-foreground md:text-5xl">Panorama</h1>
+          <p className="text-base text-muted-foreground md:text-lg mt-1">Your procurement intelligence at a glance</p>
         </div>
 
         {/* ============================================================ */}
