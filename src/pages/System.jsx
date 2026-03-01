@@ -460,7 +460,7 @@ export default function System() {
                         <Badge variant={roleBadgeVariant(row.role || (row.roles || [])[0])}>
                           {row.role || (row.roles || [])[0] || 'member'}
                         </Badge>
-                        {canManageRoles && (
+                        {canManageRoles && !isCurrentUser && (
                           <>
                             <select
                               value={row.role || (row.roles || [])[0] || 'member'}
@@ -468,7 +468,6 @@ export default function System() {
                               disabled={isActioning}
                               className="h-8 rounded-lg border border-input bg-background px-2 text-xs text-foreground"
                             >
-                              <option value="owner">Owner</option>
                               <option value="admin">Admin</option>
                               <option value="member">Member</option>
                             </select>
