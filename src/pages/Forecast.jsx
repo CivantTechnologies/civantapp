@@ -263,7 +263,7 @@ function SummaryTile({ label, value, hint }) {
   );
 }
 
-export default function Predictions() {
+export default function Forecast() {
   const { activeTenantId, isLoadingTenants, companyProfile } = useTenant();
   const [countryFilter, setCountryFilter] = useState('all');
   const [urgencyFilter, setUrgencyFilter] = useState('actionable');

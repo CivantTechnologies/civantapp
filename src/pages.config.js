@@ -8,10 +8,9 @@ const loadArchitecture = () => import('./pages/Architecture');
 const loadCompetitors = () => import('./pages/Competitors');
 const loadCompanyProfile = () => import('./pages/CompanyProfile');
 const loadConnectors = () => import('./pages/Connectors');
-const loadInsights = () => import('./pages/Insights');
 const loadIntegrations = () => import('./pages/Integrations');
 const loadPipelineAdmin = () => import('./pages/PipelineAdmin');
-const loadForecast = () => import('./pages/Predictions');
+const loadForecast = () => import('./pages/Forecast');
 const loadProfile = () => import('./pages/Profile');
 const loadSearch = () => import('./pages/Search');
 const loadTenderDetail = () => import('./pages/TenderDetail');
@@ -22,7 +21,6 @@ const Architecture = lazy(loadArchitecture);
 const Competitors = lazy(loadCompetitors);
 const CompanyProfile = lazy(loadCompanyProfile);
 const Connectors = lazy(loadConnectors);
-const Insights = lazy(loadInsights);
 const Integrations = lazy(loadIntegrations);
 const PipelineAdmin = lazy(loadPipelineAdmin);
 const Forecast = lazy(loadForecast);
@@ -38,7 +36,6 @@ const CORE_PREFETCH_LOADERS = [
   loadSearch,
   loadCompetitors,
   loadAlerts,
-  loadInsights
 ];
 
 export const PAGES = {
@@ -48,7 +45,6 @@ export const PAGES = {
     "CompanyProfile": CompanyProfile,
     "Connectors": Connectors,
     "Home": Home,
-    "Insights": Insights,
     "Integrations": Integrations,
     "PipelineAdmin": PipelineAdmin,
     "Forecast": Forecast,
