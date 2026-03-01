@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2, AlertCircle, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Connectors from './Connectors';
+import Architecture from './Architecture';
 
 function pretty(value) {
   return JSON.stringify(value, null, 2);
@@ -125,8 +126,8 @@ export default function PipelineAdmin() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">Pipeline Admin</h1>
-          <p className="text-slate-400 mt-1">Ingestion runs, connectors, review queue, and forecast evidence</p>
+          <h1 className="text-2xl font-bold text-slate-100">Operations</h1>
+          <p className="text-slate-400 mt-1">Pipeline, connectors, architecture, and ingestion management</p>
         </div>
         <Button variant="outline" onClick={loadData}>
           <RefreshCw className="h-4 w-4 mr-2" />
@@ -138,6 +139,7 @@ export default function PipelineAdmin() {
         <TabsList>
           <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
           <TabsTrigger value="connectors">Connectors</TabsTrigger>
+          <TabsTrigger value="architecture">Architecture</TabsTrigger>
         </TabsList>
 
         <TabsContent value="pipeline" className="space-y-6">
@@ -342,6 +344,10 @@ export default function PipelineAdmin() {
 
         <TabsContent value="connectors">
           <Connectors />
+        </TabsContent>
+
+        <TabsContent value="architecture">
+          <Architecture />
         </TabsContent>
       </Tabs>
     </div>

@@ -114,8 +114,7 @@ export default function Layout({ children, currentPageName }) {
 
     if (isPlatformTenant) {
       base.push(
-        { name: 'Pipeline', page: 'PipelineAdmin', icon: Network },
-        { name: 'Architecture', page: 'Architecture', icon: Network },
+        { name: 'Operations', page: 'PipelineAdmin', icon: Network },
       );
     }
 
