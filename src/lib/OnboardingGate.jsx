@@ -14,7 +14,7 @@ export function OnboardingProvider({ children }) {
     const [status, setStatus] = useState('loading'); // 'loading' | 'complete' | 'incomplete'
 
     const check = async () => {
-        if (!activeTenantId) { setStatus('incomplete'); return; }
+        if (!activeTenantId) { setStatus('complete'); return; }
         try {
             const { data, error } = await supabase
                 .rpc('check_onboarding_status', { p_tenant_id: activeTenantId });
