@@ -325,11 +325,8 @@ export default function Forecast() {
     if (!activeTenantId) return;
     setLoading(true);
     try {
-      console.log('[Forecast] Loading predictions for tenant:', activeTenantId);
-      const { data, error, count } = await supabase
+      const { data, error } = await supabase
         .rpc('get_tenant_predictions', { p_tenant_id: activeTenantId });
-
-      console.log('[Forecast] RPC result:', { rows: data?.length, error: error?.message, count });
 
       if (error) {
         console.warn('get_tenant_predictions RPC unavailable:', error.message);
@@ -339,7 +336,6 @@ export default function Forecast() {
           .eq('tenant_id', activeTenantId)
           .order('generated_at', { ascending: false })
           .limit(20000);
-        console.log('[Forecast] Fallback result:', { rows: fallback?.length, error: fallbackError?.message });
         if (fallbackError) throw fallbackError;
         setAllPredictions(fallback || []);
       } else {
@@ -548,53 +544,42 @@ export default function Forecast() {
           />
         </div>
         {validationStats ? (() => {
-          const upcoming = validationStats.accuracy_by_urgency?.find((u) => u.urgency === 'upcoming');
-          const horizon = validationStats.accuracy_by_urgency?.find((u) => u.urgency === 'horizon');
-          const matureCountries = validationStats.accuracy_by_country?.filter((c) => c.country !== 'FR') || [];
-          const bestCountryAccuracy = matureCountries.length > 0 ? Math.max(...matureCountries.map((c) => c.accuracy || 0)) : null;
+          const totalConfirmed = validationStats.confirmed || 0;
+          const medianDays = validationStats.median_delta_days;
+          const countries = validationStats.accuracy_by_country || [];
+          if (totalConfirmed === 0) return null;
           return (
           <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 space-y-3">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="space-y-0.5">
-                <h3 className="text-sm font-semibold text-card-foreground">Forecast Accuracy — Validated Against Published Tenders</h3>
-                <p className="text-[11px] text-muted-foreground">
-                  {validationStats.confirmed?.toLocaleString()} predictions independently confirmed by matching published procurement notices
-                </p>
-              </div>
+            <div className="space-y-0.5">
+              <h3 className="text-sm font-semibold text-card-foreground">Forecast Validation</h3>
+              <p className="text-[11px] text-muted-foreground">
+                Forecasts matched against published procurement notices across {countries.length} markets.
+              </p>
             </div>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <div className="rounded-lg bg-emerald-500/[0.08] border border-emerald-500/20 px-3 py-2.5">
-                <p className="text-[10px] uppercase tracking-wider text-emerald-400/80">Upcoming Window</p>
-                <p className="text-2xl font-bold text-emerald-400">{upcoming?.hit_rate || '—'}%</p>
-                <p className="text-[10px] text-muted-foreground">{upcoming?.confirmed?.toLocaleString()} of {upcoming?.total?.toLocaleString()} confirmed</p>
-              </div>
-              {bestCountryAccuracy ? (
-              <div className="rounded-lg bg-emerald-500/[0.08] border border-emerald-500/20 px-3 py-2.5">
-                <p className="text-[10px] uppercase tracking-wider text-emerald-400/80">Mature Markets</p>
-                <p className="text-2xl font-bold text-emerald-400">{'>'}{Math.floor(bestCountryAccuracy / 5) * 5}%</p>
-                <p className="text-[10px] text-muted-foreground">IE &amp; ES resolved forecasts</p>
-              </div>
-              ) : null}
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
               <div className="rounded-lg bg-white/[0.03] px-3 py-2.5">
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Horizon Signals</p>
-                <p className="text-2xl font-semibold text-card-foreground">{horizon?.hit_rate || '—'}%</p>
-                <p className="text-[10px] text-muted-foreground">{horizon?.confirmed?.toLocaleString()} of {horizon?.total?.toLocaleString()} confirmed</p>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Confirmed Forecasts</p>
+                <p className="text-2xl font-semibold text-card-foreground">{totalConfirmed.toLocaleString()}</p>
+                <p className="text-[10px] text-muted-foreground">matched to published tenders</p>
               </div>
+              {medianDays != null && (
               <div className="rounded-lg bg-white/[0.03] px-3 py-2.5">
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Median Timing</p>
-                <p className="text-2xl font-semibold text-card-foreground">±{validationStats.median_delta_days}d</p>
-                <p className="text-[10px] text-muted-foreground">from predicted to published</p>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Timing Accuracy</p>
+                <p className="text-2xl font-semibold text-card-foreground">{medianDays} days</p>
+                <p className="text-[10px] text-muted-foreground">median difference, predicted vs actual</p>
               </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-4 pt-1">
-              {validationStats.accuracy_by_country?.map((c) => (
-                <div key={c.country} className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">{c.country === 'ES' ? '🇪🇸' : c.country === 'FR' ? '🇫🇷' : c.country === 'IE' ? '🇮🇪' : c.country}</span>
-                  <span className="text-xs font-medium text-card-foreground">{c.accuracy}%</span>
-                  <span className="text-[10px] text-muted-foreground">({c.confirmed?.toLocaleString()} confirmed)</span>
+              )}
+              <div className="rounded-lg bg-white/[0.03] px-3 py-2.5">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Markets</p>
+                <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
+                  {countries.map((c) => (
+                    <span key={c.country} className="text-xs text-card-foreground">
+                      {c.country === 'ES' ? '🇪🇸' : c.country === 'FR' ? '🇫🇷' : c.country === 'IE' ? '🇮🇪' : c.country}{' '}
+                      {c.confirmed?.toLocaleString()} confirmed
+                    </span>
+                  ))}
                 </div>
-              ))}
-              <span className="text-[10px] text-muted-foreground/50 ml-auto">{validationStats.pending?.toLocaleString()} forecasts awaiting validation</span>
+              </div>
             </div>
           </div>
           );
