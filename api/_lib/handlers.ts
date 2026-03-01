@@ -1815,6 +1815,39 @@ export async function getPipelineAdmin(req: RequestLike) {
   };
 }
 
+async function enrichTender(req: RequestLike) {
+  const user = await getCurrentUser(req);
+  const tenantId = getTenantFromHeader(req);
+  const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+  const tenderId = String(body.tender_id || '').trim();
+  if (!tenderId) throw Object.assign(new Error('tender_id is required'), { status: 400 });
+
+  const supabaseUrl = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
+  const serviceKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  if (!supabaseUrl || !serviceKey) {
+    throw Object.assign(new Error('Supabase config missing'), { status: 500 });
+  }
+
+  const edgeFnUrl = `${supabaseUrl}/functions/v1/enrich-tender`;
+  const resp = await fetch(edgeFnUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${serviceKey}`,
+    },
+    body: JSON.stringify({ tender_id: tenderId, tenant_id: tenantId || 'civant_default' }),
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    console.error('enrich-tender edge fn error:', errText);
+    throw Object.assign(new Error('Enrichment failed'), { status: resp.status });
+  }
+
+  const result = await resp.json();
+  return { success: true, enrichment: result.enrichment, source: result.source, usage: result.usage };
+}
+
 export async function dispatchFunction(functionName: string, req: RequestLike) {
   switch (functionName) {
     case 'getMyProfile':
@@ -1859,6 +1892,8 @@ export async function dispatchFunction(functionName: string, req: RequestLike) {
       return listSupportAccessAudit(req);
     case 'getPipelineAdmin':
       return getPipelineAdmin(req);
+    case 'enrichTender':
+      return enrichTender(req);
     default:
       throw Object.assign(new Error(`Function not found: ${functionName}`), { status: 404 });
   }

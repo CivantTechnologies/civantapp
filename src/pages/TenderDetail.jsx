@@ -311,11 +311,17 @@ export default function TenderDetail() {
                     });
                 setLinkedNotices(mergedNotices);
 
-                const enrichmentData = await civant.entities.TenderEnrichment.filter({
-                    tender_uid: canonicalIdValue
-                });
-                if (enrichmentData.length > 0) {
-                    setEnrichment(enrichmentData[0]);
+                // Load cached enrichment from tender_enrichments
+                const { data: enrichRows } = await supabase
+                    .from('tender_enrichments')
+                    .select('*')
+                    .eq('tender_id', tenderId)
+                    .eq('status', 'complete')
+                    .gt('expires_at', new Date().toISOString())
+                    .order('created_at', { ascending: false })
+                    .limit(1);
+                if (enrichRows?.length > 0) {
+                    setEnrichment(enrichRows[0]);
                 }
             }
         } catch (error) {
@@ -347,14 +353,13 @@ export default function TenderDetail() {
         setEnriching(true);
         try {
             const response = await civant.functions.invoke('enrichTender', { tender_id: actionableTenderId });
-            if (response.data.success) {
+            if (response.data?.success && response.data.enrichment) {
                 setEnrichment(response.data.enrichment);
-                alert('Tender enriched successfully with AI insights!');
             } else {
-                alert(`Enrichment already exists or failed: ${response.data.message || response.data.error}`);
+                console.error('Enrichment response:', response.data);
             }
         } catch (error) {
-            alert(`Error: ${error.message}`);
+            console.error('Enrichment error:', error);
         } finally {
             setEnriching(false);
         }
