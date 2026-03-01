@@ -1244,12 +1244,15 @@ export default function Competitors() {
                 onChange={(event) => setSearch(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && search.trim()) {
-                    setEditingCompetitor(null);
-                    setFormData(prev => ({ ...prev, company_name: search.trim() }));
-                    setShowForm(true);
+                    const match = filteredCompetitors.length > 0;
+                    if (!match) {
+                      setEditingCompetitor(null);
+                      setFormData(prev => ({ ...prev, company_name: search.trim() }));
+                      setShowForm(true);
+                    }
                   }
                 }}
-                placeholder="Add a competitor by name..."
+                placeholder="Search competitors..."
                 className="h-10 border-white/[0.08] bg-white/[0.02]"
               />
               <Button
@@ -1267,15 +1270,24 @@ export default function Competitors() {
             </div>
           </div>
 
+          {search.trim() ? (
           <section className="space-y-3">
-            <h3 className="text-base font-semibold text-card-foreground">Tracked Competitors</h3>
           <div className="grid gap-4">
             {filteredCompetitors.length === 0 ? (
               <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none">
-                <CardContent className="py-12 text-center">
-                  <Users className="mx-auto mb-4 h-12 w-12 text-slate-300" />
-                  <h3 className="mb-2 text-lg font-semibold text-slate-100">No competitors tracked yet</h3>
-                  <p className="mb-4 text-slate-400">Type a name above and press Enter to add your first competitor.</p>
+                <CardContent className="py-8 text-center">
+                  <p className="text-sm text-muted-foreground mb-3">No match for "{search.trim()}"</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setEditingCompetitor(null);
+                      setFormData(prev => ({ ...prev, company_name: search.trim() }));
+                      setShowForm(true);
+                    }}
+                  >
+                    + Add "{search.trim()}" as competitor
+                  </Button>
                 </CardContent>
               </Card>
             ) : (
@@ -1313,6 +1325,8 @@ export default function Competitors() {
             )}
           </div>
           </section>
+          ) : null}
+          ) : null}
 
           <CompetitiveExposureSnapshot
             loading={snapshotLoading}
