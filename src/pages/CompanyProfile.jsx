@@ -830,7 +830,7 @@ export default function CompanyProfile() {
             const payload = { ...form, tenant_id: activeTenantId, updated_at: new Date().toISOString() };
             const saved = await civant.entities.company_profiles.create(payload);
             setProfile(saved && typeof saved === 'object' ? saved : payload);
-            refreshCompanyProfile(activeTenantId);
+            if (typeof refreshCompanyProfile === 'function') refreshCompanyProfile(activeTenantId);
             setSaveMsg('Saved successfully');
             setTimeout(() => setSaveMsg(''), 3000);
         } catch (e) {
