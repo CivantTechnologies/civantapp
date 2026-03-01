@@ -486,9 +486,12 @@ function OnboardingWizard({ profile, onSave, saving }) {
 
 // ===== MAIN PAGE (TABBED PROFILE) =====
 
-function ProfileTabs({ profile, onSave, saving, isOrgAdmin, initialTab = 'company' }) {
+function ProfileTabs({ profile, onSave, saving, isOrgAdmin, initialTab = 'company', activeTenantId }) {
     const [form, setForm] = useState(profile);
     const [activeTab, setActiveTab] = useState(initialTab);
+    const [aiSuggestions, setAiSuggestions] = useState(null);
+    const [aiAnalyzing, setAiAnalyzing] = useState(false);
+    const [aiError, setAiError] = useState('');
     useEffect(() => {
         setForm(profile);
     }, [profile]);
@@ -501,6 +504,45 @@ function ProfileTabs({ profile, onSave, saving, isOrgAdmin, initialTab = 'compan
         [form, profile]
     );
     const save = () => onSave(form);
+
+    const analyzeCompany = async () => {
+        setAiAnalyzing(true);
+        setAiError('');
+        setAiSuggestions(null);
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const res = await fetch(
+                `${import.meta.env.VITE_SUPABASE_URL || 'https://ossoggqkqifdkihybbew.supabase.co'}/functions/v1/analyze-company`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+                    },
+                    body: JSON.stringify({ tenant_id: activeTenantId }),
+                }
+            );
+            const data = await res.json();
+            if (data.error) {
+                setAiError(data.error);
+            } else if (data.suggestions) {
+                setAiSuggestions(data.suggestions);
+            }
+        } catch (e) {
+            console.error('Analyze company error:', e);
+            setAiError('Analysis failed. Please try again.');
+        } finally {
+            setAiAnalyzing(false);
+        }
+    };
+
+    const applySuggestions = (suggestions) => {
+        if (suggestions.cpv_clusters?.length) set('target_cpv_clusters', suggestions.cpv_clusters);
+        if (suggestions.buyer_types?.length) set('target_buyer_types', suggestions.buyer_types);
+        if (suggestions.contract_size_min_eur) set('contract_size_min_eur', suggestions.contract_size_min_eur);
+        if (suggestions.contract_size_max_eur) set('contract_size_max_eur', suggestions.contract_size_max_eur);
+        setAiSuggestions(null);
+    };
 
     return (
         <div className="space-y-4">
@@ -901,9 +943,6 @@ export default function CompanyProfile() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [saveMsg, setSaveMsg] = useState('');
-    const [aiSuggestions, setAiSuggestions] = useState(null);
-    const [aiAnalyzing, setAiAnalyzing] = useState(false);
-    const [aiError, setAiError] = useState('');
     const isOrgAdmin = Array.isArray(roles) && (roles.includes('admin') || roles.includes('creator'));
     const initialTab = useMemo(() => {
         const tab = new URLSearchParams(location.search).get('tab');
@@ -937,44 +976,6 @@ export default function CompanyProfile() {
         if (!isLoadingTenants && activeTenantId) loadProfile();
     }, [activeTenantId, isLoadingTenants, loadProfile]);
 
-    const analyzeCompany = async () => {
-        setAiAnalyzing(true);
-        setAiError('');
-        setAiSuggestions(null);
-        try {
-            const { data: { session } } = await supabase.auth.getSession();
-            const res = await fetch(
-                `${import.meta.env.VITE_SUPABASE_URL || 'https://ossoggqkqifdkihybbew.supabase.co'}/functions/v1/analyze-company`,
-                {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-                    },
-                    body: JSON.stringify({ tenant_id: activeTenantId }),
-                }
-            );
-            const data = await res.json();
-            if (data.error) {
-                setAiError(data.error);
-            } else if (data.suggestions) {
-                setAiSuggestions(data.suggestions);
-            }
-        } catch (e) {
-            console.error('Analyze company error:', e);
-            setAiError('Analysis failed. Please try again.');
-        } finally {
-            setAiAnalyzing(false);
-        }
-    };
-
-    const applySuggestions = (suggestions) => {
-        if (suggestions.cpv_clusters?.length) set('target_cpv_clusters', suggestions.cpv_clusters);
-        if (suggestions.buyer_types?.length) set('target_buyer_types', suggestions.buyer_types);
-        if (suggestions.contract_size_min_eur) set('contract_size_min_eur', suggestions.contract_size_min_eur);
-        if (suggestions.contract_size_max_eur) set('contract_size_max_eur', suggestions.contract_size_max_eur);
-        setAiSuggestions(null);
-    };
 
     const saveProfile = async (form) => {
         setSaving(true);
@@ -1025,6 +1026,7 @@ export default function CompanyProfile() {
                     saving={saving}
                     isOrgAdmin={isOrgAdmin}
                     initialTab={initialTab}
+                    activeTenantId={activeTenantId}
                 />
             )}
             {saveMsg && (
