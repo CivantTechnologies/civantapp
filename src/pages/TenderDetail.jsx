@@ -503,12 +503,6 @@ export default function TenderDetail() {
                     </Link>
 
                     <div className="flex items-center gap-2 md:ml-auto">
-                        <Button asChild variant="primary" className="min-w-[150px]">
-                            <Link to={createPageUrl(`Alerts?buyer=${encodeURIComponent(tender.buyer_name || '')}&keyword=${encodeURIComponent(tender.title?.split(' ').slice(0, 3).join(' ') || '')}`)}>
-                                <Bell className="h-4 w-4" />
-                                Create Alert
-                            </Link>
-                        </Button>
                         <Button
                             variant="outline"
                             onClick={handleEnrichTender}

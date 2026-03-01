@@ -16,7 +16,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useOnboarding } from "@/lib/OnboardingGate";
 import SupplierAutocomplete from '@/components/SupplierAutocomplete';
 
 const BUYER_TYPES = [
@@ -663,7 +662,6 @@ export default function CompanyProfile() {
     const { activeTenantId, isLoadingTenants, refreshCompanyProfile } = useTenant();
     const { roles } = useAuth();
     const location = useLocation();
-    const { refreshOnboarding } = useOnboarding();
     const [profile, setProfile] = useState(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -708,7 +706,6 @@ export default function CompanyProfile() {
             const payload = { ...form, tenant_id: activeTenantId, updated_at: new Date().toISOString() };
             const saved = await civant.entities.company_profiles.create(payload);
             setProfile(saved && typeof saved === 'object' ? saved : payload);
-            if (payload.onboarding_completed) refreshOnboarding();
             refreshCompanyProfile(activeTenantId);
             setSaveMsg('Saved successfully');
             setTimeout(() => setSaveMsg(''), 3000);

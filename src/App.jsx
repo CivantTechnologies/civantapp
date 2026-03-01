@@ -8,7 +8,6 @@ import { BrowserRouter as Router, Navigate, Route, Routes, useLocation, useSearc
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { TenantProvider } from '@/lib/tenant';
-import { OnboardingProvider, RequireOnboarding } from "@/lib/OnboardingGate";
 import Login from '@/pages/Login';
 import AcceptInvitationPage from '@/pages/AcceptInvitation';
 import { Button } from '@/components/ui/button';
@@ -358,9 +357,9 @@ function AppRoutes() {
       <Route
         path="*"
         element={
-          <RequireAuth><OnboardingProvider><RequireOnboarding>
+          <RequireAuth>
             <ProtectedRoutes />
-          </RequireOnboarding></OnboardingProvider></RequireAuth>
+          </RequireAuth>
         }
       />
     </Routes>
