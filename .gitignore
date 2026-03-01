@@ -38,3 +38,4 @@ tmp/
 done
 echo
 sed
+.vercel
