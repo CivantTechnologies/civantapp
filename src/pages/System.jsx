@@ -4,7 +4,8 @@ import { useAuth } from '@/lib/auth';
 import { useTenant } from '@/lib/tenant';
 import {
   AlertCircle, Loader2, RefreshCw, Shield, Building2, Users,
-  PlugZap, UserPlus, UserMinus, Copy, Mail
+  PlugZap, UserPlus, UserMinus, Copy, Mail, Calendar, MessageSquare,
+  HardDrive, CheckCircle2, Settings
 } from 'lucide-react';
 import {
   Page,
@@ -20,6 +21,7 @@ import {
   Button,
   Input
 } from '@/components/ui';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatDistanceToNow } from 'date-fns';
 
 function unwrapResponse(response) {
@@ -366,6 +368,13 @@ export default function System() {
       </PageHeader>
 
       <PageBody>
+        <Tabs defaultValue="overview" className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="integrations">Integrations</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview" className="space-y-6">
         {error && (
           <Card>
             <CardContent className="p-4">
@@ -695,6 +704,97 @@ export default function System() {
             <p className="text-sm text-card-foreground">SSO: Enterprise (planned)</p>
           </CardContent>
         </Card>
+          </TabsContent>
+
+          <TabsContent value="integrations" className="space-y-6">
+            <div className="space-y-6 max-w-5xl">
+              {[
+                {
+                  id: 'google-calendar',
+                  name: 'Google Calendar',
+                  description: 'Automatically add tender deadlines to your calendar',
+                  icon: Calendar,
+                  color: 'text-blue-200',
+                  bgColor: 'bg-blue-500/15 border border-blue-400/40',
+                  features: ['Add tender deadlines to calendar', 'Sync important dates automatically', 'Get calendar reminders'],
+                  available: true
+                },
+                {
+                  id: 'slack',
+                  name: 'Slack',
+                  description: 'Send alert notifications to Slack channels',
+                  icon: MessageSquare,
+                  color: 'text-violet-200',
+                  bgColor: 'bg-violet-500/15 border border-violet-400/40',
+                  features: ['Post tender alerts to channels', 'Get real-time notifications', 'Share tenders with team'],
+                  available: true
+                },
+                {
+                  id: 'google-drive',
+                  name: 'Google Drive',
+                  description: 'Export and save tender reports to your Drive',
+                  icon: HardDrive,
+                  color: 'text-emerald-200',
+                  bgColor: 'bg-emerald-500/15 border border-emerald-400/40',
+                  features: ['Export tender data to Drive', 'Save reports automatically', 'Organize tender documents'],
+                  available: true
+                }
+              ].map((integration) => {
+                const Icon = integration.icon;
+                return (
+                  <Card key={integration.id} className="border border-white/[0.06] bg-white/[0.02] shadow-none">
+                    <CardContent className="p-6">
+                      <div className="flex items-start gap-4">
+                        <div className={`p-4 rounded-xl ${integration.bgColor}`}>
+                          <Icon className={`h-6 w-6 ${integration.color}`} />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h3 className="text-lg font-semibold text-slate-100">{integration.name}</h3>
+                            {integration.available ? (
+                              <Badge className="bg-emerald-500/15 text-emerald-200 border border-emerald-400/40">Available</Badge>
+                            ) : (
+                              <Badge variant="ghost">Coming Soon</Badge>
+                            )}
+                          </div>
+                          <p className="text-slate-300 mb-4">{integration.description}</p>
+                          <ul className="space-y-2 mb-4">
+                            {integration.features.map((feature) => (
+                              <li key={feature} className="flex items-center gap-2 text-sm text-slate-300">
+                                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                                {feature}
+                              </li>
+                            ))}
+                          </ul>
+                          <p className="text-sm text-slate-200 bg-slate-900/70 border border-white/[0.06] rounded-lg p-3">
+                            <strong className="text-primary">Admin Setup Required:</strong> Contact your administrator to authorize this integration for the organization.
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+
+              <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none">
+                <CardContent className="p-6">
+                  <div className="flex gap-4">
+                    <Settings className="h-5 w-5 text-primary mt-0.5" />
+                    <div>
+                      <h3 className="font-semibold text-slate-100 mb-2">How Integrations Work</h3>
+                      <ul className="space-y-2 text-sm text-slate-300">
+                        <li>Integrations are set up once by an admin for the entire organization</li>
+                        <li>Once connected, integration features appear throughout the app</li>
+                        <li>Look for "Add to Calendar", "Send to Slack", and "Export to Drive" buttons</li>
+                        <li>All data is securely synced with your connected accounts</li>
+                      </ul>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+        </Tabs>
       </PageBody>
     </Page>
   );

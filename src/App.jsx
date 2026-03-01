@@ -18,7 +18,6 @@ const HomePage = Pages.Home;
 const ForecastPage = Pages.Forecast;
 const CompetitorsPage = Pages.Competitors;
 const CompanyProfilePage = Pages.CompanyProfile;
-const IntegrationsPage = Pages.Integrations;
 const ProfilePage = Pages.Profile;
 const SearchPage = Pages.Search;
 const AlertsPage = Pages.Alerts;
@@ -184,13 +183,7 @@ function ProtectedRoutes() {
 
       <Route
         path="/company/integrations"
-        element={
-          <LayoutWrapper currentPageName="Company">
-            <Suspense fallback={<RouteLoader />}>
-              <IntegrationsPage />
-            </Suspense>
-          </LayoutWrapper>
-        }
+        element={<Navigate to="/operations/system" replace />}
       />
 
       <Route
@@ -313,7 +306,7 @@ function ProtectedRoutes() {
       <Route path="/alerts" element={<Navigate to="/workbench/alerts" replace />} />
       <Route path="/search" element={<Navigate to="/workbench/search" replace />} />
       <Route path="/insights" element={<Navigate to="/reports" replace />} />
-      <Route path="/integrations" element={<Navigate to="/company/integrations" replace />} />
+      <Route path="/integrations" element={<Navigate to="/operations/system" replace />} />
       <Route path="/connectors" element={<Navigate to="/operations/connectors" replace />} />
       <Route path="/pipeline" element={<Navigate to="/operations/pipeline" replace />} />
       <Route path="/pipelineadmin" element={<Navigate to="/operations/pipeline" replace />} />
@@ -325,7 +318,7 @@ function ProtectedRoutes() {
       <Route path="/Alerts" caseSensitive element={<Navigate to="/workbench/alerts" replace />} />
       <Route path="/Search" caseSensitive element={<Navigate to="/workbench/search" replace />} />
       <Route path="/Insights" caseSensitive element={<Navigate to="/reports" replace />} />
-      <Route path="/Integrations" caseSensitive element={<Navigate to="/company/integrations" replace />} />
+      <Route path="/Integrations" caseSensitive element={<Navigate to="/operations/system" replace />} />
       <Route path="/Connectors" caseSensitive element={<Navigate to="/operations/connectors" replace />} />
       <Route path="/PipelineAdmin" caseSensitive element={<Navigate to="/operations/pipeline" replace />} />
       <Route path="/Pipeline" caseSensitive element={<Navigate to="/operations/pipeline" replace />} />
