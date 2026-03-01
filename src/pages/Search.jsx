@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useState, useEffect, useMemo, useCallback } from 'react';
 import { civant } from '@/api/civantClient';
 import { createPageUrl } from '../utils';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTenant } from '@/lib/tenant';
 import { useAuth } from '@/lib/auth';
 import {
@@ -235,6 +235,7 @@ function areFilterSnapshotsEqual(a, b) {
 
 export default function Search() {
     const location = useLocation();
+    const navigate = useNavigate();
     const [tenders, setTenders] = useState([]);
     const [filteredTenders, setFilteredTenders] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -1049,7 +1050,7 @@ export default function Search() {
                                         <tr 
                                             key={tender.id} 
                                             className="hover:bg-slate-900/60 transition-colors cursor-pointer"
-                                            onClick={() => window.location.href = createPageUrl(`TenderDetail?id=${tender.id}`)}
+                                            onClick={() => navigate(createPageUrl(`TenderDetail?id=${tender.id}`))}
                                         >
                                             <td className="px-4 py-4">
                                                 <div className="flex items-start gap-3">
