@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { civant } from '@/api/civantClient';
+import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/lib/auth';
 import { useTenant } from '@/lib/tenant';
 import {
@@ -69,8 +70,22 @@ export default function System() {
     return t?.role || 'member';
   }, [tenants, activeTenantId]);
 
-  const canInvite = ['owner', 'admin'].includes(currentTenantRole);
-  const canManageRoles = ['owner', 'admin'].includes(currentTenantRole);
+  // Override with direct DB role since backend may return stale 'member'
+  const [dbRole, setDbRole] = useState(null);
+  useEffect(() => {
+    if (!activeTenantId || !currentUser?.id) return;
+    supabase
+      .from('tenant_users')
+      .select('role')
+      .eq('tenant_id', activeTenantId)
+      .eq('user_id', currentUser.id)
+      .single()
+      .then(({ data }) => { if (data?.role) setDbRole(data.role); });
+  }, [activeTenantId, currentUser?.id]);
+
+  const effectiveRole = dbRole || currentTenantRole;
+  const canInvite = ['owner', 'admin'].includes(effectiveRole);
+  const canManageRoles = ['owner', 'admin'].includes(effectiveRole);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -150,6 +165,19 @@ export default function System() {
 
       setTenantUsers(Array.isArray(unwrapResponse(usersPayload)) ? unwrapResponse(usersPayload) : []);
       setConnectors(Array.isArray(unwrapResponse(connectorsPayload)) ? unwrapResponse(connectorsPayload) : []);
+
+      // Enrich with correct roles from tenant_users
+      const { data: tuRows } = await supabase
+        .from('tenant_users')
+        .select('user_id, role')
+        .eq('tenant_id', activeTenantId);
+      if (tuRows?.length) {
+        const roleMap = Object.fromEntries(tuRows.map(r => [r.user_id, r.role]));
+        setTenantUsers(prev => prev.map(u => ({
+          ...u,
+          role: roleMap[u.userId] || u.role || 'member'
+        })));
+      }
 
       await Promise.all([loadInvitations(), loadSupportSection()]);
       setDenied(false);
