@@ -25,7 +25,6 @@ import {
   SelectValue
 } from '@/components/ui/select';
 import ForecastTimeline from '@/components/forecast/ForecastTimeline';
-import HomePlatformFooter from '@/components/home/HomePlatformFooter';
 
 const COUNTRY_OPTIONS = [
   { value: 'all', label: 'All Countries' },
@@ -836,12 +835,6 @@ export default function Forecast() {
           </section>
         ) : null}
 
-        <HomePlatformFooter
-          version={import.meta.env.VITE_APP_VERSION || 'v0.9.3'}
-          lastDataRefresh={lastDataRefresh}
-          supportTo={createPageUrl('Company?section=support')}
-          legalTo={createPageUrl('Company?section=legal')}
-        />
       </PageBody>
     </Page>
   );

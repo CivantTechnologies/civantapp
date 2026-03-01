@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { createPageUrl } from './utils';
+import HomePlatformFooter from '@/components/home/HomePlatformFooter';
 import { useAuth } from '@/lib/auth';
 import { useTenant } from '@/lib/tenant';
 import { civant } from '@/api/civantClient';
@@ -665,6 +666,12 @@ export default function Layout({ children, currentPageName }) {
         <div className="civant-main-shell">
           {children}
         </div>
+        <HomePlatformFooter
+          version="v0.9.3"
+          lastDataRefresh={null}
+          supportTo="/system"
+          legalTo="/system"
+        />
       </main>
 
       {/* ── Global Search Dialog (Cmd+K) ── */}
