@@ -197,7 +197,7 @@ function ProtectedRoutes() {
       <Route
         path="/company/profile"
         element={
-          <LayoutWrapper currentPageName="Company">
+          <LayoutWrapper currentPageName="Profile">
             <Suspense fallback={<RouteLoader />}>
               <ProfilePage />
             </Suspense>
@@ -329,7 +329,7 @@ function ProtectedRoutes() {
       <Route path="/pipelineadmin" element={<Navigate to="/operations/pipeline" replace />} />
       <Route path="/architecture" element={<Navigate to="/operations/architecture" replace />} />
       <Route path="/system" element={<Navigate to="/operations/system" replace />} />
-      <Route path="/profile" element={<Navigate to="/company" replace />} />
+      <Route path="/profile" element={<Navigate to="/company/profile" replace />} />
       <Route path="/companyprofile" element={<Navigate to="/company" replace />} />
 
       <Route path="/Alerts" caseSensitive element={<Navigate to="/workbench/alerts" replace />} />
@@ -341,7 +341,7 @@ function ProtectedRoutes() {
       <Route path="/Pipeline" caseSensitive element={<Navigate to="/operations/pipeline" replace />} />
       <Route path="/Architecture" caseSensitive element={<Navigate to="/operations/architecture" replace />} />
       <Route path="/System" caseSensitive element={<Navigate to="/operations/system" replace />} />
-      <Route path="/Profile" caseSensitive element={<Navigate to="/company" replace />} />
+      <Route path="/Profile" caseSensitive element={<Navigate to="/company/profile" replace />} />
       <Route path="/CompanyProfile" caseSensitive element={<Navigate to="/company" replace />} />
 
       <Route path="*" element={<PageNotFound />} />

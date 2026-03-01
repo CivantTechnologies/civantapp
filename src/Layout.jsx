@@ -83,7 +83,7 @@ export default function Layout({ children, currentPageName }) {
     [tenants, activeTenantId]
   );
 
-  const canAccessSystem = profileStatus === 'ready' && Array.isArray(roles) && (roles.includes('admin') || roles.includes('creator'));
+  const canAccessSystem = profileStatus === 'ready' && Array.isArray(roles) && (roles.includes('admin') || roles.includes('creator') || roles.includes('super_admin'));
   const isPlatformTenant = selectedTenant?.is_platform_admin === true;
 
   /* ── Derived user info for avatar dropdown ── */
