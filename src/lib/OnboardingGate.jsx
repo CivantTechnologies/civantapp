@@ -22,7 +22,10 @@ export function OnboardingProvider({ children }) {
             setStatus(data === true ? 'complete' : 'incomplete');
         } catch (e) {
             console.error('Onboarding check failed:', e);
-            setStatus('incomplete');
+            // Fail-open: if the check errors out, assume complete so existing
+            // users don't get bounced to /company on every hard refresh.
+            // Genuinely new tenants will get data === false from the RPC, not an error.
+            setStatus('complete');
         }
     };
 
