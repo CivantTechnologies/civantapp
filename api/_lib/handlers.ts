@@ -879,10 +879,27 @@ export async function searchTenders(req: RequestLike) {
 
 export async function getMyProfile(req: RequestLike) {
   const user = await getCurrentUser(req);
+  const supabase = getServerSupabase();
+
+  // Inject 'super_admin' for users whose default tenant is a platform admin tenant.
+  // This drives the RequireOperationsRole gate in the frontend without needing
+  // a DB row for a role that only applies to Civant internal accounts.
+  let roles = user.roles;
+  if (user.tenantId) {
+    const { data: tenantRow } = await supabase
+      .from('tenants')
+      .select('is_platform_admin')
+      .eq('id', user.tenantId)
+      .maybeSingle();
+    if ((tenantRow as any)?.is_platform_admin === true) {
+      roles = Array.from(new Set([...roles, 'super_admin']));
+    }
+  }
+
   return {
     email: user.email,
     tenant_id: user.tenantId,
-    roles: user.roles
+    roles
   };
 }
 
