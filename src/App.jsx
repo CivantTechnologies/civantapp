@@ -358,7 +358,7 @@ function AppRoutes() {
     let cancelled = false;
     const runPrefetch = () => {
       if (cancelled) return;
-      prefetchCorePages().catch(() => {});
+      typeof prefetchCorePages === "function" && prefetchCorePages().catch(() => {});
     };
 
     if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
