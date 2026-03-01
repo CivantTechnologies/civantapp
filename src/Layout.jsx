@@ -114,9 +114,7 @@ export default function Layout({ children, currentPageName }) {
 
     if (isPlatformTenant) {
       base.push(
-        { name: 'Profile', page: 'Profile', icon: UserRound },
         { name: 'Alerts', page: 'Alerts', icon: Bell },
-        { name: 'Insights', page: 'Insights', icon: BarChart3 },
         { name: 'Integrations', page: 'Integrations', icon: Settings },
         { name: 'Connectors', page: 'Connectors', icon: Zap },
         { name: 'Pipeline', page: 'PipelineAdmin', icon: Network },
@@ -548,7 +546,7 @@ export default function Layout({ children, currentPageName }) {
 
                 <DropdownMenuItem
                   className="rounded-lg px-3 py-2 text-sm text-slate-300 focus:bg-white/[0.05] focus:text-slate-100"
-                  onClick={() => navigate('/company')}
+                  onClick={() => navigate('/company/profile')}
                 >
                   Profile / Account
                 </DropdownMenuItem>
