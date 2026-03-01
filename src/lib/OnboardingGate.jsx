@@ -17,12 +17,9 @@ export function OnboardingProvider({ children }) {
         if (!activeTenantId) { setStatus('incomplete'); return; }
         try {
             const { data, error } = await supabase
-                .from('company_profiles')
-                .select('onboarding_completed')
-                .eq('tenant_id', activeTenantId)
-                .maybeSingle();
-            if (error && error.code !== 'PGRST116') throw error;
-            setStatus(data?.onboarding_completed ? 'complete' : 'incomplete');
+                .rpc('check_onboarding_status', { p_tenant_id: activeTenantId });
+            if (error) throw error;
+            setStatus(data === true ? 'complete' : 'incomplete');
         } catch (e) {
             console.error('Onboarding check failed:', e);
             setStatus('incomplete');
@@ -47,15 +44,15 @@ export function RequireOnboarding({ children }) {
     const { onboardingComplete } = useOnboarding();
 
     // Allow access to company profile page (for the wizard itself)
-    const isOnboardingPage = location.pathname.toLowerCase() === '/companyprofile';
+    const isOnboardingPage = ['/companyprofile', '/company'].includes(location.pathname.toLowerCase());
     if (isOnboardingPage) return children;
 
     // Allow access to login and system pages
-    const exempt = ['/login', '/system'];
+    const exempt = ['/login', '/system', '/operations/system'];
     if (exempt.includes(location.pathname.toLowerCase())) return children;
 
     if (!onboardingComplete) {
-        return <Navigate to="/companyprofile" replace />;
+        return <Navigate to="/company" replace />;
     }
 
     return children;
