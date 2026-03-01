@@ -490,7 +490,7 @@ export default function System() {
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge variant={roleBadgeVariant(row.role || (row.roles || [])[0])}>
-                          {row.role || (row.roles || [])[0] || 'member'}
+                          {(row.role || (row.roles || [])[0] || 'member').charAt(0).toUpperCase() + (row.role || (row.roles || [])[0] || 'member').slice(1)}
                         </Badge>
                         {canManageRoles && !isCurrentUser && (
                           <>
