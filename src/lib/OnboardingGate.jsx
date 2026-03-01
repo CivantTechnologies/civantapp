@@ -47,11 +47,11 @@ export function RequireOnboarding({ children }) {
     const { onboardingComplete } = useOnboarding();
 
     // Allow access to company profile page (for the wizard itself)
-    const isOnboardingPage = location.pathname.toLowerCase() === '/companyprofile';
+    const isOnboardingPage = ['/companyprofile', '/company'].includes(location.pathname.toLowerCase());
     if (isOnboardingPage) return children;
 
     // Allow access to login and system pages
-    const exempt = ['/login', '/system'];
+    const exempt = ['/login', '/system', '/operations/system'];
     if (exempt.includes(location.pathname.toLowerCase())) return children;
 
     if (!onboardingComplete) {
