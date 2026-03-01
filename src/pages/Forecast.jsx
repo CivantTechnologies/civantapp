@@ -325,8 +325,11 @@ export default function Forecast() {
     if (!activeTenantId) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .rpc('get_tenant_predictions', { p_tenant_id: activeTenantId }).range(0, 19999);
+      console.log('[Forecast] Loading predictions for tenant:', activeTenantId);
+      const { data, error, count } = await supabase
+        .rpc('get_tenant_predictions', { p_tenant_id: activeTenantId });
+
+      console.log('[Forecast] RPC result:', { rows: data?.length, error: error?.message, count });
 
       if (error) {
         console.warn('get_tenant_predictions RPC unavailable:', error.message);
@@ -336,6 +339,7 @@ export default function Forecast() {
           .eq('tenant_id', activeTenantId)
           .order('generated_at', { ascending: false })
           .limit(20000);
+        console.log('[Forecast] Fallback result:', { rows: fallback?.length, error: fallbackError?.message });
         if (fallbackError) throw fallbackError;
         setAllPredictions(fallback || []);
       } else {
