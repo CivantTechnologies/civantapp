@@ -1325,8 +1325,6 @@ export default function Competitors() {
             )}
           </div>
           </section>
-          ) : null}
-          ) : null}
 
           <CompetitiveExposureSnapshot
             loading={snapshotLoading}
