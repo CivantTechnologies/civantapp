@@ -1141,53 +1141,290 @@ export async function getTenant(req: RequestLike) {
 
 export async function listTenantUsers(req: RequestLike) {
   const { tenantId } = await requireTenantScopedPrivilegedUser(req);
-  const supabase = getServerSupabase();
+  const supabase = getServerSupabase() as any;
 
-  const { data: users, error: usersError } = await supabase
-    .from('users')
-    .select('id,email,role,tenant_id,created_at')
+  // Query tenant_users joined with users to get email + per-tenant role
+  const { data: members, error } = await supabase
+    .from('tenant_users')
+    .select('user_id, role, joined_at, users(id, email)')
     .eq('tenant_id', tenantId)
-    .order('created_at', { ascending: false })
-    .limit(200);
+    .order('joined_at', { ascending: true });
 
-  if (usersError) throw Object.assign(new Error(usersError.message), { status: 500 });
-
-  const userRows = (Array.isArray(users) ? users : []) as UserRow[];
-  const userIds = userRows.map((row) => String(row.id || '')).filter(Boolean);
-
-  let rolesByUserId = new Map<string, string[]>();
-  if (userIds.length) {
-    const { data: roleRows, error: rolesError } = await supabase
-      .from('user_roles')
-      .select('user_id,role')
-      .in('user_id', userIds);
-
-    if (rolesError) throw Object.assign(new Error(rolesError.message), { status: 500 });
-
-    rolesByUserId = ((Array.isArray(roleRows) ? roleRows : []) as UserRoleRow[]).reduce((map, row: UserRoleRow) => {
-      const userId = String(row.user_id || '');
-      if (!userId) return map;
-      const role = String(row.role || '').trim().toLowerCase();
-      if (!role) return map;
-      const next = map.get(userId) || [];
-      if (!next.includes(role)) next.push(role);
-      map.set(userId, next);
-      return map;
-    }, new Map<string, string[]>());
+  if (error) {
+    // Fallback to legacy query if tenant_users join fails
+    const { data: legacyUsers, error: legacyError } = await supabase
+      .from('users')
+      .select('id,email,role,tenant_id,created_at')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (legacyError) throw Object.assign(new Error(legacyError.message), { status: 500 });
+    return (Array.isArray(legacyUsers) ? legacyUsers : []).map((u: any) => ({
+      userId: String(u.id || ''),
+      email: String(u.email || ''),
+      role: String(u.role || 'member'),
+      roles: [String(u.role || 'member')]
+    }));
   }
 
-  return userRows.map((tenantUser) => {
-    const userId = String(tenantUser.id || '');
-    const roles = rolesByUserId.get(userId) || [];
-    const fallback = String(tenantUser.role || '').trim().toLowerCase();
-    const effectiveRoles = roles.length ? roles : (fallback ? [fallback] : ['user']);
-
+  return (Array.isArray(members) ? members : []).map((m: any) => {
+    const tenantRole = String(m.role || 'member');
     return {
-      userId,
-      email: String(tenantUser.email || ''),
-      roles: effectiveRoles
+      userId: String(m.user_id || ''),
+      email: String(m.users?.email || ''),
+      role: tenantRole,
+      roles: [tenantRole]
     };
   });
+}
+
+export async function inviteUser(req: RequestLike) {
+  const { user, tenantId } = await requireTenantScopedPrivilegedUser(req);
+  const supabase = getServerSupabase() as any;
+  const body = readJsonBody<{ email?: string; role?: string; tenantId?: string }>(req);
+
+  const email = String(body.email || '').trim().toLowerCase();
+  if (!email || !email.includes('@')) throw badRequest('Valid email is required');
+  const role = String(body.role || 'member').trim().toLowerCase();
+  if (!['admin', 'member'].includes(role)) throw badRequest('role must be admin or member');
+
+  // Check for existing active invitation
+  const { data: existing } = await supabase
+    .from('tenant_invitations')
+    .select('id, token')
+    .eq('tenant_id', tenantId)
+    .eq('email', email)
+    .is('accepted_at', null)
+    .is('revoked_at', null)
+    .gt('expires_at', new Date().toISOString())
+    .limit(1);
+
+  if (Array.isArray(existing) && existing.length > 0) {
+    throw conflict(`An active invitation already exists for ${email}`);
+  }
+
+  const token = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.civant.eu';
+  const inviteUrl = `${appUrl}/invite?token=${token}`;
+
+  const { error: insertError } = await supabase
+    .from('tenant_invitations')
+    .insert({
+      token,
+      email,
+      tenant_id: tenantId,
+      role,
+      invited_by: user.userId || null,
+      expires_at: expiresAt,
+      created_at: new Date().toISOString()
+    });
+
+  if (insertError) throw Object.assign(new Error(insertError.message), { status: 500 });
+
+  // Email delivery: not yet wired up — return invite URL for manual sharing
+  // TODO: integrate with email provider and send invitation email to `email`
+  return { success: true, token, inviteUrl, emailSent: false };
+}
+
+export async function listInvitations(req: RequestLike) {
+  const { tenantId } = await requireTenantScopedPrivilegedUser(req);
+  const supabase = getServerSupabase() as any;
+
+  const { data, error } = await supabase
+    .from('tenant_invitations')
+    .select('token, email, role, invited_by, expires_at, created_at')
+    .eq('tenant_id', tenantId)
+    .is('accepted_at', null)
+    .is('revoked_at', null)
+    .order('created_at', { ascending: false });
+
+  if (error) throw Object.assign(new Error(error.message), { status: 500 });
+  return Array.isArray(data) ? data : [];
+}
+
+export async function revokeInvitation(req: RequestLike) {
+  const { tenantId } = await requireTenantScopedPrivilegedUser(req);
+  const supabase = getServerSupabase() as any;
+  const body = readJsonBody<{ token?: string }>(req);
+
+  const token = String(body.token || '').trim();
+  if (!token) throw badRequest('token is required');
+
+  const { error } = await supabase
+    .from('tenant_invitations')
+    .update({ revoked_at: new Date().toISOString() })
+    .eq('token', token)
+    .eq('tenant_id', tenantId)
+    .is('accepted_at', null)
+    .is('revoked_at', null);
+
+  if (error) throw Object.assign(new Error(error.message), { status: 500 });
+  return { success: true };
+}
+
+export async function acceptInvitation(req: RequestLike) {
+  // User must be authenticated but not necessarily a tenant member yet
+  const user = await getCurrentUser(req);
+  if (!user.userId) throw Object.assign(new Error('Authentication required'), { status: 401 });
+
+  const supabase = getServerSupabase() as any;
+  const body = readJsonBody<{ token?: string }>(req);
+  const token = String(body.token || '').trim();
+  if (!token) throw badRequest('token is required');
+
+  // Look up invitation
+  const { data: rows, error: fetchError } = await supabase
+    .from('tenant_invitations')
+    .select('token, email, tenant_id, role, invited_by, expires_at, accepted_at, revoked_at')
+    .eq('token', token)
+    .limit(1);
+
+  if (fetchError) throw Object.assign(new Error(fetchError.message), { status: 500 });
+  const inv = Array.isArray(rows) && rows.length ? rows[0] : null;
+
+  if (!inv) throw Object.assign(new Error('Invitation not found or already used'), { status: 404 });
+  if (inv.revoked_at) throw Object.assign(new Error('This invitation has been revoked'), { status: 410 });
+  if (inv.accepted_at) throw Object.assign(new Error('This invitation has already been accepted'), { status: 409 });
+  if (new Date(inv.expires_at) <= new Date()) throw Object.assign(new Error('This invitation has expired'), { status: 410 });
+
+  // Validate email match (case-insensitive)
+  const invEmail = String(inv.email || '').trim().toLowerCase();
+  const userEmail = String(user.email || '').trim().toLowerCase();
+  if (invEmail !== userEmail) {
+    throw Object.assign(
+      new Error('This invitation was sent to a different email address'),
+      { status: 403 }
+    );
+  }
+
+  // Check not already a member
+  const { data: existingMember } = await supabase
+    .from('tenant_users')
+    .select('user_id')
+    .eq('tenant_id', inv.tenant_id)
+    .eq('user_id', user.userId)
+    .limit(1);
+
+  if (Array.isArray(existingMember) && existingMember.length > 0) {
+    // Already a member — still mark accepted and return success
+    await supabase
+      .from('tenant_invitations')
+      .update({ accepted_at: new Date().toISOString() })
+      .eq('token', token);
+    const { data: tenantData } = await supabase
+      .from('tenants').select('name').eq('id', inv.tenant_id).limit(1);
+    const tenantName = tenantData?.[0]?.name || inv.tenant_id;
+    return { success: true, tenantId: inv.tenant_id, tenantName, role: inv.role };
+  }
+
+  // Add to tenant_users
+  const { error: insertError } = await supabase
+    .from('tenant_users')
+    .insert({
+      tenant_id: inv.tenant_id,
+      user_id: user.userId,
+      role: inv.role,
+      invited_by: inv.invited_by || null,
+      joined_at: new Date().toISOString(),
+      created_at: new Date().toISOString()
+    });
+
+  if (insertError) throw Object.assign(new Error(insertError.message), { status: 500 });
+
+  // Mark invitation accepted
+  await supabase
+    .from('tenant_invitations')
+    .update({ accepted_at: new Date().toISOString() })
+    .eq('token', token);
+
+  const { data: tenantData } = await supabase
+    .from('tenants').select('name').eq('id', inv.tenant_id).limit(1);
+  const tenantName = tenantData?.[0]?.name || inv.tenant_id;
+
+  return { success: true, tenantId: inv.tenant_id, tenantName, role: inv.role };
+}
+
+export async function updateTenantUserRole(req: RequestLike) {
+  const { user, tenantId } = await requireTenantScopedPrivilegedUser(req);
+  const supabase = getServerSupabase() as any;
+  const body = readJsonBody<{ userId?: string; newRole?: string }>(req);
+
+  const targetUserId = String(body.userId || '').trim();
+  const newRole = String(body.newRole || '').trim().toLowerCase();
+  if (!targetUserId) throw badRequest('userId is required');
+  if (!['admin', 'member'].includes(newRole)) throw badRequest('newRole must be admin or member');
+
+  // Caller must be owner in this tenant
+  const { data: callerRow } = await supabase
+    .from('tenant_users')
+    .select('role')
+    .eq('tenant_id', tenantId)
+    .eq('user_id', user.userId)
+    .limit(1);
+  if (!Array.isArray(callerRow) || !callerRow.length || callerRow[0].role !== 'owner') {
+    throw Object.assign(new Error('Owner role required to change member roles'), { status: 403 });
+  }
+
+  // Guard: cannot demote the last owner
+  if (targetUserId !== user.userId) {
+    const { data: targetRow } = await supabase
+      .from('tenant_users').select('role').eq('tenant_id', tenantId).eq('user_id', targetUserId).limit(1);
+    if (Array.isArray(targetRow) && targetRow.length && targetRow[0].role === 'owner') {
+      const { count } = await supabase
+        .from('tenant_users').select('*', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId).eq('role', 'owner');
+      if (Number(count) <= 1) throw badRequest('Cannot demote the last owner');
+    }
+  }
+
+  const { error } = await supabase
+    .from('tenant_users')
+    .update({ role: newRole })
+    .eq('tenant_id', tenantId)
+    .eq('user_id', targetUserId);
+
+  if (error) throw Object.assign(new Error(error.message), { status: 500 });
+  return { success: true };
+}
+
+export async function removeTenantUser(req: RequestLike) {
+  const { user, tenantId } = await requireTenantScopedPrivilegedUser(req);
+  const supabase = getServerSupabase() as any;
+  const body = readJsonBody<{ userId?: string }>(req);
+
+  const targetUserId = String(body.userId || '').trim();
+  if (!targetUserId) throw badRequest('userId is required');
+
+  // Caller must be owner in this tenant
+  const { data: callerRow } = await supabase
+    .from('tenant_users')
+    .select('role')
+    .eq('tenant_id', tenantId)
+    .eq('user_id', user.userId)
+    .limit(1);
+  if (!Array.isArray(callerRow) || !callerRow.length || callerRow[0].role !== 'owner') {
+    throw Object.assign(new Error('Owner role required to remove members'), { status: 403 });
+  }
+
+  // Guard: cannot remove the last owner
+  const { data: targetRow } = await supabase
+    .from('tenant_users').select('role').eq('tenant_id', tenantId).eq('user_id', targetUserId).limit(1);
+  if (Array.isArray(targetRow) && targetRow.length && targetRow[0].role === 'owner') {
+    const { count } = await supabase
+      .from('tenant_users').select('*', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId).eq('role', 'owner');
+    if (Number(count) <= 1) throw badRequest('Cannot remove the last owner');
+  }
+
+  const { error } = await supabase
+    .from('tenant_users')
+    .delete()
+    .eq('tenant_id', tenantId)
+    .eq('user_id', targetUserId);
+
+  if (error) throw Object.assign(new Error(error.message), { status: 500 });
+  return { success: true };
 }
 
 export async function getConnectorStatus(req: RequestLike) {
@@ -1579,6 +1816,18 @@ export async function dispatchFunction(functionName: string, req: RequestLike) {
       return getTenant(req);
     case 'listTenantUsers':
       return listTenantUsers(req);
+    case 'inviteUser':
+      return inviteUser(req);
+    case 'listInvitations':
+      return listInvitations(req);
+    case 'revokeInvitation':
+      return revokeInvitation(req);
+    case 'acceptInvitation':
+      return acceptInvitation(req);
+    case 'updateTenantUserRole':
+      return updateTenantUserRole(req);
+    case 'removeTenantUser':
+      return removeTenantUser(req);
     case 'getConnectorStatus':
       return getConnectorStatus(req);
     case 'getCapabilities':

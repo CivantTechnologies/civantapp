@@ -4,12 +4,13 @@ import { queryClientInstance } from '@/lib/query-client';
 import NavigationTracker from '@/lib/NavigationTracker';
 import { pagesConfig } from './pages.config';
 import { Suspense, useEffect } from 'react';
-import { BrowserRouter as Router, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { TenantProvider } from '@/lib/tenant';
 import { OnboardingProvider, RequireOnboarding } from "@/lib/OnboardingGate";
 import Login from '@/pages/Login';
+import AcceptInvitationPage from '@/pages/AcceptInvitation';
 import { Button } from '@/components/ui/button';
 
 const { Pages, Layout, prefetchCorePages } = pagesConfig;
@@ -55,6 +56,13 @@ function AccessDeniedPage() {
       </div>
     </LayoutWrapper>
   );
+}
+
+function LoginRoute() {
+  const { isAuthenticated } = useAuth();
+  const [searchParams] = useSearchParams();
+  const returnTo = searchParams.get('returnTo') || '/';
+  return isAuthenticated ? <Navigate to={returnTo} replace /> : <Login />;
 }
 
 function RouteLoader() {
@@ -372,7 +380,8 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} />
+      <Route path="/login" element={<LoginRoute />} />
+      <Route path="/invite" element={<AcceptInvitationPage />} />
       <Route
         path="*"
         element={

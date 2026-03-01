@@ -2,7 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { civant } from '@/api/civantClient';
 import { useAuth } from '@/lib/auth';
 import { useTenant } from '@/lib/tenant';
-import { AlertCircle, Loader2, RefreshCw, Shield, Building2, Users, PlugZap } from 'lucide-react';
+import {
+  AlertCircle, Loader2, RefreshCw, Shield, Building2, Users,
+  PlugZap, UserPlus, UserMinus, Copy, Mail
+} from 'lucide-react';
 import {
   Page,
   PageHeader,
@@ -48,10 +51,24 @@ function StatusBadge({ status }) {
   return <Badge variant="ghost">No data yet</Badge>;
 }
 
+function roleBadgeVariant(role) {
+  if (role === 'owner') return 'primary';
+  if (role === 'admin') return 'secondary';
+  return 'ghost';
+}
+
 export default function System() {
-  const { roles } = useAuth();
-  const { activeTenantId, refreshTenants } = useTenant();
+  const { roles, currentUser } = useAuth();
+  const { tenants, activeTenantId, refreshTenants } = useTenant();
   const isSystemAllowed = Array.isArray(roles) && (roles.includes('admin') || roles.includes('creator'));
+
+  const currentTenantRole = useMemo(() => {
+    const t = Array.isArray(tenants) ? tenants.find((t) => t.id === activeTenantId) : null;
+    return t?.role || 'member';
+  }, [tenants, activeTenantId]);
+
+  const canInvite = ['owner', 'admin'].includes(currentTenantRole);
+  const canManageRoles = currentTenantRole === 'owner';
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -61,6 +78,21 @@ export default function System() {
   const [tenant, setTenant] = useState(null);
   const [tenantUsers, setTenantUsers] = useState([]);
   const [connectors, setConnectors] = useState([]);
+
+  // Invitation state
+  const [invitations, setInvitations] = useState([]);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState('member');
+  const [inviting, setInviting] = useState(false);
+  const [inviteLink, setInviteLink] = useState(null);
+  const [teamMessage, setTeamMessage] = useState('');
+  const [teamError, setTeamError] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  // Member action state
+  const [memberActionLoading, setMemberActionLoading] = useState('');
+
+  // Support state
   const [supportStatus, setSupportStatus] = useState(null);
   const [supportAudit, setSupportAudit] = useState([]);
   const [supportLoading, setSupportLoading] = useState(true);
@@ -70,6 +102,15 @@ export default function System() {
   const [enableDurationMinutes, setEnableDurationMinutes] = useState('60');
   const [enableReason, setEnableReason] = useState('');
   const [revokeReason, setRevokeReason] = useState('');
+
+  const loadInvitations = async () => {
+    try {
+      const payload = unwrapResponse(await civant.system.listInvitations());
+      setInvitations(Array.isArray(payload) ? payload : []);
+    } catch {
+      // Non-fatal — invitations section just stays empty
+    }
+  };
 
   const loadSupportSection = async () => {
     setSupportLoading(true);
@@ -107,7 +148,8 @@ export default function System() {
 
       setTenantUsers(Array.isArray(unwrapResponse(usersPayload)) ? unwrapResponse(usersPayload) : []);
       setConnectors(Array.isArray(unwrapResponse(connectorsPayload)) ? unwrapResponse(connectorsPayload) : []);
-      await loadSupportSection();
+
+      await Promise.all([loadInvitations(), loadSupportSection()]);
       setDenied(false);
     } catch (err) {
       const status = err?.status || err?.response?.status;
@@ -130,12 +172,87 @@ export default function System() {
     loadSystemData(false);
   }, [activeTenantId, isSystemAllowed]);
 
+  const handleInvite = async () => {
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      setTeamError('Enter a valid email address.');
+      return;
+    }
+    setTeamError('');
+    setTeamMessage('');
+    setInviteLink(null);
+    setInviting(true);
+    try {
+      const result = unwrapResponse(await civant.system.inviteUser({ email, role: inviteRole }));
+      setInviteEmail('');
+      setInviteRole('member');
+      setInviteLink(result?.inviteUrl || null);
+      setTeamMessage(`Invitation created for ${email}.`);
+      await loadInvitations();
+    } catch (err) {
+      setTeamError(err?.message || 'Failed to create invitation.');
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const handleCopyLink = () => {
+    if (!inviteLink) return;
+    navigator.clipboard.writeText(inviteLink).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const handleRevokeInvitation = async (token) => {
+    setTeamError('');
+    setTeamMessage('');
+    try {
+      await civant.system.revokeInvitation({ token });
+      setTeamMessage('Invitation revoked.');
+      await loadInvitations();
+    } catch (err) {
+      setTeamError(err?.message || 'Failed to revoke invitation.');
+    }
+  };
+
+  const handleChangeRole = async (userId, newRole) => {
+    setMemberActionLoading(userId);
+    setTeamError('');
+    setTeamMessage('');
+    try {
+      await civant.system.updateTenantUserRole({ userId, newRole });
+      setTeamMessage('Role updated.');
+      const usersPayload = unwrapResponse(await civant.system.listTenantUsers());
+      setTenantUsers(Array.isArray(usersPayload) ? usersPayload : []);
+    } catch (err) {
+      setTeamError(err?.message || 'Failed to update role.');
+    } finally {
+      setMemberActionLoading('');
+    }
+  };
+
+  const handleRemoveMember = async (userId) => {
+    setMemberActionLoading(userId);
+    setTeamError('');
+    setTeamMessage('');
+    try {
+      await civant.system.removeTenantUser({ userId });
+      setTeamMessage('Member removed.');
+      const usersPayload = unwrapResponse(await civant.system.listTenantUsers());
+      setTenantUsers(Array.isArray(usersPayload) ? usersPayload : []);
+    } catch (err) {
+      setTeamError(err?.message || 'Failed to remove member.');
+    } finally {
+      setMemberActionLoading('');
+    }
+  };
+
   const handleEnableSupportAccess = async () => {
     if (!enableReason.trim()) {
       setSupportError('Enable reason is required.');
       return;
     }
-
     setSupportError('');
     setSupportMessage('');
     setSupportActionLoading('enable');
@@ -159,7 +276,6 @@ export default function System() {
       setSupportError('Revoke reason is required.');
       return;
     }
-
     setSupportError('');
     setSupportMessage('');
     setSupportActionLoading('revoke');
@@ -224,7 +340,7 @@ export default function System() {
           <CardContent className="p-8 text-center space-y-3">
             <AlertCircle className="h-10 w-10 mx-auto text-destructive" />
             <h2 className="text-xl font-semibold text-card-foreground">Access denied</h2>
-            <p className="text-muted-foreground">You don’t have access to System settings.</p>
+            <p className="text-muted-foreground">You don't have access to System settings.</p>
           </CardContent>
         </Card>
       </Page>
@@ -258,6 +374,145 @@ export default function System() {
           </Card>
         )}
 
+        {/* ── Team Management ───────────────────────────────── */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Users className="h-4 w-4" /> Team</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+
+            {teamMessage && <p className="text-sm text-primary">{teamMessage}</p>}
+            {teamError && <p className="text-sm text-destructive">{teamError}</p>}
+
+            {/* Invite form */}
+            {canInvite && (
+              <div className="rounded-xl border border-border p-4 space-y-3">
+                <h3 className="text-sm font-semibold text-card-foreground flex items-center gap-2">
+                  <UserPlus className="h-4 w-4" /> Invite a new member
+                </h3>
+                <div className="flex flex-col md:flex-row gap-3">
+                  <Input
+                    type="email"
+                    placeholder="colleague@company.com"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleInvite()}
+                    className="flex-1"
+                  />
+                  <select
+                    value={inviteRole}
+                    onChange={(e) => setInviteRole(e.target.value)}
+                    className="h-10 rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground"
+                  >
+                    <option value="member">Member</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                  <Button onClick={handleInvite} disabled={inviting}>
+                    {inviting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Mail className="h-4 w-4 mr-2" />}
+                    Send invite
+                  </Button>
+                </div>
+                {inviteLink && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Share this invite link manually:</p>
+                    <div className="flex gap-2">
+                      <Input readOnly value={inviteLink} className="flex-1 text-xs font-mono" />
+                      <Button variant="secondary" onClick={handleCopyLink}>
+                        <Copy className="h-4 w-4 mr-1" />
+                        {copied ? 'Copied!' : 'Copy'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Members list */}
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-card-foreground">
+                Members ({tenantUsers.length})
+              </h3>
+              {tenantUsers.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No members yet</p>
+              ) : (
+                tenantUsers.map((row) => {
+                  const isCurrentUser = (row.email || '').toLowerCase() === (currentUser?.email || '').toLowerCase();
+                  const isActioning = memberActionLoading === row.userId;
+                  return (
+                    <div key={row.userId} className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 rounded-xl border border-border p-3">
+                      <div>
+                        <p className="text-sm font-medium text-card-foreground">
+                          {row.email || 'Not configured'}
+                          {isCurrentUser && <span className="ml-2 text-xs text-muted-foreground">(you)</span>}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{row.userId}</p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant={roleBadgeVariant(row.role || (row.roles || [])[0])}>
+                          {row.role || (row.roles || [])[0] || 'member'}
+                        </Badge>
+                        {canManageRoles && (
+                          <>
+                            <select
+                              value={row.role || (row.roles || [])[0] || 'member'}
+                              onChange={(e) => handleChangeRole(row.userId, e.target.value)}
+                              disabled={isActioning}
+                              className="h-8 rounded-lg border border-input bg-background px-2 text-xs text-foreground"
+                            >
+                              <option value="owner">Owner</option>
+                              <option value="admin">Admin</option>
+                              <option value="member">Member</option>
+                            </select>
+                            <Button
+                              variant="secondary"
+                              onClick={() => handleRemoveMember(row.userId)}
+                              disabled={isActioning}
+                              className="h-8 px-2 text-xs"
+                            >
+                              {isActioning ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserMinus className="h-3 w-3" />}
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Pending invitations */}
+            {canInvite && (
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-card-foreground">
+                  Pending invitations ({invitations.length})
+                </h3>
+                {invitations.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No pending invitations</p>
+                ) : (
+                  invitations.map((inv) => (
+                    <div key={inv.token} className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 rounded-xl border border-border p-3">
+                      <div>
+                        <p className="text-sm font-medium text-card-foreground">{inv.email}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Role: {inv.role} · Expires {formatDateRelative(inv.expires_at)}
+                        </p>
+                      </div>
+                      <Button
+                        variant="secondary"
+                        onClick={() => handleRevokeInvitation(inv.token)}
+                        className="h-8 px-3 text-xs"
+                      >
+                        Revoke
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── Organisation ──────────────────────────────────── */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Building2 className="h-4 w-4" /> Organisation</CardTitle>
@@ -302,33 +557,7 @@ export default function System() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Users className="h-4 w-4" /> Users & Roles</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {tenantUsers.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No data yet</p>
-            ) : (
-              tenantUsers.map((row) => (
-                <div key={row.userId} className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 rounded-xl border border-border p-3">
-                  <div>
-                    <p className="text-sm font-medium text-card-foreground">{row.email || 'Not configured'}</p>
-                    <p className="text-xs text-muted-foreground">{row.userId}</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {(row.roles || []).length === 0 ? (
-                      <Badge variant="ghost">No role</Badge>
-                    ) : (
-                      row.roles.map((role) => <Badge key={`${row.userId}-${role}`} variant={role === 'admin' ? 'primary' : 'secondary'}>{role}</Badge>)
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-
+        {/* ── Connectors ────────────────────────────────────── */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><PlugZap className="h-4 w-4" /> Connectors</CardTitle>
@@ -355,6 +584,7 @@ export default function System() {
           </CardContent>
         </Card>
 
+        {/* ── Support Access ────────────────────────────────── */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Shield className="h-4 w-4" /> Support Access</CardTitle>

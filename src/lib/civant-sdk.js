@@ -458,6 +458,24 @@ export const createClient = ({
             },
             listSupportAccessAudit(payload = {}) {
                 return functionsApi.invoke('listSupportAccessAudit', payload, { headers: tenantHeaders() });
+            },
+            inviteUser(payload = {}) {
+                return functionsApi.invoke('inviteUser', payload, { headers: tenantHeaders() });
+            },
+            listInvitations(payload = {}) {
+                return functionsApi.invoke('listInvitations', payload, { headers: tenantHeaders() });
+            },
+            revokeInvitation(payload = {}) {
+                return functionsApi.invoke('revokeInvitation', payload, { headers: tenantHeaders() });
+            },
+            acceptInvitation(payload = {}) {
+                return functionsApi.invoke('acceptInvitation', payload, {});
+            },
+            updateTenantUserRole(payload = {}) {
+                return functionsApi.invoke('updateTenantUserRole', payload, { headers: tenantHeaders() });
+            },
+            removeTenantUser(payload = {}) {
+                return functionsApi.invoke('removeTenantUser', payload, { headers: tenantHeaders() });
             }
         },
         connectors: {
