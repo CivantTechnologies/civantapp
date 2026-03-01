@@ -1171,7 +1171,7 @@ export async function listTenantUsers(req: RequestLike) {
     // Fallback to legacy query if tenant_users join fails
     const { data: legacyUsers, error: legacyError } = await supabase
       .from('users')
-      .select('id,email,role,tenant_id,created_at')
+      .select('id,email,tenant_id,created_at')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false })
       .limit(200);
@@ -1179,8 +1179,8 @@ export async function listTenantUsers(req: RequestLike) {
     return (Array.isArray(legacyUsers) ? legacyUsers : []).map((u: any) => ({
       userId: String(u.id || ''),
       email: String(u.email || ''),
-      role: String(u.role || 'member'),
-      roles: [String(u.role || 'member')]
+      role: 'member',
+      roles: ['member']
     }));
   }
 
