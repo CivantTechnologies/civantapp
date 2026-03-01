@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/auth';
 import { useLocation } from 'react-router-dom';
 import {
     Building2, CreditCard, Loader2, Save, ChevronRight, ChevronLeft,
-    Check, Tag, Target, Upload, FileText, X
+    Check, Tag, Target, Upload, FileText, X, Sparkles, ThumbsUp, ThumbsDown
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -604,6 +604,117 @@ function ProfileTabs({ profile, onSave, saving, isOrgAdmin, initialTab = 'compan
 
                 {/* ===== PERSONALIZATION TAB ===== */}
                 <TabsContent value="personalization" className="mt-3 space-y-4">
+
+                    {/* AI Analysis Button & Results */}
+                    <Card className="border border-civant-teal/20 bg-civant-teal/[0.03] shadow-none">
+                        <CardContent className="px-4 py-4 space-y-3">
+                            <div className="flex items-center justify-between gap-3">
+                                <div className="space-y-0.5">
+                                    <p className="text-sm font-medium text-slate-200 flex items-center gap-1.5">
+                                        <Sparkles className="h-4 w-4 text-civant-teal" />
+                                        Civant Agent: Targeting Suggestions
+                                    </p>
+                                    <p className="text-xs text-slate-400">
+                                        Analyzes your company profile and reference document to suggest the best procurement categories, buyer types, and contract ranges.
+                                    </p>
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={analyzeCompany}
+                                    disabled={aiAnalyzing}
+                                    className="shrink-0 border-civant-teal/30 text-civant-teal hover:bg-civant-teal/10"
+                                >
+                                    {aiAnalyzing ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1.5" />}
+                                    {aiAnalyzing ? 'Analyzing...' : 'Analyze My Company'}
+                                </Button>
+                            </div>
+
+                            {aiError && (
+                                <p className="text-xs text-red-400">{aiError}</p>
+                            )}
+
+                            {aiSuggestions && (
+                                <div className="space-y-3 pt-2 border-t border-white/[0.06]">
+                                    {aiSuggestions.company_summary && (
+                                        <p className="text-xs text-slate-300 italic">{aiSuggestions.company_summary}</p>
+                                    )}
+
+                                    {aiSuggestions.cpv_clusters?.length > 0 && (
+                                        <div>
+                                            <p className="text-xs font-medium text-slate-400 mb-1">Suggested Categories</p>
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {aiSuggestions.cpv_clusters.map((c) => {
+                                                    const match = CPV_CLUSTERS.find((x) => x.value === c);
+                                                    return match ? (
+                                                        <Badge key={c} variant="outline" className="text-xs border-civant-teal/40 text-civant-teal bg-civant-teal/10">
+                                                            {match.label}
+                                                        </Badge>
+                                                    ) : null;
+                                                })}
+                                            </div>
+                                            {aiSuggestions.cpv_reasoning && (
+                                                <p className="text-xs text-slate-500 mt-1">{aiSuggestions.cpv_reasoning}</p>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {aiSuggestions.buyer_types?.length > 0 && (
+                                        <div>
+                                            <p className="text-xs font-medium text-slate-400 mb-1">Suggested Buyer Types</p>
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {aiSuggestions.buyer_types.map((b) => {
+                                                    const match = BUYER_TYPES.find((x) => x.value === b);
+                                                    return match ? (
+                                                        <Badge key={b} variant="outline" className="text-xs border-civant-teal/40 text-civant-teal bg-civant-teal/10">
+                                                            {match.label}
+                                                        </Badge>
+                                                    ) : null;
+                                                })}
+                                            </div>
+                                            {aiSuggestions.buyer_reasoning && (
+                                                <p className="text-xs text-slate-500 mt-1">{aiSuggestions.buyer_reasoning}</p>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {(aiSuggestions.contract_size_min_eur || aiSuggestions.contract_size_max_eur) && (
+                                        <div>
+                                            <p className="text-xs font-medium text-slate-400 mb-1">Suggested Contract Range</p>
+                                            <p className="text-sm text-slate-200">
+                                                {aiSuggestions.contract_size_min_eur ? `€${Number(aiSuggestions.contract_size_min_eur).toLocaleString()}` : '—'}
+                                                {' — '}
+                                                {aiSuggestions.contract_size_max_eur ? `€${Number(aiSuggestions.contract_size_max_eur).toLocaleString()}` : '—'}
+                                            </p>
+                                            {aiSuggestions.size_reasoning && (
+                                                <p className="text-xs text-slate-500 mt-1">{aiSuggestions.size_reasoning}</p>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <div className="flex gap-2 pt-1">
+                                        <Button
+                                            size="sm"
+                                            onClick={() => applySuggestions(aiSuggestions)}
+                                            className="bg-civant-teal hover:bg-civant-teal/90 text-slate-950"
+                                        >
+                                            <ThumbsUp className="h-3.5 w-3.5 mr-1.5" />
+                                            Apply All Suggestions
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => setAiSuggestions(null)}
+                                            className="text-slate-400 hover:text-slate-200"
+                                        >
+                                            <ThumbsDown className="h-3.5 w-3.5 mr-1.5" />
+                                            Dismiss
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
                     {isOrgAdmin ? (
                         <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none">
                             <CardHeader><CardTitle className="text-base">Scope Behavior</CardTitle></CardHeader>
@@ -790,6 +901,9 @@ export default function CompanyProfile() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [saveMsg, setSaveMsg] = useState('');
+    const [aiSuggestions, setAiSuggestions] = useState(null);
+    const [aiAnalyzing, setAiAnalyzing] = useState(false);
+    const [aiError, setAiError] = useState('');
     const isOrgAdmin = Array.isArray(roles) && (roles.includes('admin') || roles.includes('creator'));
     const initialTab = useMemo(() => {
         const tab = new URLSearchParams(location.search).get('tab');
@@ -822,6 +936,45 @@ export default function CompanyProfile() {
     useEffect(() => {
         if (!isLoadingTenants && activeTenantId) loadProfile();
     }, [activeTenantId, isLoadingTenants, loadProfile]);
+
+    const analyzeCompany = async () => {
+        setAiAnalyzing(true);
+        setAiError('');
+        setAiSuggestions(null);
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const res = await fetch(
+                `${import.meta.env.VITE_SUPABASE_URL || 'https://ossoggqkqifdkihybbew.supabase.co'}/functions/v1/analyze-company`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+                    },
+                    body: JSON.stringify({ tenant_id: activeTenantId }),
+                }
+            );
+            const data = await res.json();
+            if (data.error) {
+                setAiError(data.error);
+            } else if (data.suggestions) {
+                setAiSuggestions(data.suggestions);
+            }
+        } catch (e) {
+            console.error('Analyze company error:', e);
+            setAiError('Analysis failed. Please try again.');
+        } finally {
+            setAiAnalyzing(false);
+        }
+    };
+
+    const applySuggestions = (suggestions) => {
+        if (suggestions.cpv_clusters?.length) set('target_cpv_clusters', suggestions.cpv_clusters);
+        if (suggestions.buyer_types?.length) set('target_buyer_types', suggestions.buyer_types);
+        if (suggestions.contract_size_min_eur) set('contract_size_min_eur', suggestions.contract_size_min_eur);
+        if (suggestions.contract_size_max_eur) set('contract_size_max_eur', suggestions.contract_size_max_eur);
+        setAiSuggestions(null);
+    };
 
     const saveProfile = async (form) => {
         setSaving(true);
