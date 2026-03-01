@@ -313,20 +313,40 @@ export async function requireTenantAccessWithSupportGrant(params: {
     return;
   }
 
-  // Allow if user is a direct member of the requested tenant via tenant_users
-  if (user.userId) {
-    const supabase = getServerSupabase();
-    const { data: memberRow } = await (supabase as any)
-      .from('tenant_users')
-      .select('user_id')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', user.userId)
+  const supabase = getServerSupabase();
+
+  // 2. Allow if user is a direct member of the requested tenant via tenant_users
+  const { data: memberRows, error: memberError } = await supabase
+    .from('tenant_users')
+    .select('tenant_id')
+    .eq('user_id', user.userId)
+    .eq('tenant_id', tenantId)
+    .limit(1);
+  if (!memberError && Array.isArray(memberRows) && memberRows.length > 0) {
+    return;
+  }
+
+  // 3. Allow if user belongs to a platform admin tenant (is_platform_admin = true)
+  const { data: userTenantIds } = await supabase
+    .from('tenant_users')
+    .select('tenant_id')
+    .eq('user_id', user.userId);
+  const userTenants = Array.isArray(userTenantIds)
+    ? userTenantIds.map((r: any) => String(r.tenant_id))
+    : [];
+  if (userTenants.length > 0) {
+    const { data: adminTenants } = await supabase
+      .from('tenants')
+      .select('id')
+      .in('id', userTenants)
+      .eq('is_platform_admin', true)
       .limit(1);
-    if (Array.isArray(memberRow) && memberRow.length > 0) {
+    if (Array.isArray(adminTenants) && adminTenants.length > 0) {
       return;
     }
   }
 
+  // 4. Fall back to support grant check for privileged users
   if (!isPrivileged(user)) {
     throw forbidden('Forbidden for tenant');
   }
