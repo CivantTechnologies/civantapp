@@ -566,7 +566,7 @@ export default function Forecast() {
               <div className="rounded-lg bg-white/[0.03] px-3 py-2.5">
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Timing Accuracy</p>
                 <p className="text-2xl font-semibold text-card-foreground">{medianDays} days</p>
-                <p className="text-[10px] text-muted-foreground">median difference, predicted vs actual</p>
+                <p className="text-[10px] text-muted-foreground">median difference, forecast vs actual</p>
               </div>
               )}
               <div className="rounded-lg bg-white/[0.03] px-3 py-2.5">

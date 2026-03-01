@@ -57,7 +57,7 @@ export default function FeedbackDialog({ prediction, buyerName, open, onOpenChan
                     <div className="flex flex-col items-center justify-center py-8">
                         <CheckCircle className="h-16 w-16 text-emerald-600 mb-4" />
                         <h3 className="text-xl font-semibold text-slate-900">Feedback Submitted</h3>
-                        <p className="text-slate-500 mt-2">Thank you for helping improve our predictions!</p>
+                        <p className="text-slate-500 mt-2">Thank you for helping improve our forecasts!</p>
                     </div>
                 </DialogContent>
             </Dialog>
@@ -68,13 +68,13 @@ export default function FeedbackDialog({ prediction, buyerName, open, onOpenChan
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-lg">
                 <DialogHeader>
-                    <DialogTitle>Prediction Feedback</DialogTitle>
+                    <DialogTitle>Forecast Feedback</DialogTitle>
                 </DialogHeader>
                 
                 <div className="space-y-6 py-4">
                     {/* Prediction Info */}
                     <div className="p-3 bg-slate-50 rounded-lg text-sm">
-                        <p className="font-medium text-slate-700">Predicted Date</p>
+                        <p className="font-medium text-slate-700">Estimated Date</p>
                         <p className="text-slate-900">{format(new Date(prediction.predicted_date), 'MMMM d, yyyy')}</p>
                         <p className="text-xs text-slate-500 mt-1">for {buyerName}</p>
                     </div>
@@ -114,7 +114,7 @@ export default function FeedbackDialog({ prediction, buyerName, open, onOpenChan
                     
                     {/* Rating */}
                     <div className="space-y-2">
-                        <Label>Prediction Accuracy Rating</Label>
+                        <Label>Forecast Accuracy Rating</Label>
                         <div className="flex gap-2">
                             {[1, 2, 3, 4, 5].map(star => (
                                 <button
@@ -142,7 +142,7 @@ export default function FeedbackDialog({ prediction, buyerName, open, onOpenChan
                     <div className="space-y-2">
                         <Label>Additional Comments (Optional)</Label>
                         <Textarea 
-                            placeholder="Any insights on why the prediction was accurate/inaccurate?"
+                            placeholder="Any insights on why the forecast was accurate/inaccurate?"
                             value={notes}
                             onChange={(e) => setNotes(e.target.value)}
                             rows={3}
