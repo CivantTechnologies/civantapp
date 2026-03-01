@@ -1269,8 +1269,6 @@ export default function Competitors() {
               </Button>
             </div>
           </div>
-
-          {search.trim() ? (
           <section className="space-y-3">
           <div className="grid gap-4">
             {filteredCompetitors.length === 0 ? (
