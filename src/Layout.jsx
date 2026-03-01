@@ -40,9 +40,6 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 
@@ -518,26 +515,25 @@ export default function Layout({ children, currentPageName }) {
                 <DropdownMenuSeparator className="bg-white/[0.06]" />
 
                 {canSwitchWorkspace ? (
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger className="rounded-lg px-3 py-2 text-sm text-slate-300 focus:bg-white/[0.05] focus:text-slate-100 data-[state=open]:bg-white/[0.05] data-[state=open]:text-slate-100">
-                      Switch workspace
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent className="w-56 rounded-xl border-white/[0.08] bg-slate-950/95 p-1.5 shadow-xl">
-                      {tenants.map((tenant) => {
-                        const isSelected = tenant.id === activeTenantId;
-                        return (
-                          <DropdownMenuItem
-                            key={tenant.id}
-                            className="rounded-lg px-3 py-2 text-sm text-slate-300 focus:bg-white/[0.05] focus:text-slate-100"
-                            onClick={() => setActiveTenantId(tenant.id)}
-                          >
-                            <span className="truncate">{tenant.name}</span>
-                            {isSelected ? <Check className="ml-auto h-4 w-4 text-primary/80" /> : null}
-                          </DropdownMenuItem>
-                        );
-                      })}
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
+                  <>
+                    <DropdownMenuSeparator className="bg-white/[0.06]" />
+                    <DropdownMenuLabel className="px-3 py-1.5 text-[10px] uppercase tracking-widest text-slate-500">
+                      Workspaces
+                    </DropdownMenuLabel>
+                    {tenants.map((tenant) => {
+                      const isSelected = tenant.id === activeTenantId;
+                      return (
+                        <DropdownMenuItem
+                          key={tenant.id}
+                          className="rounded-lg px-3 py-2 text-sm text-slate-300 focus:bg-white/[0.05] focus:text-slate-100"
+                          onClick={() => setActiveTenantId(tenant.id)}
+                        >
+                          <span className="truncate">{tenant.name}</span>
+                          {isSelected ? <Check className="ml-auto h-4 w-4 text-primary/80" /> : null}
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </>
                 ) : null}
 
                 <DropdownMenuItem
