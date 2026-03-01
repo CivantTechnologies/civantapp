@@ -4,6 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Loader2, AlertCircle, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import Connectors from './Connectors';
 
 function pretty(value) {
   return JSON.stringify(value, null, 2);
@@ -124,13 +126,21 @@ export default function PipelineAdmin() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-100">Pipeline Admin</h1>
-          <p className="text-slate-400 mt-1">Ingestion runs, review queue, and forecast evidence</p>
+          <p className="text-slate-400 mt-1">Ingestion runs, connectors, review queue, and forecast evidence</p>
         </div>
         <Button variant="outline" onClick={loadData}>
           <RefreshCw className="h-4 w-4 mr-2" />
           Refresh
         </Button>
       </div>
+
+      <Tabs defaultValue="pipeline" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
+          <TabsTrigger value="connectors">Connectors</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="pipeline" className="space-y-6">
 
       <div className="grid grid-cols-1 lg:grid-cols-6 gap-4">
         <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
@@ -328,6 +338,12 @@ export default function PipelineAdmin() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="connectors">
+          <Connectors />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
