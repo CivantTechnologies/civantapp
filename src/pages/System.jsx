@@ -221,8 +221,33 @@ export default function System() {
       setInviteEmail('');
       setInviteRole('member');
       setInviteLink(result?.inviteUrl || null);
-      setTeamMessage(`Invitation created for ${email}.`);
       await loadInvitations();
+
+      // Provision auth account so the invited user can log in
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const provRes = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/provision-user`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session?.access_token}`,
+            },
+            body: JSON.stringify({ email }),
+          }
+        );
+        const provData = await provRes.json();
+        if (provData.status === 'created') {
+          setTeamMessage(`Invitation created for ${email}. A password setup email has been sent.`);
+        } else if (provData.status === 'existing_user') {
+          setTeamMessage(`Invitation created for ${email}. They already have an account.`);
+        } else {
+          setTeamMessage(`Invitation created for ${email}. Note: could not auto-provision account.`);
+        }
+      } catch {
+        setTeamMessage(`Invitation created for ${email}. Ask them to contact you if they cannot log in.`);
+      }
     } catch (err) {
       setTeamError(err?.message || 'Failed to create invitation.');
     } finally {
