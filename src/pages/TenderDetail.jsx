@@ -312,16 +312,20 @@ export default function TenderDetail() {
                 setLinkedNotices(mergedNotices);
 
                 // Load cached enrichment from tender_enrichments
-                const { data: enrichRows } = await supabase
-                    .from('tender_enrichments')
-                    .select('*')
-                    .eq('tender_id', tenderId)
-                    .eq('status', 'complete')
-                    .gt('expires_at', new Date().toISOString())
-                    .order('created_at', { ascending: false })
-                    .limit(1);
-                if (enrichRows?.length > 0) {
-                    setEnrichment(enrichRows[0]);
+                try {
+                    const { data: enrichRows } = await supabase
+                        .from('tender_enrichments')
+                        .select('*')
+                        .eq('tender_id', canonicalIdValue)
+                        .eq('status', 'complete')
+                        .gt('expires_at', new Date().toISOString())
+                        .order('created_at', { ascending: false })
+                        .limit(1);
+                    if (enrichRows?.length > 0) {
+                        setEnrichment(enrichRows[0]);
+                    }
+                } catch (enrichErr) {
+                    console.warn('Enrichment cache check failed (non-blocking):', enrichErr);
                 }
             }
         } catch (error) {
@@ -353,10 +357,14 @@ export default function TenderDetail() {
         setEnriching(true);
         try {
             const response = await civant.functions.invoke('enrichTender', { tender_id: actionableTenderId });
-            if (response.data?.success && response.data.enrichment) {
-                setEnrichment(response.data.enrichment);
+            console.log('Enrichment raw response:', response);
+            const result = response?.data || response;
+            if (result?.success && result.enrichment) {
+                setEnrichment(result.enrichment);
+            } else if (result?.enrichment) {
+                setEnrichment(result.enrichment);
             } else {
-                console.error('Enrichment response:', response.data);
+                console.error('Enrichment failed:', result);
             }
         } catch (error) {
             console.error('Enrichment error:', error);
