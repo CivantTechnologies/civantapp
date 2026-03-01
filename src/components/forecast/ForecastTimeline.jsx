@@ -88,7 +88,7 @@ export default function ForecastTimeline({ rows = [] }) {
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-full bg-cyan-400" />
-            Predicted opportunities per month
+            Estimated opportunities per month
           </span>
         </div>
       </div>
