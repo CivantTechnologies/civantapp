@@ -70,7 +70,7 @@ export default function System() {
   }, [tenants, activeTenantId]);
 
   const canInvite = ['owner', 'admin'].includes(currentTenantRole);
-  const canManageRoles = currentTenantRole === 'owner';
+  const canManageRoles = ['owner', 'admin'].includes(currentTenantRole);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
