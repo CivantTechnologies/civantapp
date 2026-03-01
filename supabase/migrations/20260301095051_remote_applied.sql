@@ -1,0 +1,1 @@
+-- Applied directly to remote on 2026-03-01 (tenant_users/invitations foundation)
