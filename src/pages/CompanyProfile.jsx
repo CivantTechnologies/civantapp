@@ -878,7 +878,7 @@ function ProfileTabs({ profile, onSave, saving, isOrgAdmin, initialTab = 'compan
                         <CardContent>
                             <div className="flex items-center gap-3">
                                 <Badge className="bg-civant-teal/15 text-civant-teal border border-civant-teal/40 text-sm px-3 py-1">
-                                    {(form.plan_type || 'free').charAt(0).toUpperCase() + (form.plan_type || 'free').slice(1)}
+                                    {({ free: 'Pilot', starter: 'Pilot' }[form.plan_type] || (form.plan_type || 'Pilot').charAt(0).toUpperCase() + (form.plan_type || 'Pilot').slice(1))}
                                 </Badge>
                                 <span className="text-sm text-slate-500">Upgrade options coming soon</span>
                             </div>
