@@ -103,7 +103,7 @@ export default function Layout({ children, currentPageName }) {
     const base = [
       { name: 'Panorama', page: 'Home', icon: LayoutDashboard },
       { name: 'Forecast', page: 'Forecast', icon: BarChart3 },
-      { name: 'Finder', page: 'Search', icon: Search },
+      { name: 'Finder', page: 'Finder', icon: Search },
       { name: 'Competitors', page: 'Competitors', icon: Radar },
       { name: 'Reports', page: 'Reports', icon: FileText },
       { name: 'Company', page: 'Company', icon: Building2 },
@@ -163,7 +163,7 @@ export default function Layout({ children, currentPageName }) {
           subtitle: 'Open tenders by this buyer',
           onSelect: () => {
             setGlobalSearchOpen(false);
-            navigate(`/workbench/search?buyer=${encodeURIComponent(buyerName)}`);
+            navigate(`/finder?buyer=${encodeURIComponent(buyerName)}`);
           }
         }))
       : [];
@@ -762,7 +762,7 @@ export default function Layout({ children, currentPageName }) {
               className="text-slate-300 hover:text-slate-100"
               onClick={() => {
                 setGlobalSearchOpen(false);
-                navigate('/workbench/search');
+                navigate('/finder');
               }}
             >
               Advanced search

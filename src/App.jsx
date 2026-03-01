@@ -253,14 +253,19 @@ function ProtectedRoutes() {
       />
 
       <Route
-        path="/workbench/search"
+        path="/finder"
         element={
-          <LayoutWrapper currentPageName="Search">
+          <LayoutWrapper currentPageName="Finder">
             <Suspense fallback={<RouteLoader />}>
               <SearchPage />
             </Suspense>
           </LayoutWrapper>
         }
+      />
+
+      <Route
+        path="/workbench/search"
+        element={<Navigate to="/finder" replace />}
       />
 
       <Route
@@ -299,7 +304,7 @@ function ProtectedRoutes() {
       />
 
       <Route path="/alerts" element={<Navigate to="/workbench/alerts" replace />} />
-      <Route path="/search" element={<Navigate to="/workbench/search" replace />} />
+      <Route path="/search" element={<Navigate to="/finder" replace />} />
       <Route path="/insights" element={<Navigate to="/reports" replace />} />
       <Route path="/integrations" element={<Navigate to="/system" replace />} />
       <Route path="/connectors" element={<Navigate to="/operations/pipeline" replace />} />
@@ -310,7 +315,7 @@ function ProtectedRoutes() {
       <Route path="/companyprofile" element={<Navigate to="/company" replace />} />
 
       <Route path="/Alerts" caseSensitive element={<Navigate to="/workbench/alerts" replace />} />
-      <Route path="/Search" caseSensitive element={<Navigate to="/workbench/search" replace />} />
+      <Route path="/Search" caseSensitive element={<Navigate to="/finder" replace />} />
       <Route path="/Insights" caseSensitive element={<Navigate to="/reports" replace />} />
       <Route path="/Integrations" caseSensitive element={<Navigate to="/system" replace />} />
       <Route path="/Connectors" caseSensitive element={<Navigate to="/operations/pipeline" replace />} />
