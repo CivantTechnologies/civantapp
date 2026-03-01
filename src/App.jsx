@@ -321,7 +321,7 @@ function ProtectedRoutes() {
       />
 
       <Route path="/alerts" element={<Navigate to="/?openNotifications=1" replace />} />
-      <Route path="/search" element={<Navigate to="/?openSearch=1" replace />} />
+      <Route path="/search" element={<Navigate to="/workbench/search" replace />} />
       <Route path="/insights" element={<Navigate to="/" replace />} />
       <Route path="/integrations" element={<Navigate to="/company/integrations" replace />} />
       <Route path="/connectors" element={<Navigate to="/operations/connectors" replace />} />
@@ -333,7 +333,7 @@ function ProtectedRoutes() {
       <Route path="/companyprofile" element={<Navigate to="/company" replace />} />
 
       <Route path="/Alerts" caseSensitive element={<Navigate to="/?openNotifications=1" replace />} />
-      <Route path="/Search" caseSensitive element={<Navigate to="/?openSearch=1" replace />} />
+      <Route path="/Search" caseSensitive element={<Navigate to="/workbench/search" replace />} />
       <Route path="/Insights" caseSensitive element={<Navigate to="/" replace />} />
       <Route path="/Integrations" caseSensitive element={<Navigate to="/company/integrations" replace />} />
       <Route path="/Connectors" caseSensitive element={<Navigate to="/operations/connectors" replace />} />
