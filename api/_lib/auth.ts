@@ -313,6 +313,20 @@ export async function requireTenantAccessWithSupportGrant(params: {
     return;
   }
 
+  // Allow if user is a direct member of the requested tenant via tenant_users
+  if (user.userId) {
+    const supabase = getServerSupabase();
+    const { data: memberRow } = await (supabase as any)
+      .from('tenant_users')
+      .select('user_id')
+      .eq('tenant_id', tenantId)
+      .eq('user_id', user.userId)
+      .limit(1);
+    if (Array.isArray(memberRow) && memberRow.length > 0) {
+      return;
+    }
+  }
+
   if (!isPrivileged(user)) {
     throw forbidden('Forbidden for tenant');
   }

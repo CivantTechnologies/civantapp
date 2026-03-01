@@ -443,7 +443,7 @@ function PipelineReport({ tenantId }) {
         <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold">
-              Predicted Opportunities ({data.predictions.length}{data.predictions.length >= 500 ? '+' : ''})
+              Forecasted Opportunities ({data.predictions.length}{data.predictions.length >= 500 ? '+' : ''})
             </CardTitle>
           </CardHeader>
           <CardContent>

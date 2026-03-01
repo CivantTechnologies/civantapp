@@ -142,7 +142,7 @@ export default function PipelineAdmin() {
           <CardContent><p className="text-2xl font-bold">{queue.length}</p></CardContent>
         </Card>
         <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
-          <CardHeader className="pb-2"><CardTitle className="text-base">Predictions</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-base">Forecasts</CardTitle></CardHeader>
           <CardContent><p className="text-2xl font-bold">{predictions.length}</p></CardContent>
         </Card>
         <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
@@ -306,9 +306,9 @@ export default function PipelineAdmin() {
       </Card>
 
       <Card className="border border-civant-border bg-civant-navy/55 shadow-none">
-        <CardHeader><CardTitle>Predictions</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Forecasts</CardTitle></CardHeader>
         <CardContent className="space-y-3">
-          {predictions.length === 0 && <p className="text-slate-400">No predictions yet.</p>}
+          {predictions.length === 0 && <p className="text-slate-400">No forecasts yet.</p>}
           {predictions.map((prediction) => (
             <div key={prediction.id} className="rounded-lg border border-civant-border bg-civant-navy/65 p-3 flex items-center justify-between">
               <div>
