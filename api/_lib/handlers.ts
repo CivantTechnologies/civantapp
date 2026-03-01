@@ -938,37 +938,62 @@ export async function listTenants(req: RequestLike) {
   const user = await getCurrentUser(req);
   const supabase = getServerSupabase();
 
-  if (hasRole(user, 'creator')) {
-    const { data, error } = await supabase
-      .from('tenants')
-      .select('id,name')
-      .order('created_at', { ascending: true });
+  // Get tenants the user has access to via tenant_users
+  const { data: membershipData, error: membershipError } = await supabase
+    .from('tenant_users')
+    .select('tenant_id, role')
+    .eq('user_id', user.userId);
 
-    if (error) throw Object.assign(new Error(error.message), { status: 500 });
+  if (membershipError) throw Object.assign(new Error(membershipError.message), { status: 500 });
 
-    return {
-      tenants: (Array.isArray(data) ? data : [])
-        .map((row) => ({
-          id: String(row.id || ''),
-          name: String(row.name || row.id || '')
-        }))
-        .filter((row) => row.id)
-    };
+  const memberships = Array.isArray(membershipData) ? membershipData : [];
+  const tenantIds = memberships.map((m: any) => String(m.tenant_id));
+
+  if (tenantIds.length === 0) {
+    // Fallback: user has no tenant_users rows yet, use their users.tenant_id
+    tenantIds.push(user.tenantId);
   }
 
-  const { data, error } = await supabase
+  // Check if user is platform admin
+  const { data: adminCheck } = await supabase
     .from('tenants')
-    .select('id,name')
-    .eq('id', user.tenantId)
-    .order('created_at', { ascending: true });
+    .select('id')
+    .in('id', tenantIds)
+    .eq('is_platform_admin', true)
+    .limit(1);
 
+  const isPlatformAdmin = Array.isArray(adminCheck) && adminCheck.length > 0;
+
+  let tenantsQuery;
+  if (isPlatformAdmin && hasRole(user, 'creator')) {
+    // Platform admins with creator role see all tenants
+    tenantsQuery = supabase
+      .from('tenants')
+      .select('id,name,plan,countries,is_platform_admin')
+      .order('created_at', { ascending: true });
+  } else {
+    // Regular users see only their tenants
+    tenantsQuery = supabase
+      .from('tenants')
+      .select('id,name,plan,countries,is_platform_admin')
+      .in('id', tenantIds)
+      .order('created_at', { ascending: true });
+  }
+
+  const { data, error } = await tenantsQuery;
   if (error) throw Object.assign(new Error(error.message), { status: 500 });
+
+  const roleMap = new Map(memberships.map((m: any) => [String(m.tenant_id), String(m.role)]));
 
   return {
     tenants: (Array.isArray(data) ? data : [])
-      .map((row) => ({
+      .map((row: any) => ({
         id: String(row.id || ''),
-        name: String(row.name || row.id || '')
+        name: String(row.name || row.id || ''),
+        plan: String(row.plan || 'starter'),
+        countries: Array.isArray(row.countries) ? row.countries : [],
+        is_platform_admin: Boolean(row.is_platform_admin),
+        role: roleMap.get(String(row.id)) || 'member'
       }))
       .filter((row) => row.id)
   };
@@ -978,7 +1003,7 @@ export async function createTenant(req: RequestLike) {
   const user = await getCurrentUser(req);
   requireCreator(user);
 
-  const body = readJsonBody<{ id?: string; name?: string }>(req);
+  const body = readJsonBody<{ id?: string; name?: string; countries?: string[] }>(req);
   const name = String(body.name || '').trim();
   if (!name) throw badRequest('name is required');
 
@@ -989,22 +1014,97 @@ export async function createTenant(req: RequestLike) {
     throw badRequest('invalid tenant id');
   }
 
-  const supabase = getServerSupabase();
-  const { error } = await supabase
-    .from('tenants')
-    .insert({ id: tenantId, name })
-    .select('id,name')
-    .single();
+  const countries = Array.isArray(body.countries) ? body.countries.filter((c: string) => typeof c === 'string') : [];
 
-  if (error) {
-    if (error.code === '23505') throw conflict('Tenant already exists');
-    throw Object.assign(new Error(error.message), { status: 500 });
+  const supabase = getServerSupabase();
+
+  // Check if tenant already exists
+  const { data: existing } = await supabase
+    .from('tenants')
+    .select('id')
+    .eq('id', tenantId)
+    .limit(1);
+
+  if (Array.isArray(existing) && existing.length > 0) {
+    throw conflict('Tenant already exists');
+  }
+
+  // 1. Create tenant
+  const { error: tenantError } = await supabase
+    .from('tenants')
+    .insert({
+      id: tenantId,
+      name,
+      countries,
+      owner_user_id: user.userId,
+      plan: 'starter',
+      max_users: 5,
+      is_platform_admin: false,
+      features: {}
+    });
+
+  if (tenantError) {
+    if (tenantError.code === '23505') throw conflict('Tenant already exists');
+    throw Object.assign(new Error(tenantError.message), { status: 500 });
+  }
+
+  // 2. Add creator as owner in tenant_users
+  const { error: tuError } = await supabase
+    .from('tenant_users')
+    .insert({
+      tenant_id: tenantId,
+      user_id: user.userId,
+      role: 'owner'
+    });
+
+  if (tuError) {
+    console.error('Failed to create tenant_users entry:', tuError.message);
+  }
+
+  // 3. Create company profile with all required fields
+  const { error: cpError } = await supabase
+    .from('company_profiles')
+    .insert({
+      tenant_id: tenantId,
+      company_name: name,
+      target_buyer_types: [],
+      target_cpv_clusters: [],
+      target_countries: countries,
+      target_regions: {},
+      does_frameworks: false,
+      known_competitors: [],
+      key_products_services: [],
+      plan_type: 'starter',
+      onboarding_completed: false,
+      onboarding_step: 0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+
+  if (cpError) {
+    console.error('Failed to create company_profiles entry:', cpError.message);
+  }
+
+  // 4. Create user_profile for this tenant
+  const { error: upError } = await supabase
+    .from('user_profiles')
+    .insert({
+      tenant_id: tenantId,
+      user_id: user.userId,
+      display_name: user.email.split('@')[0],
+      email: user.email
+    });
+
+  if (upError && upError.code !== '23505') {
+    console.error('Failed to create user_profiles entry:', upError.message);
   }
 
   return {
     tenant: {
       id: tenantId,
-      name
+      name,
+      countries,
+      role: 'owner'
     }
   };
 }
