@@ -17,7 +17,9 @@ import {
   Network,
   LogOut,
   Plus,
-  UserRound
+  UserRound,
+  FileText,
+  Building2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -49,21 +51,30 @@ export default function Layout({ children, currentPageName }) {
   const canAccessSystem = profileStatus === 'ready' && Array.isArray(roles) && (roles.includes('admin') || roles.includes('creator'));
   const roleLabel = Array.isArray(roles) && roles.length ? roles.join(', ') : (profileStatus === 'ready' ? 'user' : 'Checking permissions...');
 
+  const isPlatformTenant = selectedTenant?.is_platform_admin === true;
+
   const navItems = [
-    { name: 'Home', page: 'Home', icon: LayoutDashboard },
-    { name: 'Profile', page: 'Profile', icon: UserRound },
+    { name: 'Panorama', page: 'Home', icon: LayoutDashboard },
     { name: 'Forecast', page: 'Forecast', icon: BarChart3 },
-    { name: 'Search', page: 'Search', icon: Search },
+    { name: 'Finder', page: 'Search', icon: Search },
     { name: 'Competitors', page: 'Competitors', icon: Radar },
-    { name: 'Alerts', page: 'Alerts', icon: Bell },
-    { name: 'Insights', page: 'Insights', icon: BarChart3 },
-    { name: 'Integrations', page: 'Integrations', icon: Settings },
-    { name: 'Connectors', page: 'Connectors', icon: Zap },
-    { name: 'Pipeline', page: 'PipelineAdmin', icon: Network },
-    { name: 'Architecture', page: 'Architecture', icon: Network }
+    { name: 'Reports', page: 'Reports', icon: FileText },
+    { name: 'Company', page: 'Company', icon: Building2 },
   ];
 
-  if (canAccessSystem) {
+  if (isPlatformTenant) {
+    navItems.push(
+      { name: 'Profile', page: 'Profile', icon: UserRound },
+      { name: 'Alerts', page: 'Alerts', icon: Bell },
+      { name: 'Insights', page: 'Insights', icon: BarChart3 },
+      { name: 'Integrations', page: 'Integrations', icon: Settings },
+      { name: 'Connectors', page: 'Connectors', icon: Zap },
+      { name: 'Pipeline', page: 'PipelineAdmin', icon: Network },
+      { name: 'Architecture', page: 'Architecture', icon: Network },
+    );
+  }
+
+  if (canAccessSystem && isPlatformTenant) {
     navItems.push({ name: 'System', page: 'System', icon: Settings });
   }
 
@@ -151,7 +162,7 @@ export default function Layout({ children, currentPageName }) {
             {tenantError ? <p className="text-xs text-destructive">{tenantError}</p> : null}
           </div>
 
-          {canCreateTenant && (
+          {canCreateTenant && isPlatformTenant && (
             <Button type="button" variant="ghost" className="w-full justify-start text-slate-400 hover:text-slate-200" onClick={() => setShowCreateTenant((v) => !v)}>
               <Plus className="h-4 w-4 mr-2" />
               New workspace
