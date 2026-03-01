@@ -50,10 +50,10 @@ export default function Layout({ children, currentPageName }) {
   const roleLabel = Array.isArray(roles) && roles.length ? roles.join(', ') : (profileStatus === 'ready' ? 'user' : 'Checking permissions...');
 
   const navItems = [
-    { name: 'Panorama', page: 'Home', icon: LayoutDashboard },
+    { name: 'Home', page: 'Home', icon: LayoutDashboard },
     { name: 'Profile', page: 'Profile', icon: UserRound },
     { name: 'Forecast', page: 'Forecast', icon: BarChart3 },
-    { name: 'Finder', page: 'Search', icon: Search },
+    { name: 'Search', page: 'Search', icon: Search },
     { name: 'Competitors', page: 'Competitors', icon: Radar },
     { name: 'Alerts', page: 'Alerts', icon: Bell },
     { name: 'Insights', page: 'Insights', icon: BarChart3 },
