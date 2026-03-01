@@ -414,7 +414,7 @@ export default function Alerts() {
             
             {/* Alert Form Dialog */}
             <Dialog open={showForm} onOpenChange={setShowForm}>
-                <DialogContent className="sm:max-w-lg">
+                <DialogContent className="w-[calc(100vw-2rem)] max-w-lg max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle>
                             {editingAlert ? 'Edit Alert' : 'Create New Alert'}
@@ -443,7 +443,7 @@ export default function Alerts() {
                                 Filter Criteria
                             </h4>
                             
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <Label htmlFor="country">Country</Label>
                                     <Select 

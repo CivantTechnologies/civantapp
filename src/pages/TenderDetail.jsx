@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import { useTenant } from '@/lib/tenant';
+import CreateAlertDialog from '@/components/CreateAlertDialog';
 import {
     ArrowLeft,
     ExternalLink,
@@ -99,6 +100,7 @@ function parseTedNoticeIds(value) {
 
 export default function TenderDetail() {
     const [tender, setTender] = useState(null);
+    const [showAlertDialog, setShowAlertDialog] = useState(false);
     const [linkedNotices, setLinkedNotices] = useState([]);
     const [linkedNoticeCount, setLinkedNoticeCount] = useState(0);
     const [evidenceOpen, setEvidenceOpen] = useState(true);
@@ -526,6 +528,12 @@ export default function TenderDetail() {
                                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
+                                    onSelect={() => setShowAlertDialog(true)}
+                                >
+                                    <Bell className="h-4 w-4" />
+                                    Create Alert
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
                                     onSelect={(/** @type {Event} */ event) => {
                                         event.preventDefault();
                                         handleAddToCalendar();
@@ -904,6 +912,18 @@ export default function TenderDetail() {
                     </CardContent>
                 ) : null}
             </Card>
+
+            <CreateAlertDialog
+                open={showAlertDialog}
+                onOpenChange={setShowAlertDialog}
+                prefill={tender ? {
+                    alert_name: `Alert for ${tender.buyer_name || 'Tender'}`,
+                    buyer_contains: tender.buyer_name || '',
+                    keywords: (tender.title || '').split(' ').slice(0, 3).join(' '),
+                    cpv_contains: (tender.cpv_codes || [])[0] || '',
+                    country: tender.country || '',
+                } : null}
+            />
         </div>
     );
 }
