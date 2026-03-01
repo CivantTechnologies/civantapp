@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { civant } from '@/api/civantClient';
+import { supabase } from '@/lib/supabaseClient';
 import { useTenant } from '@/lib/tenant';
 import { useAuth } from '@/lib/auth';
 import { useLocation } from 'react-router-dom';
 import {
     Building2, CreditCard, Loader2, Save, ChevronRight, ChevronLeft,
-    Check, Tag, Target
+    Check, Tag, Target, Upload, FileText, X
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -186,6 +187,104 @@ function CompetitorInput({ value, onChange }) {
 }
 
 // ===== ONBOARDING WIZARD =====
+
+function ReferenceDocUpload({ currentPath, currentName, tenantId, onUploaded, onRemoved }) {
+    const [uploading, setUploading] = useState(false);
+    const [error, setError] = useState(null);
+
+    const handleUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const allowed = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+        if (!allowed.includes(file.type)) {
+            setError('Please upload a PDF or DOCX file.');
+            return;
+        }
+        if (file.size > 10 * 1024 * 1024) {
+            setError('File must be under 10MB.');
+            return;
+        }
+
+        setUploading(true);
+        setError(null);
+
+        try {
+            const ext = file.name.split('.').pop();
+            const path = `${tenantId}/reference-doc.${ext}`;
+
+            // Remove old file if exists
+            if (currentPath) {
+                await supabase.storage.from('company-docs').remove([currentPath]);
+            }
+
+            const { error: uploadErr } = await supabase.storage
+                .from('company-docs')
+                .upload(path, file, { upsert: true });
+
+            if (uploadErr) throw uploadErr;
+            onUploaded(path, file.name);
+        } catch (err) {
+            console.error('Upload failed:', err);
+            setError('Upload failed. Please try again.');
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const handleRemove = async () => {
+        if (!currentPath) return;
+        try {
+            await supabase.storage.from('company-docs').remove([currentPath]);
+            onRemoved();
+        } catch (err) {
+            console.error('Remove failed:', err);
+        }
+    };
+
+    if (currentPath && currentName) {
+        return (
+            <div className="flex items-center gap-3 bg-white/[0.03] border border-white/[0.06] rounded-lg p-3">
+                <FileText className="h-5 w-5 text-civant-teal flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                    <p className="text-sm text-slate-200 truncate">{currentName}</p>
+                    <p className="text-xs text-slate-400">Used by Civant Agent for opportunity scoring</p>
+                </div>
+                <button
+                    onClick={handleRemove}
+                    className="text-slate-400 hover:text-red-400 transition-colors p-1"
+                    title="Remove document"
+                >
+                    <X className="h-4 w-4" />
+                </button>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-2">
+            <label className="flex flex-col items-center justify-center gap-2 border border-dashed border-white/[0.12] rounded-lg p-6 cursor-pointer hover:border-civant-teal/40 hover:bg-white/[0.02] transition-colors">
+                <input
+                    type="file"
+                    accept=".pdf,.docx"
+                    onChange={handleUpload}
+                    className="hidden"
+                    disabled={uploading}
+                />
+                {uploading ? (
+                    <Loader2 className="h-6 w-6 text-civant-teal animate-spin" />
+                ) : (
+                    <Upload className="h-6 w-6 text-slate-400" />
+                )}
+                <span className="text-sm text-slate-300">
+                    {uploading ? 'Uploading...' : 'Drop a PDF or DOCX here, or click to browse'}
+                </span>
+                <span className="text-xs text-slate-500">Max 10MB</span>
+            </label>
+            {error && <p className="text-xs text-red-400">{error}</p>}
+        </div>
+    );
+}
 
 function OnboardingWizard({ profile, onSave, saving }) {
     const [step, setStep] = useState(profile.onboarding_step || 0);
@@ -474,6 +573,31 @@ function ProfileTabs({ profile, onSave, saving, isOrgAdmin, initialTab = 'compan
                                     <Input type="number" value={form.year_established || ''} onChange={(e) => set('year_established', e.target.value ? Number(e.target.value) : null)} placeholder="e.g. 2015" />
                                 </div>
                             </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Reference Document Upload */}
+                    <Card className="border border-white/[0.06] bg-white/[0.02] shadow-none">
+                        <CardContent className="p-6 space-y-3">
+                            <div>
+                                <Label className="text-base font-medium text-slate-100">Reference Document</Label>
+                                <p className="text-xs text-slate-400 mt-1">
+                                    Upload a past winning tender, capability statement, or company profile PDF. The Civant Agent uses this to better understand your strengths and score opportunity fit.
+                                </p>
+                            </div>
+                            <ReferenceDocUpload
+                                currentPath={form.reference_doc_path}
+                                currentName={form.reference_doc_name}
+                                tenantId={profile.tenant_id}
+                                onUploaded={(path, name) => {
+                                    set('reference_doc_path', path);
+                                    set('reference_doc_name', name);
+                                }}
+                                onRemoved={() => {
+                                    set('reference_doc_path', null);
+                                    set('reference_doc_name', null);
+                                }}
+                            />
                         </CardContent>
                     </Card>
                 </TabsContent>

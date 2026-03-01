@@ -10,7 +10,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-function buildPrompt(tender: any, awardHistory: any) {
+function buildPrompt(tender: any, awardHistory: any, companyContext: any) {
   const hasHistory = awardHistory?.stats?.total_contracts > 0;
   const countryName: Record<string, string> = { ES: "Spain", FR: "France", IE: "Ireland" };
   const countryLabel = countryName[tender.country] || tender.country || "Unknown";
@@ -19,10 +19,11 @@ function buildPrompt(tender: any, awardHistory: any) {
 
 You have access to:
 1. THE TENDER: Full details of the published procurement notice.
-2. BUYER HISTORY: Historical contract award data for this buyer from official procurement portals (if available).
-3. WEB RESEARCH: Use web search to find current intelligence about the buyer, similar contracts, and market context.
+2. BIDDER PROFILE: The company considering whether to bid, including their capabilities, products, and optionally a reference document from a past win.
+3. BUYER HISTORY: Historical contract award data for this buyer from official procurement portals (if available).
+4. WEB RESEARCH: Use web search to find current intelligence about the buyer, similar contracts, and market context.
 
-Your job is to produce a comprehensive intelligence brief that helps a company make a BID / MONITOR / PASS decision.
+Your job is to produce a comprehensive intelligence brief that helps the bidding company make a BID / MONITOR / PASS decision. When a bidder profile is provided, assess FIT between their capabilities and the tender requirements. Factor company size, expertise, geographic reach, and past experience into your scoring and recommendation.
 
 Respond ONLY in JSON with this EXACT structure:
 {
@@ -94,6 +95,35 @@ CRITICAL: Return ONLY the raw JSON object. No markdown, no explanation, no pream
     tender.source ? `Source: ${tender.source}` : "",
     "=== END TENDER DETAILS ===",
   ];
+
+  // Add company context if available
+  if (companyContext?.company_name) {
+    userParts.push("");
+    userParts.push("=== BIDDER COMPANY PROFILE ===");
+    userParts.push(`Company: ${companyContext.company_name}`);
+    if (companyContext.company_description) userParts.push(`Description: ${companyContext.company_description}`);
+    if (companyContext.country_hq) userParts.push(`HQ: ${companyContext.country_hq}`);
+    if (companyContext.company_size) userParts.push(`Size: ${companyContext.company_size}`);
+    if (companyContext.website) userParts.push(`Website: ${companyContext.website}`);
+    if (companyContext.key_products_services?.length > 0) {
+      userParts.push(`Key Products/Services: ${companyContext.key_products_services.join(", ")}`);
+    }
+    if (companyContext.target_cpv_clusters?.length > 0) {
+      userParts.push(`Target Categories: ${companyContext.target_cpv_clusters.join(", ")}`);
+    }
+    if (companyContext.known_competitors?.length > 0) {
+      userParts.push(`Known Competitors: ${companyContext.known_competitors.join(", ")}`);
+    }
+    if (companyContext.contract_size_min_eur || companyContext.contract_size_max_eur) {
+      userParts.push(`Contract Size Range: EUR ${Number(companyContext.contract_size_min_eur || 0).toLocaleString()} - ${Number(companyContext.contract_size_max_eur || 0).toLocaleString()}`);
+    }
+    if (companyContext.reference_doc_text) {
+      userParts.push("");
+      userParts.push("Reference Document (past winning tender or capability statement):");
+      userParts.push(companyContext.reference_doc_text);
+    }
+    userParts.push("=== END BIDDER PROFILE ===");
+  }
 
   if (hasHistory) {
     const h = awardHistory;
@@ -278,15 +308,20 @@ serve(async (req) => {
     const { data: tenderRows, error: tenderErr } = await supabase
       .from("canonical_tenders")
       .select("*")
-      .eq("id", tender_id)
+      .eq("canonical_id", tender_id)
       .limit(1);
 
     if (tenderErr || !tenderRows?.length) {
-      return new Response(JSON.stringify({ error: "Tender not found" }),
+      return new Response(JSON.stringify({ error: "Tender not found", detail: tenderErr?.message }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const tender = tenderRows[0];
+    const rawTender = tenderRows[0];
+    const tender = {
+      ...rawTender,
+      buyer_name: rawTender.buyer_name_raw || rawTender.buyer_name_norm || null,
+      description: rawTender.title_norm || rawTender.title || null,
+    };
 
     // Fetch buyer award history if buyer is known
     let awardHistory = null;
@@ -301,7 +336,38 @@ serve(async (req) => {
       }
     }
 
-    const { system, user } = buildPrompt(tender, awardHistory);
+    // Load company profile for context
+    let companyContext: any = null;
+    const { data: profileRows } = await supabase
+      .from("company_profiles")
+      .select("company_name, company_description, company_size, country_hq, website, target_buyer_types, target_cpv_clusters, target_countries, key_products_services, contract_size_min_eur, contract_size_max_eur, known_competitors, reference_doc_path, reference_doc_name")
+      .eq("tenant_id", tenant_id)
+      .limit(1);
+
+    if (profileRows?.length > 0) {
+      const cp = profileRows[0];
+      companyContext = { ...cp };
+
+      // If reference doc exists, download and extract text
+      if (cp.reference_doc_path) {
+        try {
+          const { data: fileData, error: fileErr } = await supabase.storage
+            .from("company-docs")
+            .download(cp.reference_doc_path);
+          if (!fileErr && fileData) {
+            const text = await fileData.text();
+            // For PDF, the raw text won't be clean, but for basic extraction it's usable
+            // Limit to 3000 chars to keep prompt size reasonable
+            companyContext.reference_doc_text = text.slice(0, 3000);
+            console.log("Loaded reference doc:", cp.reference_doc_name, "chars:", text.length);
+          }
+        } catch (docErr) {
+          console.error("Reference doc load failed:", docErr);
+        }
+      }
+    }
+
+    const { system, user } = buildPrompt(tender, awardHistory, companyContext);
 
     // Call Claude
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -343,7 +409,7 @@ serve(async (req) => {
       .insert({
         tenant_id,
         tender_id,
-        canonical_id: tender.canonical_id || tender.id,
+        canonical_id: rawTender.canonical_id,
         summary: brief?.summary || null,
         bid_recommendation: brief?.bid_recommendation || null,
         bid_reasoning: brief?.bid_reasoning || null,
