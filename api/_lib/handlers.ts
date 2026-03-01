@@ -1139,7 +1139,7 @@ export async function getTenant(req: RequestLike) {
   const supabase = getServerSupabase();
   const { data, error } = await supabase
     .from('tenants')
-    .select('id,name,regions,plan,plan_limits,limits,created_at')
+    .select('id,name,regions,plan,plan_tier,plan_limits,created_at')
     .eq('id', tenantId)
     .limit(1);
 
@@ -1150,8 +1150,8 @@ export async function getTenant(req: RequestLike) {
     tenantId,
     name: tenant?.name || null,
     regions: Array.isArray(tenant?.regions) ? tenant.regions : [],
-    planTier: tenant?.plan || null,
-    planLimits: tenant?.plan_limits || tenant?.limits || null,
+    planTier: (tenant as any)?.plan_tier || (tenant as any)?.plan || null,
+    planLimits: (tenant as any)?.plan_limits || null,
     createdAt: tenant?.created_at || null
   };
 }
