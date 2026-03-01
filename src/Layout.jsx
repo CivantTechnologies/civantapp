@@ -21,6 +21,7 @@ import {
   LogOut,
   Plus,
   Loader2,
+  Check,
   UserRound,
   FileText
 } from 'lucide-react';
@@ -37,11 +38,16 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 
 export default function Layout({ children, currentPageName }) {
-  const { currentUser, roles, profileStatus, logout, authWarning } = useAuth();
+  const { session, currentUser, roles, profileStatus, logout, authWarning } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const {
@@ -78,31 +84,23 @@ export default function Layout({ children, currentPageName }) {
   );
 
   const canAccessSystem = profileStatus === 'ready' && Array.isArray(roles) && (roles.includes('admin') || roles.includes('creator'));
-  const roleLabel = Array.isArray(roles) && roles.length ? roles.join(', ') : (profileStatus === 'ready' ? 'user' : 'Checking permissions...');
   const isPlatformTenant = selectedTenant?.is_platform_admin === true;
 
-  const pageTitle = useMemo(() => {
-    const map = {
-      Home: 'Panorama',
-      Forecast: 'Forecast',
-      Search: 'Finder',
-      Competitors: 'Competitors',
-      Reports: 'Reports',
-      Company: 'Company',
-      CompanyProfile: 'Company',
-      Profile: 'Profile',
-      Alerts: 'Alerts',
-      Insights: 'Insights',
-      Integrations: 'Integrations',
-      Connectors: 'Connectors',
-      PipelineAdmin: 'Pipeline',
-      Architecture: 'Architecture',
-      System: 'System'
-    };
-    return map[currentPageName] || 'Civant';
-  }, [currentPageName]);
+  /* ── Derived user info for avatar dropdown ── */
 
-  /* ── Sidebar nav items (RBAC gating preserved) ── */
+  const tenantCount = Array.isArray(tenants) ? tenants.length : 0;
+  const canSwitchWorkspace = tenantCount > 1;
+  const userMetadata = session?.user?.user_metadata || currentUser?.user_metadata || {};
+  const userDisplayName = String(
+    userMetadata.full_name
+    || userMetadata.name
+    || currentUser?.email?.split('@')?.[0]
+    || 'User'
+  );
+  const userAvatarUrl = userMetadata.avatar_url || userMetadata.picture || userMetadata.photo_url || '';
+  const avatarInitial = String(userDisplayName || currentUser?.email || 'U').trim().charAt(0).toUpperCase() || 'U';
+
+  /* ── Sidebar nav items (current RBAC gating) ── */
 
   const navItems = useMemo(() => {
     const base = [
@@ -432,10 +430,10 @@ export default function Layout({ children, currentPageName }) {
         </div>
       ) : null}
 
-      {/* ── Top bar ── */}
+      {/* ── Top bar (sleek version) ── */}
       <header className="civant-topbar fixed inset-x-0 top-0 z-50 h-14 border-b border-white/[0.06] bg-background/80 backdrop-blur-md">
         <div className="flex h-full items-center gap-4 px-4 lg:px-8">
-          {/* Left: hamburger + logo + workspace */}
+          {/* Left: hamburger + logo + stacked brand/tenant */}
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <Button
               variant="ghost"
@@ -446,39 +444,25 @@ export default function Layout({ children, currentPageName }) {
               {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </Button>
 
-            <Link to="/home" className="flex items-center gap-2.5 text-slate-100">
-              <div className="h-8 w-8 overflow-hidden rounded-lg ring-1 ring-primary/30">
-                <img src="/apple-touch-icon.png" alt="Civant mark" className="h-full w-full object-cover" />
-              </div>
-              <span className="hidden text-sm font-semibold tracking-tight sm:inline">Civant</span>
-            </Link>
-
-            <div className="hidden min-w-0 items-center sm:flex">
-              <label className="sr-only" htmlFor="workspace-switcher">Workspace</label>
-              <div className="relative">
-                <select
-                  id="workspace-switcher"
-                  className="h-9 w-[170px] rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 pr-8 text-xs text-slate-200 transition-colors focus:border-primary/40 focus:outline-none"
-                  value={activeTenantId}
-                  onChange={(event) => setActiveTenantId(event.target.value)}
-                  disabled={isLoadingTenants}
-                >
-                  {tenants.map((tenant) => (
-                    <option key={tenant.id} value={tenant.id}>{tenant.name}</option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+            <div className="flex items-center gap-3">
+              <Link to="/home" className="text-slate-100">
+                <div className="h-9 w-9 overflow-hidden rounded-lg ring-1 ring-primary/30">
+                  <img src="/apple-touch-icon.png" alt="Civant mark" className="h-full w-full object-cover" />
+                </div>
+              </Link>
+              <div className="hidden min-w-0 flex-col sm:flex">
+                <Link to="/home" className="text-base font-semibold leading-tight tracking-tight text-slate-100">
+                  Civant
+                </Link>
+                <span className="civant-tenant-label truncate text-[11px] leading-tight text-slate-500">
+                  {selectedTenant?.name || 'Workspace'}
+                </span>
               </div>
             </div>
           </div>
 
-          {/* Center: page title */}
-          <div className="hidden flex-1 items-center justify-center lg:flex">
-            <p className="text-sm font-medium text-slate-500">{pageTitle}</p>
-          </div>
-
-          {/* Right: search, quick-add, notifications, avatar */}
-          <div className="flex flex-1 items-center justify-end gap-4">
+          {/* Right: search, quick-add, avatar dropdown */}
+          <div className="flex items-center justify-end gap-4">
             <div className="flex items-center gap-2">
               <Button
                 type="button"
@@ -487,12 +471,10 @@ export default function Layout({ children, currentPageName }) {
                 className="civant-icon-button h-9 w-9 text-slate-300"
                 onClick={() => setGlobalSearchOpen(true)}
                 aria-label="Open global search"
+                title="Search (Cmd/Ctrl+K)"
               >
                 <Search className="h-5 w-5" />
               </Button>
-              <span className="hidden rounded-md border border-white/[0.08] px-1.5 py-0.5 text-[10px] uppercase tracking-[0.12em] text-slate-500 lg:inline-flex">
-                Cmd/Ctrl+K
-              </span>
             </div>
 
             <DropdownMenu>
@@ -517,25 +499,69 @@ export default function Layout({ children, currentPageName }) {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="civant-icon-button h-9 w-9 text-slate-300"
-              onClick={() => setNotificationsOpen(true)}
-              aria-label="Open notifications"
-            >
-              <Bell className="h-5 w-5" />
-            </Button>
+            {/* Avatar dropdown with workspace switcher, profile, sign out */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="civant-icon-button flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-white/[0.08] bg-white/[0.03] text-sm font-medium text-slate-200"
+                  aria-label="Open account menu"
+                >
+                  {userAvatarUrl ? (
+                    <img src={userAvatarUrl} alt={userDisplayName} className="h-full w-full object-cover" />
+                  ) : (
+                    avatarInitial
+                  )}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="w-[300px] rounded-2xl border-white/[0.08] bg-slate-950/95 p-1.5 shadow-xl backdrop-blur-xl duration-150 ease-out"
+              >
+                <DropdownMenuLabel className="px-3 py-2.5">
+                  <p className="truncate text-sm font-medium text-slate-100">{userDisplayName}</p>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-white/[0.06]" />
 
-            <button
-              type="button"
-              className="civant-icon-button flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.03] text-sm font-medium text-primary"
-              onClick={() => navigate('/company')}
-              aria-label="Open company"
-            >
-              {currentUser?.email?.charAt(0)?.toUpperCase() || 'U'}
-            </button>
+                {canSwitchWorkspace ? (
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger className="rounded-lg px-3 py-2 text-sm text-slate-300 focus:bg-white/[0.05] focus:text-slate-100 data-[state=open]:bg-white/[0.05] data-[state=open]:text-slate-100">
+                      Switch workspace
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-56 rounded-xl border-white/[0.08] bg-slate-950/95 p-1.5 shadow-xl">
+                      {tenants.map((tenant) => {
+                        const isSelected = tenant.id === activeTenantId;
+                        return (
+                          <DropdownMenuItem
+                            key={tenant.id}
+                            className="rounded-lg px-3 py-2 text-sm text-slate-300 focus:bg-white/[0.05] focus:text-slate-100"
+                            onClick={() => setActiveTenantId(tenant.id)}
+                          >
+                            <span className="truncate">{tenant.name}</span>
+                            {isSelected ? <Check className="ml-auto h-4 w-4 text-primary/80" /> : null}
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                ) : null}
+
+                <DropdownMenuItem
+                  className="rounded-lg px-3 py-2 text-sm text-slate-300 focus:bg-white/[0.05] focus:text-slate-100"
+                  onClick={() => navigate('/company')}
+                >
+                  Profile / Account
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="bg-white/[0.06]" />
+                <DropdownMenuItem
+                  className="rounded-lg px-3 py-2 text-sm text-slate-300 focus:bg-white/[0.05] focus:text-slate-100"
+                  onClick={logout}
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
         {tenantError ? (
@@ -543,19 +569,19 @@ export default function Layout({ children, currentPageName }) {
         ) : null}
       </header>
 
-      {/* ── Sidebar (sits below top bar) ── */}
+      {/* ── Sidebar (below top bar, current RBAC flat nav) ── */}
       <aside className={`
-        fixed left-0 top-14 z-40 h-[calc(100vh-56px)] w-72 border-r border-white/[0.06] bg-background/95 backdrop-blur-md
-        transform transition-transform duration-200 ease-in-out lg:translate-x-0
+        civant-sidebar-shell fixed left-0 top-14 z-40 h-[calc(100vh-56px)] w-60 border-r border-white/[0.02] bg-background/68 backdrop-blur-md
+        civant-motion-standard transition-transform lg:translate-x-0
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="flex h-full flex-col overflow-hidden">
-          {/* Mobile workspace switcher (hidden on desktop since it's in the top bar) */}
-          <div className="space-y-1 px-3 pt-4 sm:hidden">
+          {/* Mobile workspace switcher (hidden on desktop, workspace is in avatar dropdown) */}
+          <div className="space-y-1 px-2 pt-4 sm:hidden">
             <label className="text-[10px] uppercase tracking-[0.14em] text-slate-500">Workspace</label>
             <div className="relative">
               <select
-                className="h-9 w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 pr-8 text-xs text-slate-200 transition-colors focus:border-primary/40 focus:outline-none"
+                className="h-9 w-full appearance-none rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 pr-8 text-xs text-slate-200 transition-colors focus:border-primary/40 focus:outline-none"
                 value={activeTenantId}
                 onChange={(event) => setActiveTenantId(event.target.value)}
                 disabled={isLoadingTenants}
@@ -569,7 +595,7 @@ export default function Layout({ children, currentPageName }) {
           </div>
 
           {/* Navigation */}
-          <div className="flex-1 min-h-0 overflow-y-auto px-3 py-4">
+          <div className="flex-1 min-h-0 overflow-y-auto px-2 py-4">
             <nav className="space-y-0.5">
               {navItems.map((item) => {
                 const Icon = item.icon;
@@ -581,79 +607,58 @@ export default function Layout({ children, currentPageName }) {
                     to={createPageUrl(item.page)}
                     onClick={() => setSidebarOpen(false)}
                     className={`
-                      flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium
-                      transition-all duration-150
+                      civant-nav-item flex items-center gap-3 rounded-xl border px-3 py-2 text-sm font-medium transition-all duration-150
                       ${isActive
-                        ? 'bg-primary/10 text-primary border border-primary/20'
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.03] border border-transparent'
-                      }
+                        ? 'border-primary/20 bg-primary/8 text-slate-100'
+                        : 'border-transparent text-slate-500 hover:border-white/[0.05] hover:bg-white/[0.02] hover:text-slate-300'}
                     `}
                   >
-                    <Icon className={`h-4 w-4 ${isActive ? 'text-primary' : ''}`} />
+                    <Icon className={`h-5 w-5 ${isActive ? 'text-primary/80' : 'text-slate-500'}`} />
                     {item.name}
-                    {isActive && (
-                      <ChevronRight className="h-3.5 w-3.5 ml-auto text-primary/60" />
-                    )}
                   </Link>
                 );
               })}
             </nav>
           </div>
 
-          {/* Bottom: create tenant + user */}
-          <div className="shrink-0 border-t border-white/[0.06] p-4 space-y-3">
-            {canCreateTenant && isPlatformTenant && (
-              <Button
-                type="button"
-                variant="ghost"
-                className="w-full justify-start text-slate-400 hover:text-slate-200"
-                onClick={() => setShowCreateTenant((v) => !v)}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                New workspace
-              </Button>
-            )}
-
-            {showCreateTenant && (
-              <form className="space-y-2 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3" onSubmit={onCreateTenant}>
-                <Input
-                  placeholder="Workspace name"
-                  value={tenantNameInput}
-                  onChange={(event) => setTenantNameInput(event.target.value)}
-                  disabled={tenantActionLoading}
-                />
-                <Input
-                  placeholder="Optional workspace id"
-                  value={tenantIdInput}
-                  onChange={(event) => setTenantIdInput(event.target.value)}
-                  disabled={tenantActionLoading}
-                />
-                {tenantActionError ? <p className="text-xs text-destructive">{tenantActionError}</p> : null}
-                <div className="flex gap-2">
-                  <Button type="submit" size="sm" disabled={tenantActionLoading}>{tenantActionLoading ? 'Creating...' : 'Create'}</Button>
-                  <Button type="button" variant="secondary" size="sm" onClick={() => setShowCreateTenant(false)} disabled={tenantActionLoading}>Cancel</Button>
-                </div>
-              </form>
-            )}
-
-            {currentUser ? (
-              <>
-                <div className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-sm font-medium text-primary">
-                    {currentUser.email?.charAt(0)?.toUpperCase() || 'U'}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-200">{currentUser.email || 'User'}</p>
-                    <p className="truncate text-[11px] text-slate-500">{roleLabel}</p>
-                  </div>
-                </div>
-                <Button type="button" variant="ghost" className="w-full justify-start text-slate-400 hover:text-slate-200" onClick={logout}>
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Sign out
+          {/* Bottom: create tenant (platform admin only) */}
+          {(canCreateTenant && isPlatformTenant) || showCreateTenant ? (
+            <div className="shrink-0 border-t border-white/[0.05] p-4 space-y-3">
+              {canCreateTenant && isPlatformTenant ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full justify-start text-slate-500 hover:text-slate-300"
+                  onClick={() => setShowCreateTenant((v) => !v)}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  New workspace
                 </Button>
-              </>
-            ) : null}
-          </div>
+              ) : null}
+
+              {showCreateTenant ? (
+                <form className="space-y-2 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3" onSubmit={onCreateTenant}>
+                  <Input
+                    placeholder="Workspace name"
+                    value={tenantNameInput}
+                    onChange={(event) => setTenantNameInput(event.target.value)}
+                    disabled={tenantActionLoading}
+                  />
+                  <Input
+                    placeholder="Optional workspace id"
+                    value={tenantIdInput}
+                    onChange={(event) => setTenantIdInput(event.target.value)}
+                    disabled={tenantActionLoading}
+                  />
+                  {tenantActionError ? <p className="text-xs text-destructive">{tenantActionError}</p> : null}
+                  <div className="flex gap-2">
+                    <Button type="submit" size="sm" disabled={tenantActionLoading}>{tenantActionLoading ? 'Creating...' : 'Create'}</Button>
+                    <Button type="button" variant="secondary" size="sm" onClick={() => setShowCreateTenant(false)} disabled={tenantActionLoading}>Cancel</Button>
+                  </div>
+                </form>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </aside>
 
@@ -666,8 +671,8 @@ export default function Layout({ children, currentPageName }) {
       ) : null}
 
       {/* Main content */}
-      <main className="min-h-screen pt-14 lg:pl-72">
-        <div className="px-6 py-8 lg:px-8">
+      <main className="min-h-screen pt-14 lg:pl-60">
+        <div className="civant-main-shell">
           {children}
         </div>
       </main>
