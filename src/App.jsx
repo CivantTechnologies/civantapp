@@ -216,7 +216,7 @@ function ProtectedRoutes() {
         path="/operations/pipeline"
         element={
           <RequireOperationsRole>
-            <LayoutWrapper currentPageName="Operations">
+            <LayoutWrapper currentPageName="PipelineAdmin">
               <Suspense fallback={<RouteLoader />}>
                 <PipelineAdminPage />
               </Suspense>
@@ -238,7 +238,7 @@ function ProtectedRoutes() {
         path="/operations/system"
         element={
           <RequireOperationsRole>
-            <LayoutWrapper currentPageName="Operations">
+            <LayoutWrapper currentPageName="System">
               <Suspense fallback={<RouteLoader />}>
                 <SystemPage />
               </Suspense>
