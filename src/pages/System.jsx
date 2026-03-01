@@ -73,15 +73,19 @@ export default function System() {
   // Override with direct DB role since backend may return stale 'member'
   const [dbRole, setDbRole] = useState(null);
   useEffect(() => {
-    if (!activeTenantId || !currentUser?.id) return;
-    supabase
-      .from('tenant_users')
-      .select('role')
-      .eq('tenant_id', activeTenantId)
-      .eq('user_id', currentUser.id)
-      .single()
-      .then(({ data }) => { if (data?.role) setDbRole(data.role); });
-  }, [activeTenantId, currentUser?.id]);
+    if (!activeTenantId) return;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user?.id) return;
+      const { data } = await supabase
+        .from('tenant_users')
+        .select('role')
+        .eq('tenant_id', activeTenantId)
+        .eq('user_id', session.user.id)
+        .single();
+      if (data?.role) setDbRole(data.role);
+    })();
+  }, [activeTenantId]);
 
   const effectiveRole = dbRole || currentTenantRole;
   const canInvite = ['owner', 'admin'].includes(effectiveRole);
