@@ -55,7 +55,7 @@ export function RequireOnboarding({ children }) {
     if (exempt.includes(location.pathname.toLowerCase())) return children;
 
     if (!onboardingComplete) {
-        return <Navigate to="/companyprofile" replace />;
+        return <Navigate to="/company" replace />;
     }
 
     return children;
