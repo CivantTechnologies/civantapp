@@ -12,5 +12,17 @@ export default defineConfig({
   },
   plugins: [
     react(),
-  ]
+  ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-supabase': ['@supabase/supabase-js'],
+          'vendor-ui': ['@radix-ui/react-dialog', '@radix-ui/react-select', '@radix-ui/react-switch', 'lucide-react'],
+          'vendor-date': ['date-fns'],
+        }
+      }
+    }
+  }
 });

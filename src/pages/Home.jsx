@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import { useTenant } from '@/lib/tenant';
 import { supabase } from '@/lib/supabaseClient';
-import { civant } from '@/api/civantClient';
 import {
   isCompanyScopeFilterTemporarilyDisabled,
   setCompanyScopeFilterTemporarilyDisabled
@@ -49,10 +48,9 @@ export default function Home() {
   const [opsStatus, setOpsStatus] = useState(null);
   const [pipeline, setPipeline] = useState(null);
   const [feed, setFeed] = useState(null);
-  const [companyProfile, setCompanyProfile] = useState(null);
   const [scopeFilterTemporarilyDisabled, setScopeFilterTemporarilyDisabledState] = useState(false);
   const [loading, setLoading] = useState(true);
-  const { activeTenantId, isLoadingTenants } = useTenant();
+  const { activeTenantId, isLoadingTenants, companyProfile, isLoadingProfile } = useTenant();
 
   useEffect(() => {
     setScopeFilterTemporarilyDisabledState(isCompanyScopeFilterTemporarilyDisabled(activeTenantId));
@@ -75,22 +73,11 @@ export default function Home() {
     if (!activeTenantId) return;
     setLoading(true);
     try {
-      let profile = null;
-      try {
-        const rows = await civant.entities.company_profiles.filter(
-          { tenant_id: activeTenantId },
-          '-updated_at', 1,
-          'target_cpv_clusters,target_countries,company_scope_filter_enabled'
-        );
-        profile = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
-      } catch (e) { console.error('Profile load error:', e); }
-      setCompanyProfile(profile);
-
-      const scopeEnabled = profile?.company_scope_filter_enabled !== false && !scopeFilterTemporarilyDisabled;
-      const clusters = scopeEnabled && Array.isArray(profile?.target_cpv_clusters) && profile.target_cpv_clusters.length > 0
-        ? profile.target_cpv_clusters : null;
-      const countries = scopeEnabled && Array.isArray(profile?.target_countries) && profile.target_countries.length > 0
-        ? profile.target_countries : null;
+      const scopeEnabled = companyProfile?.company_scope_filter_enabled !== false && !scopeFilterTemporarilyDisabled;
+      const clusters = scopeEnabled && Array.isArray(companyProfile?.target_cpv_clusters) && companyProfile.target_cpv_clusters.length > 0
+        ? companyProfile.target_cpv_clusters : null;
+      const countries = scopeEnabled && Array.isArray(companyProfile?.target_countries) && companyProfile.target_countries.length > 0
+        ? companyProfile.target_countries : null;
 
       const scopeParams = {};
       if (clusters) scopeParams.p_cpv_clusters = clusters;
@@ -111,11 +98,11 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [activeTenantId, scopeFilterTemporarilyDisabled]);
+  }, [activeTenantId, scopeFilterTemporarilyDisabled, companyProfile]);
 
   useEffect(() => {
-    if (!isLoadingTenants && activeTenantId) loadData();
-  }, [activeTenantId, isLoadingTenants, loadData]);
+    if (!isLoadingTenants && !isLoadingProfile && activeTenantId) loadData();
+  }, [activeTenantId, isLoadingTenants, isLoadingProfile, loadData]);
 
   if (loading || isLoadingTenants) {
     return (

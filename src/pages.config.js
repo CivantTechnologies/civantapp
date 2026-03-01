@@ -1,9 +1,9 @@
 import { lazy } from 'react';
 import Home from './pages/Home';
-import System from './pages/System';
 import __Layout from './Layout.jsx';
 
 const loadAlerts = () => import('./pages/Alerts');
+const loadSystem = () => import('./pages/System');
 const loadArchitecture = () => import('./pages/Architecture');
 const loadCompetitors = () => import('./pages/Competitors');
 const loadCompanyProfile = () => import('./pages/CompanyProfile');
@@ -30,6 +30,7 @@ const Profile = lazy(loadProfile);
 const Search = lazy(loadSearch);
 const TenderDetail = lazy(loadTenderDetail);
 const Reports = lazy(loadReports);
+const System = lazy(loadSystem);
 
 const CORE_PREFETCH_LOADERS = [
   loadCompanyProfile,

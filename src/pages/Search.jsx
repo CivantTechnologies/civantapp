@@ -240,8 +240,7 @@ export default function Search() {
     const [loading, setLoading] = useState(false);
     const [showFilters, setShowFilters] = useState(false);
     const [searchMeta, setSearchMeta] = useState(null);
-    const [companyProfile, setCompanyProfile] = useState(null);
-    const { activeTenantId, isLoadingTenants } = useTenant();
+    const { activeTenantId, isLoadingTenants, companyProfile } = useTenant();
     const { roles } = useAuth();
     const [scopeFilterTemporarilyDisabled, setScopeFilterTemporarilyDisabledState] = useState(() => (
         isCompanyScopeFilterTemporarilyDisabled(activeTenantId)
@@ -268,30 +267,12 @@ export default function Search() {
         setScopeFilterTemporarilyDisabledState(isCompanyScopeFilterTemporarilyDisabled(activeTenantId));
     }, [activeTenantId]);
 
-    const loadCompanyProfile = useCallback(async () => {
-        if (!activeTenantId) return;
-        try {
-            const rows = await civant.entities.company_profiles.filter(
-                { tenant_id: activeTenantId },
-                '-updated_at',
-                1,
-                'target_cpv_clusters,target_countries,contract_size_min_eur,contract_size_max_eur,company_scope_filter_enabled'
-            );
-            const profile = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
-            setCompanyProfile(profile || null);
-        } catch (error) {
-            console.error('Failed to load company profile for scope mode:', error);
-            setCompanyProfile(null);
-        }
-    }, [activeTenantId]);
-    
     useEffect(() => {
         if (isLoadingTenants) return;
         if (!activeTenantId) return;
-        void loadCompanyProfile();
         setLoading(true);
         void loadTenders(appliedFilters, DEFAULT_LOAD_LIMIT);
-    }, [activeTenantId, isLoadingTenants, loadCompanyProfile]);
+    }, [activeTenantId, isLoadingTenants]);
 
     useEffect(() => {
         const params = new URLSearchParams(location.search);

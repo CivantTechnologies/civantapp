@@ -58,15 +58,13 @@ Deno.serve(async (req) => {
             active: true
         }) as AlertRecord[];
 
-        const allTenders = await civant.asServiceRole.entities.TendersCurrent.filter({
-            tenant_id: tenantId
-        }, '-first_seen_at', 500) as TenderRecord[];
-
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
-        const recentTenders = allTenders.filter((t: TenderRecord) =>
-            t.first_seen_at && new Date(t.first_seen_at) >= yesterday
-        );
+
+        const recentTenders = await civant.asServiceRole.entities.TendersCurrent.filter({
+            tenant_id: tenantId,
+            first_seen_at: { $gte: yesterday.toISOString() }
+        }, '-first_seen_at', 500) as TenderRecord[];
 
         for (const alert of alerts) {
             try {

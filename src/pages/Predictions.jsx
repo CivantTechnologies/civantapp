@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { differenceInCalendarDays, format, startOfDay } from 'date-fns';
 import { Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
-import { civant } from '@/api/civantClient';
 import { useTenant } from '@/lib/tenant';
 import {
   isCompanyScopeFilterTemporarilyDisabled,
@@ -265,12 +264,11 @@ function SummaryTile({ label, value, hint }) {
 }
 
 export default function Predictions() {
-  const { activeTenantId, isLoadingTenants } = useTenant();
+  const { activeTenantId, isLoadingTenants, companyProfile } = useTenant();
   const [countryFilter, setCountryFilter] = useState('all');
   const [urgencyFilter, setUrgencyFilter] = useState('actionable');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [allPredictions, setAllPredictions] = useState([]);
-  const [companyProfile, setCompanyProfile] = useState(null);
   const [scopeFilterTemporarilyDisabled, setScopeFilterTemporarilyDisabledState] = useState(() => (
     isCompanyScopeFilterTemporarilyDisabled(activeTenantId)
   ));
@@ -323,29 +321,10 @@ export default function Predictions() {
     }
   };
 
-    const loadProfile = useCallback(async () => {
-    if (!activeTenantId) return null;
-    try {
-      const rows = await civant.entities.company_profiles.filter(
-        { tenant_id: activeTenantId },
-        '-updated_at',
-        1,
-        'target_cpv_clusters,target_countries,target_buyer_types,contract_size_min_eur,contract_size_max_eur,company_scope_filter_enabled'
-      );
-      const profile = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
-      setCompanyProfile(profile || null);
-      return profile || null;
-    } catch (error) {
-      console.error('Failed to load company profile:', error);
-      return null;
-    }
-  }, [activeTenantId]);
-
   const loadPredictions = useCallback(async () => {
     if (!activeTenantId) return;
     setLoading(true);
     try {
-      await loadProfile();
       const { data, error } = await supabase
         .rpc('get_tenant_predictions', { p_tenant_id: activeTenantId }).range(0, 19999);
 
@@ -376,7 +355,7 @@ export default function Predictions() {
       }
       setLoading(false);
     }
-  }, [activeTenantId, loadProfile]);
+  }, [activeTenantId]);
 
   useEffect(() => {
     if (!isLoadingTenants && activeTenantId) {

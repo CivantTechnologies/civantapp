@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { civant } from '@/api/civantClient';
+import { useAuth } from '@/lib/auth';
 import { useLocation } from 'react-router-dom';
 import { 
     Bell, 
@@ -34,7 +35,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 
 export default function Alerts() {
     const location = useLocation();
-    const [user, setUser] = useState(null);
+    const { currentUser } = useAuth();
     const [alerts, setAlerts] = useState([]);
     const [alertEvents, setAlertEvents] = useState([]);
     const [visibleEvents, setVisibleEvents] = useState([]);
@@ -82,8 +83,8 @@ export default function Alerts() {
     }, [location.search]);
     
     useEffect(() => {
-        loadData();
-    }, []);
+        if (currentUser?.email) loadData();
+    }, [currentUser?.email]);
 
     useEffect(() => {
         if (eventsView === 'triggered' && eventsPeriod === '24h') {
@@ -97,20 +98,15 @@ export default function Alerts() {
     }, [alertEvents, eventsView, eventsPeriod]);
     
     const loadData = async () => {
+        const email = currentUser?.email;
+        if (!email) return;
         try {
-            const userData = await civant.auth.me();
-            setUser(userData);
-            
-            // Load user's alerts
-            const alertsData = await civant.entities.Alerts.filter({
-                user_email: userData.email
-            });
-            setAlerts(alertsData);
-            
-            // Load alert events
-            const eventsData = await civant.entities.AlertEvents.list('-matched_at', 100);
-            setAlertEvents(eventsData);
-            
+            const [alertsRes, eventsRes] = await Promise.allSettled([
+                civant.entities.Alerts.filter({ user_email: email }),
+                civant.entities.AlertEvents.list('-matched_at', 100),
+            ]);
+            if (alertsRes.status === 'fulfilled') setAlerts(alertsRes.value);
+            if (eventsRes.status === 'fulfilled') setAlertEvents(eventsRes.value);
         } catch (error) {
             console.error('Error loading data:', error);
         } finally {
@@ -126,7 +122,7 @@ export default function Alerts() {
         try {
             const alertData = {
                 ...formData,
-                user_email: user.email,
+                user_email: currentUser?.email,
                 deadline_within_days: formData.deadline_within_days ? parseInt(formData.deadline_within_days) : null,
                 country: formData.country || null
             };

@@ -294,7 +294,7 @@ export function AuthProvider({ children }) {
     isLoadingAuth,
     authError,
     authWarning,
-    JSON.stringify(effectiveRoles)
+    effectiveRoles
   ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

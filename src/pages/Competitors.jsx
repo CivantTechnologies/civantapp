@@ -788,11 +788,10 @@ export default function Competitors() {
   const location = useLocation();
   const navigate = useNavigate();
   const { competitorId } = useParams();
-  const { activeTenantId } = useTenant();
+  const { activeTenantId, companyProfile } = useTenant();
 
   const [user, setUser] = useState(null);
   const [competitors, setCompetitors] = useState([]);
-  const [companyProfile, setCompanyProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState('');
@@ -830,22 +829,9 @@ export default function Competitors() {
       setUser(userData);
       const competitorsData = await civant.entities.Competitors.filter({ tracked_by_user: userData.email });
       setCompetitors(competitorsData || []);
-
-      if (activeTenantId) {
-        const profileRows = await civant.entities.company_profiles.filter(
-          { tenant_id: activeTenantId },
-          '-updated_at',
-          1,
-          'known_competitors,contract_size_min_eur'
-        );
-        setCompanyProfile(Array.isArray(profileRows) && profileRows.length > 0 ? profileRows[0] : null);
-      } else {
-        setCompanyProfile(null);
-      }
     } catch (error) {
       console.error('Error loading competitors:', error);
       setCompetitors([]);
-      setCompanyProfile(null);
     } finally {
       setLoading(false);
     }
@@ -981,10 +967,30 @@ export default function Competitors() {
     setSnapshotLoading(true);
 
     const run = async () => {
-      for (const competitor of missing) {
-        if (cancelled) return;
-        await analyzeCompetitor(competitor);
-      }
+      await Promise.allSettled(
+        missing.map(async (competitor) => {
+          if (cancelled) return;
+          try {
+            const { data: response, error: rpcError } = await supabase.rpc('get_competitor_intelligence', {
+              p_tenant_id: activeTenantId,
+              p_search_term: (competitor.search_terms || competitor.company_name).split(',')[0].trim(),
+            });
+            if (rpcError) throw new Error(rpcError.message);
+            const payload = response?.data || response;
+            if (payload?.error) throw new Error(payload.error);
+            if (!payload?.success) throw new Error(payload?.message || 'No awards found for this competitor');
+            const dossierData = buildCompetitorAnalysis(competitor.company_name, payload);
+            if (!cancelled) setAnalysisByCompetitorId((prev) => ({ ...prev, [competitor.id]: dossierData }));
+          } catch (error) {
+            if (!cancelled) {
+              setAnalysisByCompetitorId((prev) => ({
+                ...prev,
+                [competitor.id]: { success: false, company_name: competitor.company_name, message: error.message },
+              }));
+            }
+          }
+        })
+      );
       if (!cancelled) setSnapshotLoading(false);
       prefetchingPortfolioRef.current = false;
     };

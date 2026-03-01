@@ -660,7 +660,7 @@ function ProfileTabs({ profile, onSave, saving, isOrgAdmin, initialTab = 'compan
 // ===== PAGE EXPORT =====
 
 export default function CompanyProfile() {
-    const { activeTenantId, isLoadingTenants } = useTenant();
+    const { activeTenantId, isLoadingTenants, refreshCompanyProfile } = useTenant();
     const { roles } = useAuth();
     const location = useLocation();
     const { refreshOnboarding } = useOnboarding();
@@ -709,6 +709,7 @@ export default function CompanyProfile() {
             const saved = await civant.entities.company_profiles.create(payload);
             setProfile(saved && typeof saved === 'object' ? saved : payload);
             if (payload.onboarding_completed) refreshOnboarding();
+            refreshCompanyProfile(activeTenantId);
             setSaveMsg('Saved successfully');
             setTimeout(() => setSaveMsg(''), 3000);
         } catch (e) {

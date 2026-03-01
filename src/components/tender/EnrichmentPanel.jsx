@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { 
@@ -12,12 +12,14 @@ import {
 
 export default function EnrichmentPanel({ enrichment }) {
     if (!enrichment) return null;
-    
-    const keyClauses = JSON.parse(enrichment.key_clauses || '[]');
-    const riskAssessment = JSON.parse(enrichment.risk_assessment || '{}');
-    const evaluationCriteria = JSON.parse(enrichment.evaluation_criteria || '[]');
-    const technicalReqs = JSON.parse(enrichment.technical_requirements || '[]');
-    const contractorDetails = JSON.parse(enrichment.contractor_details || '{}');
+
+    const { keyClauses, riskAssessment, evaluationCriteria, technicalReqs, contractorDetails } = useMemo(() => ({
+        keyClauses: JSON.parse(enrichment.key_clauses || '[]'),
+        riskAssessment: JSON.parse(enrichment.risk_assessment || '{}'),
+        evaluationCriteria: JSON.parse(enrichment.evaluation_criteria || '[]'),
+        technicalReqs: JSON.parse(enrichment.technical_requirements || '[]'),
+        contractorDetails: JSON.parse(enrichment.contractor_details || '{}'),
+    }), [enrichment]);
     
     const complexityColors = {
         low: 'bg-emerald-50 text-emerald-700 border-emerald-200',
